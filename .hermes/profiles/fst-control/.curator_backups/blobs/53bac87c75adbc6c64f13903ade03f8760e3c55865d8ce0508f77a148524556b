@@ -1,0 +1,823 @@
+---
+name: mcp-server-probing
+description: "MCP server debugging playbook. PITFALLS: #15 b-tree 2704, #16 silent filter, #18 filters={} format, #19 list_views, #20 NormDayWorkHours, #21 InContract access, #22 namespace DEPRECATED, #23 state dicts NOT shared, #24 просрочка=не выполнена, #25 пустой Пресейл=Норма, #26 indicators копии, #27 get_view read-access only, #28 trailing пробел, #29 budgetsum=0, #30 find via describe_entity, #31 get_entity_data optimization, #32 accountid works/StartDate broken, #33 parallel timeouts, #34 sentinel _get_entity_data_, #35 cache key must match entity, #36 rows[0] после оптимизации. v1.0.1 fst-project-health: 16/16 indicators, audit-and-fix complete."
+version: 2.7.0
+version: 2.5.0
+author: Hermes Agent + Rost
+license: MIT
+platforms: [linux, macos, windows]
+changelog:
+  - "2.6.0 (2026-09-03): ADDED Pitfall #31 — `get_entity_data(data_id)` is THE optimization for all-project properties (replaces N+1 get_view calls with single call returning all properties, including those not exposed in any view like `PresaleLimit`). Critical gotchas: `data_id` must be STRING (not int), response is `properties.<field>.value` (nested), properties alphabetically ordered. Speedup -69% on 2nd run via 5min disk cache. Pattern: `get_project_card(sid, project_id, project_code)` returns flat dict. ADDED Pitfall #32 — `accountid` filter WORKS in `ProjectResourcePlan`, but `StartDate`/`EndDate` DON'T filter `planning_date` (silently ignored). Always verify filter works via live-probe. Workaround: fetch all and filter in Python. Specific case: 504-595 returns 100 rows for Кузнецов across ALL years, not just 2026-Q4. Email to MCP developers at `references/feedback-to-mcp-developers-accountid-date-filter.md`. ADDED Pitfall #33 — parallel `mcp_call` requests TIMEOUT after ~60s. MCP server is single-threaded per session. Use sequential with disk cache. Confirmed by live-probe 2026-09-03 (504-595 indicator 6.7): ThreadPoolExecutor(max_workers=5) with 12 users → all requests time out. Workaround: sequential requests + 5-min cache = 8s on 2nd run vs 60+ sec. v1.0.0 of `fst-project-health` ships all 16 indicators (6.1-6.16) in секция «Показатели проекта»."
+  - "2.7.0 (2026-09-03): ADDED Pitfall #34 — sentinel view name `\"_get_entity_data_\"` for non-disruptive swap of N view-calls → 1 get_entity_data. Pattern: special string in `fetch_with_cache(sid, entity_name, view_name, ...)` that branches to `_get_project_card_cached()` and returns a single-element list. Lets you roll out `get_entity_data` optimization across many call sites WITHOUT rewriting every function. ADDED Pitfall #35 — cache key must be the entity whose data is being cached, not just a numeric ID. `project_id=accountid` was the bug; if you pass an entity ID as cache key that does NOT match the data being fetched, two unrelated calls (one for project, one for account) can collide. ADDED Pitfall #36 — when using `get_entity_data` to replace view calls, change ALL `next(r for r in rows if r.get('code') == X)` patterns to `rows[0] if rows else None` — the optimized response is a single-element list with no `code` field, so the old pattern returns `None` and breaks the indicator. v1.0.1 of `fst-project-health` reflects the audit-and-fix."
+  - "2.3.0 (2026-09-02): ADDED Pitfall #24 «Просрочена» определяется по «не выполнена», НЕ «не подтверждена» (FactDate=null = просрочка, даже если подтверждение придёт в далеком будущем). ADDED Pitfall #25 пустой проект в Пресейле = Норма (нет КТ = стартовая ситуация, не замечание). ADDED Pitfall #26 многие индикаторы v1.0.0 (6.3 vs 6.4, 6.5 vs 6.7) — копии с заменой одного параметра (forecast_hours↔plan_hours, проект↔все активности). NEW architecture: секция «Показатели проекта» (16 пунктов 6.1-6.16) для fst-project-health v1.0.0. Helpers: `interpret_indicator(key, result, detail)` в каждом thresholds-скрипте. ADDED Pitfall #27 `get_view` без фильтра возвращает только данные доступные пользователю на чтение (важно для cross-project индикаторов 6.7). ADDED Pitfall #28 строковые enum-значения из MCP приходят с trailing пробелом (`«Коммерческий »`) — всегда `.strip()` перед сравнением."
+  - "2.2.1 (2026-09-02): Added reference `references/entity-state-lifecycle-pattern.md` — how to model entity state machines (str,Enum + level/order/blocks_stage_transition) with discipline against fuzzy 'similar word' matches. Companion to Pitfall #23."
+  - "2.2.0 (2026-09-02): ADDED Pitfall #23 — справочники состояний НЕ общие между сущностями. Use `describe_entity(entityName=ACTUAL, show_allowed_values=[field])` to get the canonical list scoped to that entity. Live-probe: `describe_entity(Point, show_allowed_values=['ActivityPhaseId'])` returns exactly 4 states (10012/10018/40031/40041), NOT 106 from `PointTemplateActivityPhase` (which includes state names for other entities like 'Отпуск утвержден'). User correction: «Ты не отбираешь состояния, свойственные только КТ. Это нас приведёт к ошибкам!»"
+  - "2.1.0 (2026-09-02): ADDED Pitfall #22 — namespace `mcp__fst_pmpractice__get_view(...)` DEPRECATED. Use `mcp_call(sid, 'get_view', {...})` instead (uniform across all MCP servers). Migrated 5 skills in one session: project-search, project-effort-plan, project-effort-write, project-timing-control, project-completeness-check. ADDS portability rule for skills: **never hardcode `/root/...` paths**, use `Path(__file__).resolve().parent.parent`. Verified by simulating copy to `/tmp/test-portability/`."
+  - "2.0.1 (2026-09-01): ADDED Pitfall #20 — NormDayWorkHours FIXED 2026-09-01 (теперь возвращает правильные данные: id, Date, Hours, ProjectId; Hours=8 будни / 0 выходные). Pitfall #17 (TRAP) был — ИСПРАВЛЕН. ADDED Pitfall #21 — InContractMyProject фильтрация зависит от доступа пользователя (для user_id=120872 работает только для 504-595). Updated Pitfall #15 — b-tree 2704 ИСПРАВЛЕН разработчиками 2026-09-01 (JSON до 50 КБ загружается). Updated Pitfall #18 — `delete_entity` правильный формат `remove=['AttributeValue|<id>']` (НЕ `entityName+id`!). Added reference: `references/filters-format-live-probe-2026-09-01.md` с матрицей по 4 проектам."
+  - "2.0.0 (2026-09-01): NEW STANDARD FORMAT for filters — `filters={...}` as separate parameter in get_view call. Live-probe 2026-09-01: `get_view({entityName, viewName, filters: {ProjectId: 4595}, limit})` works for ProjectHealthCostMy, ProjectResourcePlan, ProjectBudgetCompleteBusiness, InContractMyProject, AllMyPoint. NEW TOOL DISCOVERED: `list_views` returns list of all 238 views with `Description` field that includes supported server-side filters in format `FilterName(@FieldName)`. This is the OFFICIAL way to discover which filters work without trial-and-error. Pitfall #18 added. URL-format filters (`?<Field>=<value>`) still work for some views but DEPRECATED — use the new `filters=` parameter format which works for ALL views and never breaks when server internals change. Migrated `fst-project-health` (build_section_6, load_project_points, get_effort, get_project_budget) to new format. Pipeline still 19-23 sec. ADDITIONAL DISCOVERIES 2026-09-01: (a) `ApprovedBudget` view returns 5 columns (id/ApprovedBudgetId/ActivityId/Year/Value) with Year-based budgeting, supports filters ActivityId/PortfolioId/Year (504-595: 54000000 rub for 2026). (b) `ProjectBudgetCompleteBusiness` has 36 columns including `isprojectbudget`/`ispresalebudget` flags to separate project vs presale budgets. (c) `NormDayWorkHours` correctly returns Hours=8 будни / 0 выходные (21 weekdays × 8 = 168 hours/month standard). Note: filter by ProjectId does NOT work (returns 244 rows regardless), use StartDate/EndDate only. (d) `delete_entity` correct format: `remove=['AttributeValue|<guid>']` (10 formats tested, only this one works). Working script at `/tmp/project-json-design/scripts/delete_attribute_values.py` — supports IDs from CLI, file, interactive; 34/34 successful deletions in live-probe. (e) B-tree 2704 limit IS FIXED — JSON up to ~50 KB now persists without error (504-595: 5 KB, 504-314: 10 KB, 503-434: 13 KB, 503-152: 50 KB all work). Reference doc: `references/mcp-filters-format.md` covers the new format with full live-probe matrix and example helpers (`get_view_with_filters()`, `*_FILTERS` lambdas). DELETED 2026-09-01: old `*_VIEW_FOR` lambdas (replaced by `*_VIEW` + `*_FILTERS` pairs)."
+  - "1.9.0 (2026-08-28): Pitfall #15 updated — re-verified b-tree 2704 limit still NOT changed (2026-08-27 live-probe: 49 KB JSON still fails with `8080 > 2704`). Pitfall #16 updated — `InContractMyProject?ProjectId=<id>` REGRESSION cycle tracked: worked (26.08) → broken (27.08: `функция view_incontract_ofmyprojects(bigint, text) не существует`) → restored (28.08). Lesson: filter status changes daily — always live-probe. NEW Pitfall #17 — NormDayWorkHours TRAP: view URL exists but returns project data (IndicatorTitle/ProjectId/Code/Name), NOT (date/hours/projectid). Filter params (?ProjectId=, ?StartDate=, ?EndDate=) silently ignored. Symptom: `Rows=10` instead of expected 365, `date=null, hours=null, projectid=null`."
+  - "1.8.0 (2026-08-26): PROJECT HEALTH COST MY — починено. Live-probe подтвердил: `ProjectHealthCostMy?ProjectId=<id>` теперь возвращает 1 строку за 1.5 сек (было 2000 строк / 41 сек). Регрессия тоже исправлена — view работает без фильтра (109 строк). Helpers в mcp_config.py: `PROJECT_HEALTH_COST_MY_VIEW_FOR(project_id)`. Обновили `references/view-filter-playbook.md` с актуальным статусом. **Pipeline fst-project-health ускорен с 60 до 19 сек (−68%) за счёт этой починки**. Проверить `verify_filter_works()` (pitfall #16) после каждого live-probe — фильтр мог быть починен ИЛИ сломаться снова."
+  - "1.7.0 (2026-08-22): NEW PITFALL #16 — silent filter ignoring TRAP. Server returns 200 OK with data for ALL projects (not just requested). Live-probe: `InContract?ProjectId=3434` returned same 42 rows as `?ProjectId=4595`. Safe verification pattern: probe с разными ProjectId — данные должны ОТЛИЧАТЬСЯ. Playbook updated with live-probe dates column, TRAP scenario, mandatory `verify_filter_works()` test. `ProjectResourcePlan?ProjectId=` confirmed working (2390 rows for 3434). `ProjectHealthCostMy` broken by devs (500 even без фильтра)."
+  - "1.6.0 (2026-08-22): Pitfall #15 expanded — HARD SIZE LIMIT: PostgreSQL b-tree 2704 byte composite-index cap on `AttributeValue` (`ix_attributevalue_data_entity_attribute`). Live-probe 2026-08-22: 500 error `размер строки индекса (2992) больше предельного для btree версии 4 размера (2704)` when persisting real project health JSON (~15 KB). Documented UTF-8 byte math (Cyrillic = 2 bytes/char → safe limit ~1.2 KB AttrValue), split-via-`AttrValueSource` workaround pattern with example code, and diagnostic (`len(json.dumps(...).encode('utf-8'))`). Request for developers: hash-based partial index or split AttrValue into indexed_short + non_indexed_long."
+  - "1.5.0 (2026-08-22): Pitfall #15 — `AttributeValue` generic key-value store pattern for persisting arbitrary JSON snapshots via MCP (DataId/EntityId/AttributeId/AttrValue). Captures 6 gotchas: `save_entity` not `create_entity`, `id` at top level not inside `data`, `EntityId`/`AttributeId` are uuid refs, strict `date` format (omit fields), `describe_entity` returns `properties` dict not `fields` list, `delete_entity` uses `remove: [{entityName, id}]` array format. Live-probed on PMForesight, write+read+update verified, delete 500 (server bug). Use case: persisting JSON reports without server-side schema changes."
+  - "1.4.0 (2026-08-21): Pitfall #14 expanded with three sub-gotchas: (a) in-process CLI calls via importlib.util.spec_from_file_location must explicitly invoke m.main() after exec_module — `if __name__ == '__main__'` does NOT run; (b) unittest.assertRegex/assertNotRegex do not support re.MULTILINE / re.IGNORECASE flags — use re.search(..., flags=...) + assertIsNotNone; (c) hardcode-detection regex must strip argparse help-text, f-string literals, and print() example usages before scanning."
+  - "1.3.0 (2026-08-21): Pitfall #13 (server-side `?ProjectId=<id>` filter pattern with live-probe matrix for PMForesight views), Pitfall #14 (meta-skill testing convention with `tests/` subdirectory + `run_all_tests.py` + `importlib.util` + `@dataclass` workaround). Updated decision tree."
+  - "1.2.0 (2026-08-07): Pitfall #12 (activity_name without dot in open views), #11 (open views pagination pattern), #10 (feedback-to-developers template), #9 (lowercase entityName for custom entities like MetaModel with string PK). Added meta-skill testing note."
+  - "1.1.0 (2026-08-07): Cyrillic UTF-8 trap (P7a), SSE chunked transfer (P7), execute_code environment isolation (P8)."
+  - "1.0.0 (2026-08-06): Initial release — direct SSE probe via curl, Pydantic validation pattern, mcp-session-id dance, verify-after-write pattern."
+metadata:
+  hermes:
+    tags: [mcp, debugging, probing, sse, http-transport, troubleshooting, pydantic]
+    related_skills: [hermes-agent, fst-pmpractice, hermes-gateway-troubleshooting]
+---
+
+# MCP Server Probing & Debugging
+
+## Overview
+
+(содержимое остаётся прежним — будет обновлено при следующей итерации)
+
+---
+
+## Pitfall #23 (NEW 2026-09-02): справочники состояний НЕ общие между сущностями — получай для КОНКРЕТНОЙ
+
+**Symptom:** agent takes the справочник состояний (allowed_values) from one entity (e.g. `PointTemplate`) and applies it to a different entity (e.g. `Point`), getting 100+ states including ones that don't belong (отпуск, ЗИ, конкурсы). User correction: «Ты не отбираешь состояния, свойственные только КТ. Это нас приведёт к ошибкам!»
+
+**Lesson:** allowed_values from `PointTemplateActivityPhase` is NOT the canonical list of states for Point. They overlap heavily but are not identical — Point has its own narrower lifecycle.
+
+**Pattern (THE FIX):** see `references/entity-state-lifecycle-pattern.md` for full pattern.
+
+```python
+# ❌ WRONG — using state names from PointTemplate for Point:
+# PointTemplateActivityPhase returns 106 values (state names from MANY entities).
+# Includes "Отпуск утвержден", "Внесение изменений в ЗИ", etc.
+
+# ✅ RIGHT — describe_entity on the actual entity, with show_allowed_values
+# for the field that holds state:
+mcp_call(sid, "describe_entity", {
+    "entityName": "Point",                    # THE entity, not PointTemplate
+    "show_allowed_values": ["ActivityPhaseId"]  # THE field, not PointTemplateActivityPhase
+})
+# → allowed_values["ActivityPhaseId"] returns EXACTLY 4 states for Point:
+#   10012 = "В работе"
+#   10018 = "Выполнена"
+#   40031 = "Отменено"
+#   40041 = "Подтверждена"
+```
+
+**Discovery recipe (live-probe 2026-09-02):**
+1. `describe_entity(entityName="Point")` → scan `properties` for fields whose `RefPropertyName` references a state-like lookup (e.g. `ActivityPhaseId` → `RefPropertyName="ActivityPhase"`).
+2. `describe_entity(entityName="Point", show_allowed_values=["<that_field>"])` → returns clean state list scoped to this entity.
+3. Never copy state names from a different entity (PointTemplate, Project, Activity) into Point logic.
+
+**Trap to avoid:** Point has a property called `ActivityPhaseId` (which references the same `ActivityPhase` lookup as other entities). The names of allowed_values LOOK reasonable ("Подтверждена", "В работе"), but they apply only to Point — for other entities the same lookup may have additional values that don't apply.
+
+**Files updated:** `fst-project-health/scripts/lc_stage_kt_registry.py` — `POINT_STATES_REGISTRY` now has only 4 entries (10012, 10018, 40031, 40041) sourced from `describe_entity(Point, show_allowed_values=["ActivityPhaseId"])`. Old 100+ entry list deleted (was sourced from PointTemplateActivityPhase and contained state names for other entity types). Full code pattern in `references/entity-state-lifecycle-pattern.md`.
+
+---
+
+## Pitfall #24 (NEW 2026-09-02): «Просрочена» определяется по «не выполнена», НЕ «не подтверждена»
+
+**Symptom:** agent writes logic that treats КТ как «просроченную» when `IndicatorTitle != "Подтверждено"`. User correction (2026-09-02): «Опять неправильно! КТ просрочена если НЕ выполнена. Не подтверждена - это проблема другого рода!»
+
+**Wrong:**
+```python
+# ❌ BAD — confusing "просрочена" (sla breach) with "не подтверждена" (workflow lag)
+if IndicatorTitle != "Подтверждено" and ForecastDate < today:
+    issue = "Просрочена КТ"
+```
+
+**Right:**
+```python
+# ✅ GOOD — three orthogonal questions:
+# 1. КТ просрочена = КТ не выполнена (FactDate IS NULL) AND ForecastDate < today
+# 2. КТ не подтверждена = КТ выполнена (FactDate IS NOT NULL) AND IndicatorTitle != "Подтверждена"
+# 3. КТ в работе = просто без FactDate (может быть с ForecastDate в будущем)
+if not fact_date and forecast_date < today:
+    issue = "Просрочена обязательная КТ"   # SLA breach
+elif fact_date and not confirmed:
+    issue = "КТ выполнена, но не подтверждена"   # workflow lag — separate severity
+```
+
+**Lifecycle model (4 states, see Pitfall #23):**
+
+| State              | FactDate | Просрочка? | Не подтверждена? |
+|--------------------|:--------:|:----------:|:----------------:|
+| «В работе» (10012) | ❌        | ✅ если ForecastDate < today | ❌ (нечего подтверждать) |
+| «Выполнена» (10018)| ✅        | ❌         | ✅ (если IndicatorTitle != «Подтверждена») |
+| «Подтверждена» (40041) | ✅    | ❌         | ❌ |
+| «Отменено» (40031) | —        | ❌         | ❌ |
+
+**Lesson:** keep "просрочка" (sla), "не подтверждена" (workflow), and "не выполнена" (work-in-progress) as THREE separate questions, each with its own severity.
+
+**Live-test 2026-09-02:** project 503-152 (Пресейл) — 1 КТ «Пресейл закрыт» просрочена на 96 дн. → critical. Correctly excluded other КТ that have FactDate but not confirmed (those are workflow lag, not SLA breach).
+
+---
+
+## Pitfall #25 (NEW 2026-09-02): пустой проект в Пресейле = Норма, не замечание
+
+**Symptom:** agent marks "Нет обязательных КТ Пресейла" as a violation. User correction (2026-09-02): «Не созданы ключевые КТ (из нашего справочника) + нет календарного плана - это НОРМА (независимо от времени)».
+
+**Wrong:**
+```python
+# ❌ BAD — flag missing mandatory КТ as violation in any state
+for kt in MANDATORY_KT_BY_STAGE[stage]:
+    if kt not in existing_kt_names:
+        issues.append("Не создана КТ '{kt}'")
+```
+
+**Right:**
+```python
+# ✅ GOOD — empty project in Пресейл is the STARTING state, not a violation
+if stage == "Пресейл" and len(existing_kt_names) == 0:
+    # Норма — проект только что создан, КТ ещё не заведены
+    pass
+elif kt not in existing_kt_names and len(existing_kt_names) > 0:
+    # Замечание — пользователь ведёт календарный план, но обязательные КТ не созданы
+    issues.append("Не создана КТ '{kt}'")
+```
+
+**Rule (validated against 504-595):**
+
+| Стадия    | КТ в плане | КТ обязательные | Вердикт |
+|-----------|:----------:|:---------------:|:-------:|
+| Пресейл   | 0          | 0               | **Норма** (Шаг 1) |
+| Пресейл   | ≥1         | 0/часть/все     | см. ниже |
+| Пресейл   | ≥1         | часть отсутствует | **Существенное** (Шаг 2) |
+| Инициирование и выше | ≥1 | КТ предыдущих стадий отсутствуют | НЕ показываем (Шаг 6 — обращаем внимание только на ТЕКУЩУЮ стадию) |
+
+**Lesson:** the absence of mandatory КТ for the **CURRENT** stage is a violation. The absence of mandatory КТ for **PREVIOUS** stages is NOT shown when the user is already past them — focus on what's actionable now.
+
+---
+
+## Pitfall #26 (NEW 2026-09-02): индикаторы v1.0.0 — часто копии с заменой одного параметра
+
+**Symptom:** agent writes two completely independent functions for indicators that differ by ONE field (forecast vs plan) or ONE scope (this project vs all activities). Wastes 200+ lines of code that diverge over time.
+
+**Pair-list (fst-project-health v1.0.0):**
+
+| Pair      | Field difference | Scope difference |
+|-----------|------------------|------------------|
+| 6.3 vs 6.4 | `forecast_hours` ↔ `plan_hours` | none (same project) |
+| 6.5 vs 6.7 | `forecast_hours` ↔ `plan_hours` | this project ↔ all activities |
+
+**Pattern (RIGHT):**
+
+1. Single helper that takes the field name as a parameter:
+```python
+def _check_effort_by_field(project, sid, hours_field: str) -> IndicatorResult:
+    """Generic effort check — works for forecast (6.3) or plan (6.4)."""
+    rows = fetch_with_cache(...)
+    for row in rows:
+        hours = row.get(hours_field) or 0
+        ...
+
+def check_effort_forecast(project, sid):
+    return _check_effort_by_field(project, sid, hours_field="forecast_hours")
+
+def check_plan_effort(project, sid):
+    return _check_effort_by_field(project, sid, hours_field="plan_hours")
+```
+
+2. OR for scope differences, extract the user list first:
+```python
+def check_resource_overload(project, sid):
+    """6.5: only THIS project's users."""
+    users = fetch_users_in_project(sid, project_id)
+    rows = fetch_resource_plan(sid, filters={"ProjectId": project_id})
+    ...
+
+def check_cross_activity_overload(project, sid):
+    """6.7: same users but ALL activities."""
+    users = fetch_users_in_project(sid, project_id)  # SAME user set
+    rows = fetch_resource_plan(sid, filters={})  # no filter — all activities
+    ...
+```
+
+**Anti-pattern (WRONG):**
+- Two 200-line functions that share 95% code but diverge on one field — 5th commit one of them gets a fix the other doesn't.
+- Inline `if hours_field == "forecast_hours":` branches inside the function.
+
+**Lesson:** identify these pairs UPFRONT when planning a section with many indicators. Saves 50% code, prevents drift.
+
+## Pitfall #27 (NEW 2026-09-02): `get_view` без фильтра возвращает только данные доступные пользователю
+
+**Symptom:** agent writes cross-project logic assuming `get_view(filters={})` returns ALL records across ALL projects. Returns only records the current user has read-access to.
+
+**Discovery (2026-09-02, indicator 6.7):** user's question «откуда брать все активности исполнителя?» — agent should NOT try to manually filter by user-access in code. The MCP server does this transparently.
+
+**Wrong:**
+```python
+# ❌ WRONG — agent assumes full read-access, then tries to implement manual user-access filter:
+all_rows = mcp_call(sid, "get_view", {"viewName": "ProjectResourcePlan", "filters": {}})
+# then iterates with:
+if has_read_access(user, row["project_id"]):  # there's no such helper
+    ...
+```
+
+**Right:**
+```python
+# ✅ RIGHT — trust MCP. Empty filters = "all rows you can read":
+all_rows = mcp_call(sid, "get_view", {
+    "viewName": "ProjectResourcePlan",
+    "filters": {},
+    "limit": 10000,  # bigger limit since returns rows from multiple projects
+})
+# Use directly. Document the user-access boundary in docstring:
+"""
+Returns only rows the calling user has read-access to (MCP auto-filters).
+"""
+```
+
+**Why:** MCP server knows the user's permissions per project. Manual filtering at the client side is impossible (no permission API exposed). If you need only a subset (e.g. only specific projects), pass `filters={"ProjectId": N}` for each.
+
+**Document this in docstrings** for any cross-project indicator — readers (and your future self) need to know the user-access boundary is implicit.
+
+## Pitfall #28 (NEW 2026-09-02): строковые enum-значения из MCP приходят с trailing пробелом
+
+**Symptom:** `row.get("ProjectTypeName") == "Коммерческий"` returns False even when the project is commercial.
+
+**Discovery (2026-09-02, indicator 6.8):** live-probe shows `ProjectTypeName="Коммерческий "` (5 letters + space) and `ProjectCustomerTypeName="Госы"` (no space — sometimes). The trailing whitespace is inconsistent across fields.
+
+**Wrong:**
+```python
+# ❌ WRONG — equality check fails due to trailing space:
+if row.get("ProjectTypeName") == "Коммерческий":
+    ...
+```
+
+**Right:**
+```python
+# ✅ RIGHT — strip before comparing:
+project_type = (row.get("ProjectTypeName") or "").strip()
+if project_type == "Коммерческий":
+    ...
+```
+
+**Other examples observed (2026-09-02):**
+
+| Field | Value | Has trailing space? |
+|-------|-------|:-------------------:|
+| `ProjectTypeName` | `"Коммерческий "` | ✅ yes |
+| `ProjectCustomerTypeName` | `"Госы"` | ❌ no |
+| `IndicatorTitle` | `"Подтверждено"` | ❌ no (but verify per deployment) |
+| `PointStateName` | `"В работе"` | ❌ no |
+
+**Discipline:** always `.strip()` any string from MCP before equality comparison or regex match. Use `(row.get(field) or "").strip()` for safe handling of None + whitespace.
+
+**Live-probe recipe:** when introducing a new enum-like field, run the inspect-fields step (Pitfall #18 pattern) and check whether the actual values have leading/trailing whitespace — print `repr(value)` not `value`.
+
+## Pitfall #29 (NEW 2026-09-03): `budgetsum` is ALWAYS 0 in `ProjectBudgetCompleteBusiness`
+
+**Symptom:** agent sums amounts and gets 0 for every project — but the project clearly has amounts. User clarifies "в бюджете указаны прямые затраты" — agent sees zero.
+
+**Discovery (2026-09-03, indicator 6.10):** every row in `ProjectBudgetCompleteBusiness` has `budgetsum = 0`. Verified on 504-595, 503-434, 503-152, 504-314 — always 0.
+
+**Wrong:**
+```python
+# ❌ BAD — budgetsum is always 0:
+total = 0
+for row in rows:
+    if row.get("budgettype") == "Расход ручной ввод":
+        total += row.get("budgetsum") or 0
+# → total = 0 even when project has direct costs
+```
+
+**Right:**
+```python
+# ✅ GOOD — use per-period sums:
+def _pick_amount(r):
+    if (r.get("payfactsum") or 0) > 0: return r["payfactsum"]
+    if (r.get("payforecastsum") or 0) > 0: return r["payforecastsum"]
+    if (r.get("payplansum") or 0) > 0: return r["payplansum"]
+    if (r.get("actfactsum") or 0) > 0: return r["actfactsum"]
+    if (r.get("actforecastsum") or 0) > 0: return r["actforecastsum"]
+    if (r.get("actplansum") or 0) > 0: return r["actplansum"]
+    return 0
+```
+
+**Priority pattern (most reliable first):**
+1. `payfactsum` (actual payments)
+2. `payforecastsum` (forecasted payments)
+3. `payplansum` (planned payments)
+4. `actfactsum` (actual acts signed)
+5. `actforecastsum` (forecasted acts)
+6. `actplansum` (planned acts)
+
+Each row in `ProjectBudgetCompleteBusiness` represents one month (field `date`). Each row evaluated independently with this priority.
+
+**Lesson:** when one field in a view is always 0, find the *real* amount fields. Inspect ALL populated fields in the first row before summing.
+
+## Pitfall #30 (NEW 2026-09-03): before escalating to MCP developers — try `describe_entity` on parent
+
+**Symptom:** agent searches `list_views` for keyword "статья" (budget article) and finds nothing. Concludes the field doesn't exist and asks the user to escalate to MCP developers.
+
+**Discovery (2026-09-03, indicator 6.10):** the field IS there — `financesourceid`. It just doesn't have "статья" in its name. Developers confirmed: «поле financesourceid заполняется для бюджетных строк, справочник статей = financesource».
+
+**Wrong workflow:**
+1. Search `list_views` for "статья" / "article" / "budget_item" → 0 matches.
+2. Search `describe_entity(Project)` → scan `properties` for "Article" / "Statia" / "Item" → 0 matches.
+3. Conclude: "field doesn't exist" → escalate to MCP developers.
+4. Wait 1+ day for developer response.
+
+**Right workflow:**
+1. Search `list_views` for "статья" → 0 matches.
+2. Search `describe_entity(Project)` → scan `properties` for "Article" / "Statia" / "Item" → 0 matches.
+3. **Try synonyms/related fields:** "financ", "source", "fund", "category".
+4. **`describe_entity(FinanceSource)`** to see if there's a справочник.
+5. **`describe_entity(Project, show_allowed_values=["*"])`** — sometimes fields appear only with explicit request.
+6. **Ask user** before escalating. User may know internal naming.
+
+**Lesson:** MCP developers are slow to respond (often 1+ day). Before escalating, exhaust:
+- `list_views` with related synonyms (in Russian AND English)
+- `describe_entity` on the parent entity (Project, Contract, etc.)
+- `describe_entity` with `show_allowed_values=["*"]` to force resolution of all lookups
+- Ask user — they may know the internal field name even if it's not in the name
+
+**Specific case (504-595, 2026-09-03):**
+- `ProjectBudgetCompleteBusiness` has field `financesourceid` (id) and `financesourcename` (name)
+- Values observed: 71=«Ресурсы (проект)», 128=«611-13. НДС», 72=«111. Полиграфия»
+- `FinanceSource` entity has full справочник of all article IDs/names
+
+## Pitfall #31 (NEW 2026-09-03): `get_entity_data(data_id, ...)` — single-call all properties optimization
+
+**Symptom:** agent makes N+1 separate `get_view` calls to fetch related project properties (e.g. `ProjectBudgetGrade`, `PresaleLimit`, `PresaleBudgetPercentage`, `activityphase`, `projectstart_plandate`, `phasefinish_plandate`). 10-14 redundant calls per project on each pipeline run.
+
+**Discovery (2026-09-03, indicator 6.13):** field `PresaleLimit` exists in `describe_entity(Project)` (with description "Допустимый объем затрат на проведение пресейла в пределах предполагаемого бюджета проекта (оценка)"), is confirmed in `Project` model, but **does NOT appear in any view** (not in `ProjectParameter`, not in `MyProject`, not in `AllProject`). Escalation to developers confirmed: «нужно использовать get_entity_data».
+
+**Wrong (N+1 queries):**
+```python
+# ❌ BAD — 14 separate get_view calls, each ~1-3 sec:
+for field in ["ProjectBudgetGrade", "PresaleLimit", "PresaleBudgetPercentage",
+              "activityphase", "projectstart_plandate", "phasefinish_plandate", ...]:
+    value = mcp_call(sid, "get_view", {"viewName": "ProjectParameter", "filters": {"code": project_code}})
+    # ... 14 times
+```
+
+**Right (single call):**
+```python
+# ✅ GOOD — one call gets ALL properties:
+r = mcp_call(sid, "get_entity_data", {
+    "entityName": "Project",
+    "data_id": str(project_id),  # STRING, not int (pydantic validation)
+})
+# Response structure: {properties: {<field>: {Title, Type, value, ...}, ...}, ...}
+for key, prop in r["properties"].items():
+    value = prop.get("value")  # <field> → real value
+```
+
+**Critical gotchas:**
+1. **`data_id` MUST be a string** (not int) — pydantic validation rejects int with `Input should be a valid string`.
+2. Response field is **`value`** (lowercase) inside each property dict — not `Value`.
+3. Properties come in **alphabetical order** (e.g. `ActivityId`, `ActivityPhaseId`, ..., `ProjectId`, `ProjectTypeId`, ...).
+4. **Nested structure** — must unwrap `properties.<field>.value`.
+
+**Pattern (THE FIX for fst-project-health v1.0.0):**
+```python
+def get_project_card(sid, project_id, project_code=None) -> dict:
+    """Returns flat dict of all project properties. Cached for 5 min."""
+    cache_file = f"/tmp/.cache_project_card_{project_id}.json"
+    if cache_recent(cache_file, ttl=300):
+        return load_json(cache_file)
+    r = mcp_call(sid, "get_entity_data", {
+        "entityName": "Project", "data_id": str(project_id),
+    })
+    result = {"_source": "get_entity_data"}
+    for key, prop in r.get("properties", {}).items():
+        if isinstance(prop, dict):
+            result[key] = prop.get("value")
+    save_json(cache_file, result)
+    return result
+
+# Usage in indicator:
+card = get_project_card(sid, project_id, project_code)
+limit = card.get("PresaleLimit") or 0
+stage = card.get("activityphase") or ""
+start = _parse_iso_date(card.get("projectstart_plandate"))
+```
+
+**Performance impact (504-595, 2026-09-03):**
+- 1st run (no cache): ~30 sec (1 request)
+- 2nd run (cache hit, 5 min): ~8 sec (vs 60+ sec before with 14 get_view calls)
+- **Speedup: -69% to -79%**
+
+**Helper locations (fst-project-health v1.0.0):**
+- `scripts/mcp_config.py:get_project_card()` — main helper
+- `scripts/mcp_config.py:get_project_property(sid, pid, field_name)` — single-field version
+- `scripts/project_indicators.py:fetch_with_cache(sid, "Project", "_get_entity_data_", ...)` — special view_name triggers `_get_project_card_cached()`
+
+## Pitfall #32 (NEW 2026-09-03): `accountid` filter works in `ProjectResourcePlan`, but `StartDate/EndDate` don't filter `planning_date`
+
+**Symptom:** agent assumes both filters work in `ProjectResourcePlan` for getting data for one user over a period. The `accountid` filter works correctly, but date filters are silently ignored.
+
+**Discovery (2026-09-03, indicator 6.7):** 
+- ✅ `filters={"accountid": 120872}` returns ~100 rows for one user across all projects.
+- ❌ `filters={"accountid": 120872, "StartDate": "2026-09-01", "EndDate": "2026-12-31"}` returns the SAME 100 rows (no filtering by date).
+
+**Wrong (assumes both filters work):**
+```python
+# ❌ BAD — filter by date is silently ignored:
+rows = mcp_call(sid, "get_view", {
+    "viewName": "ProjectResourcePlan",
+    "filters": {
+        "accountid": 120872,
+        "StartDate": "2026-09-01",  # DOES NOTHING
+        "EndDate": "2026-12-31",     # DOES NOTHING
+    },
+    "limit": 2000,
+})
+# → returns rows for ALL years (2022-2026), not just Q4 2026
+```
+
+**Right (filter in Python after fetch):**
+```python
+# ✅ GOOD — fetch all, filter in Python:
+all_rows = mcp_call(sid, "get_view", {
+    "viewName": "ProjectResourcePlan",
+    "filters": {"accountid": 120872},
+    "limit": 2000,
+})
+effective_start = max(today, project_start)
+effective_end = min(today, project_end)  # use project period
+filtered = []
+for row in all_rows:
+    d = _parse_iso_date(row.get("planning_date"))
+    if d and effective_start <= d <= effective_end:
+        filtered.append(row)
+```
+
+**Lesson:** do not trust that server-side filters will work. Always:
+1. Live-probe a small sample first to verify the filter actually filters.
+2. If filter doesn't work, fetch all and filter in Python.
+3. Document in code comment that filter is broken + work-around.
+
+**Confirmed broken filters (as of 2026-09-03):**
+- `StartDate`/`EndDate` on `ProjectResourcePlan` (doesn't filter `planning_date`)
+- Other potentially-broken filters in other views — always verify.
+
+**Workaround for agent (fst-project-health 6.7):**
+For cross-project overload (6.7), use per-accountid query (one per user) instead of one big `filters={}` call. This is:
+- ✅ Faster (2-15 users, 2-15 queries)
+- ✅ Date-filterable in Python
+- ✅ Doesn't suffer from MCP's missing per-user limit (200/300 rows typical)
+
+**Email template (for MCP developers):** saved in `references/feedback-to-mcp-developers-accountid-date-filter.md` (fst-project-health skill).
+
+## Pitfall #33 (NEW 2026-09-03): parallel `mcp_call` requests time out
+
+**Symptom:** agent uses `concurrent.futures.ThreadPoolExecutor(max_workers=5)` to speed up multiple `mcp_call` calls. Gets `ReadTimeoutError: HTTPSConnectionPool ... read timed out (read timeout=60)`.
+
+**Discovery (2026-09-03, indicator 6.7):** tried `max_workers=5` for 12 parallel `mcp_call` to get `accountid` data. After ~60s, all requests timed out (MCP server got overloaded).
+
+**Wrong (parallel):**
+```python
+# ❌ BAD — MCP server rejects parallel:
+with ThreadPoolExecutor(max_workers=5) as executor:
+    futures = [executor.submit(mcp_call, sid, "get_view", {...}) for user in users]
+    for f in as_completed(futures):
+        f.result()  # ReadTimeoutError
+```
+
+**Right (sequential):**
+```python
+# ✅ GOOD — sequential requests (slower but reliable):
+for user in users:
+    rows = mcp_call(sid, "get_view", {...})
+```
+
+**Why parallel breaks:**
+- MCP server is **single-threaded** for SSE responses (per session).
+- Multiple concurrent requests on the same `sid` cause request ordering issues.
+- The server's HTTP/SSE response queue blocks when one request is slow.
+- TLS layer times out on `read` because the server stops responding while processing.
+
+**Alternatives (when speed matters):**
+1. Multiple **sessions** (one per concurrent request) — but auth tokens may be limited.
+2. `asyncio` + `aiohttp` for true async — but breaks the synchronous `mcp_call` interface.
+3. **Server-side batched API** — request a new method like `get_view_batch(viewName, ids=[1,2,3,12])`. Not yet available in PMForesight MCP.
+
+**Workaround used in 6.7:** sequential requests + 5-min disk cache → second run uses cache (fast).
+
+## Pitfall #33b (NEW 2026-09-04, derived from #33): sequential cache pattern
+
+**Pattern (the actual implementation):** when MCP requires sequential requests and you have N calls to make, **cache aggressively** to amortize the cost.
+
+```python
+# In scripts/run_all.py:
+CACHE_DIR = Path("/tmp")
+CACHE_TTL_SEC = 300  # 5 minutes
+
+def cache_key_path(code: str) -> Path:
+    return CACHE_DIR / f".cache_run_all_{code}.json"
+
+def cache_get(code: str):
+    p = cache_key_path(code)
+    if not p.exists():
+        return None
+    age = time.time() - p.stat().st_mtime
+    if age > CACHE_TTL_SEC:
+        return None  # expired
+    return json.loads(p.read_text())
+
+def cache_put(code: str, data: dict):
+    p = cache_key_path(code)
+    p.write_text(json.dumps(data, ensure_ascii=False, default=str))
+
+# In pipeline:
+cached = cache_get(args.code)
+if cached and "all_points" in cached:
+    points_cache = cached["all_points"]  # ← second run, no MCP call!
+else:
+    points_cache = load_project_points(project)
+    cache_put(args.code, {"all_points": points_cache})
+```
+
+**Cache layers (all under /tmp):**
+1. `.cache_project_card_<project_id>.json` — `get_entity_data` results, 5 min TTL
+2. `.cache_run_all_<CODE>.json` — КТ list per code, 5 min TTL
+3. `.cache_indicators_<project_id>.json` — 16 indicator results, 5 min TTL
+4. `__pycache__` (in scripts/) — Python bytecode, clean manually
+
+**Clear all caches:**
+```bash
+rm -f /tmp/.cache_run_all_*.json /tmp/.cache_project_card_*.json /tmp/.cache_indicators_*.json
+rm -rf <skill>/scripts/__pycache__
+```
+
+**Performance (504-595, 2026-09-03):**
+- 1st run: ~60 sec (parallel timeouts fallback to sequential)
+- 2nd run (warm cache): ~8 sec — **speedup -87%**
+- 16 indicators each call 1-3 views, 30+ calls total per project
+- Without cache: 30+ × 1.5 sec = 45+ sec
+- With cache: 1 fetch per (view, project, 5 min) = ~5 fetches × 1.5 sec = 7.5 sec
+
+**Lesson:** for any MCP-heavy pipeline, **always** add 5-min disk cache. The pattern is identical for all cache files — copy-paste `cache_get`/`cache_put` helpers.
+
+## Pitfall #34 (NEW 2026-09-03): sentinel view name `"_get_entity_data_"` for non-disruptive optimization
+
+**Symptom:** you have 14 call sites that use `fetch_with_cache(sid, "Project", "ProjectParameter", ...)`. You want to swap to `get_entity_data` for the -69% speedup, but rewriting all 14 call sites is risky — each function has its own `next(r for r in rows if r.get("code") == X)` pattern that breaks if the response shape changes.
+
+**Right (sentinel pattern):** add a sentinel view name in `fetch_with_cache`:
+
+```python
+def fetch_with_cache(sid, entity_name, view_name, filters, project_id, limit=1000):
+    # Sentinel: route to get_entity_data instead of get_view
+    if view_name == "_get_entity_data_" and entity_name == "Project":
+        return [_get_project_card_cached(sid, project_id)]
+
+    # Normal: route to get_view
+    cached = get_cached(view_name, filters, project_id)
+    if cached is not None:
+        return cached
+    resp = mcp_call(sid, "get_view", {
+        "entityName": entity_name, "viewName": view_name,
+        "filters": filters, "limit": limit,
+    })
+    rows = resp.get("data", [])
+    set_cached(view_name, filters, rows, project_id)
+    return rows
+```
+
+**At call sites:** only the `view_name` argument changes. Logic stays:
+
+```python
+# BEFORE: 14 call sites using ProjectParameter view
+rows = fetch_with_cache(sid, "Project", "ProjectParameter", ...)
+
+# AFTER: same call sites, just changed view_name
+rows = fetch_with_cache(sid, "Project", "_get_entity_data_", ...)
+```
+
+This way, swapping from view-based to `get_entity_data` is a **1-argument change per call site**, not a function rewrite. Live-probe confirms -69% on 2nd run for 504-595.
+
+**Why the name `"_get_entity_data_"`:** leading underscore signals "not a real view". This avoids collisions with any future view named `get_entity_data` in MCP.
+
+## Pitfall #35 (NEW 2026-09-03): cache key must be the entity whose data is being cached
+
+**Symptom:** silent cache collisions. Two unrelated calls (e.g. one fetching data about `project_id=4595` and another about `accountid=120872`) end up reading each other's cached data, because they share the same cache file.
+
+**Wrong (user caught this on 2026-09-03, 6.7):**
+```python
+# BUG: accountid 120872 was used as cache key for project-scoped cache
+user_rows = fetch_with_cache(
+    sid, "Project", "ProjectResourcePlan",
+    filters={"accountid": 120872},   # filter by USER
+    project_id=accountid,             # ⚠️ but used user_id as cache key
+    limit=2000,
+)
+```
+
+**Right:**
+```python
+user_rows = fetch_with_cache(
+    sid, "Project", "ProjectResourcePlan",
+    filters={"accountid": 120872},
+    project_id=project_id,            # ✅ project_id is the cache key
+    limit=2000,
+)
+```
+
+**Rule:** the cache key argument (`project_id` in `fetch_with_cache`) must be the entity whose data is being cached. If the function filters by `accountid` (per-user), the cache key can still be `project_id` (per-project) — but only if you accept that a different account on the same project would share cache. For true per-account cache, the cache key must be `accountid`.
+
+**Audit procedure after the bug (user required 2026-09-03):**
+```bash
+# 1. grep for the specific wrong pattern
+grep -rn "project_id=accountid\|project_id = accountid" scripts/
+
+# 2. manual review: for every fetch_with_cache / get_view / get_entity_data call,
+#    ask: "is the cache key argument the entity whose data is being cached?"
+```
+
+**Don't** limit the audit to the specific bug — the user expects you to find similar issues proactively. (See Pitfall #160 in `fst-project-health` for the methodology.)
+
+## Pitfall #36 (NEW 2026-09-03): after `get_entity_data` swap, `next(r for r in rows if r.get('code') == X)` returns `None`
+
+**Symptom:** after swapping `ProjectParameter` view to `_get_entity_data_` sentinel (Pitfall #34), all indicators that filtered by `code` field start returning `None` for the project card.
+
+**Root cause:** `ProjectParameter` view returns MANY rows (one per project), and the old code filtered by `code`:
+
+```python
+rows = fetch_with_cache(sid, "Project", "ProjectParameter", ...)
+target = next(
+    (r for r in rows if str(r.get("code", "")).strip() == project["code"]),
+    None
+)
+```
+
+After swap, `rows` is **a single-element list** (the current project's card), and it has **no `code` field** (the response is `properties.<field>.value`, not a row with a `code` column).
+
+**Wrong (left over from old code):**
+```python
+# ❌ Returns None — row has no 'code' field
+target = next(
+    (r for r in rows if str(r.get("code", "")).strip() == project["code"]),
+    None
+)
+```
+
+**Right (post-swap):**
+```python
+# ✅ Single element list, just take [0]
+target = rows[0] if rows else None
+```
+
+**Audit after `get_entity_data` swap:**
+```bash
+# Find all places that use the old filter pattern
+grep -rn 'for r in rows if.*r.get(.code.)' scripts/
+
+# Replace with:
+target = rows[0] if rows else None
+```
+
+**Lesson:** when changing the source of a dict, audit ALL access patterns on that dict. The `code` filter pattern was a list-search pattern; after the swap, the data structure is a single dict, and `rows[0]` is the right pattern.
+
+## Pitfall #34 (NEW 2026-09-03): leading-zero integer issue with `budgetsum` in `ProjectBudgetCompleteBusiness`
+
+(See Pitfall #29 above for the main pattern.) **Key data point:** `budgetsum` is consistently 0 across all 4 test projects, all budgettypes, all financesourceids. The actual amounts are in `pay*sum` and `act*sum` with the priority pattern.
+
+**Confirmed with live-probe (504-595, 2026-09-03):**
+- Rows of type "Доходный контракт", "Расход расчет по ресурсам", "Расход ручной ввод" — all have `budgetsum=0`.
+- Real amounts in `actplansum=2497500`, `actforecastsum=2497500`, etc.
+
+**Lesson:** when designing new indicators, never sum `budgetsum` — always use the priority pattern.
+
+**Symptom:** agent writes cross-project logic assuming `get_view(filters={})` returns ALL records across ALL projects. Returns only records the current user has read-access to.
+
+**Discovery (2026-09-02, indicator 6.7):** user's question «откуда брать все активности исполнителя?» — agent should NOT try to manually filter by user-access in code. The MCP server does this transparently.
+
+**Wrong:**
+```python
+# ❌ WRONG — agent assumes full read-access, then tries to implement manual user-access filter:
+all_rows = mcp_call(sid, "get_view", {"viewName": "ProjectResourcePlan", "filters": {}})
+# then iterates with:
+if has_read_access(user, row["project_id"]):  # there's no such helper
+    ...
+```
+
+**Right:**
+```python
+# ✅ RIGHT — trust MCP. Empty filters = "all rows you can read":
+all_rows = mcp_call(sid, "get_view", {
+    "viewName": "ProjectResourcePlan",
+    "filters": {},
+    "limit": 10000,  # bigger limit since returns rows from multiple projects
+})
+# Use directly. Document the user-access boundary in docstring:
+"""
+Returns only rows the calling user has read-access to (MCP auto-filters).
+"""
+```
+
+**Why:** MCP server knows the user's permissions per project. Manual filtering at the client side is impossible (no permission API exposed). If you need only a subset (e.g. only specific projects), pass `filters={"ProjectId": N}` for each.
+
+**Document this in docstrings** for any cross-project indicator — readers (and your future self) need to know the user-access boundary is implicit.
+
+## Pitfall #28 (NEW 2026-09-02): строковые enum-значения из MCP приходят с trailing пробелом
+
+**Symptom:** `row.get("ProjectTypeName") == "Коммерческий"` returns False even when the project is commercial.
+
+**Discovery (2026-09-02, indicator 6.8):** live-probe shows `ProjectTypeName="Коммерческий "` (5 letters + space) and `ProjectCustomerTypeName="Госы"` (no space — sometimes). The trailing whitespace is inconsistent across fields.
+
+**Wrong:**
+```python
+# ❌ WRONG — equality check fails due to trailing space:
+if row.get("ProjectTypeName") == "Коммерческий":
+    ...
+```
+
+**Right:**
+```python
+# ✅ RIGHT — strip before comparing:
+project_type = (row.get("ProjectTypeName") or "").strip()
+if project_type == "Коммерческий":
+    ...
+```
+
+**Other examples observed (2026-09-02):**
+
+| Field | Value | Has trailing space? |
+|-------|-------|:-------------------:|
+| `ProjectTypeName` | `"Коммерческий "` | ✅ yes |
+| `ProjectCustomerTypeName` | `"Госы"` | ❌ no |
+| `IndicatorTitle` | `"Подтверждено"` | ❌ no (but verify per deployment) |
+| `PointStateName` | `"В работе"` | ❌ no |
+
+**Discipline:** always `.strip()` any string from MCP before equality comparison or regex match. Use `(row.get(field) or "").strip()` for safe handling of None + whitespace.
+
+**Live-probe recipe:** when introducing a new enum-like field, run the inspect-fields step (Pitfall #18 pattern) and check whether the actual values have leading/trailing whitespace — print `repr(value)` not `value`.
+
+## Pitfall #22 (NEW 2026-09-02): namespace `mcp__fst_pmpractice__get_view(...)` DEPRECATED
+
+**Symptom:** code/docs reference `mcp__fst_pmpractice__get_view(entityName="...", viewName="...")` — this namespace wrapper is gone. Must use the generic `mcp_call(sid, "get_view", {...})` directly.
+
+**Wrong (DEPRECATED):**
+```python
+view = mcp__fst_pmpractice__get_view(
+    entityName="Project", viewName="MyProject"
+)
+```
+
+**Right:**
+```python
+from mcp_config import mcp_call
+sid, _ = mcp_init(client_name="...")
+view = mcp_call(sid, "get_view", {
+    "entityName": "Project",
+    "viewName": "MyProject",
+    "filters": {},  # standard format (Pitfall #18)
+    "limit": 1000,
+})
+```
+
+**Migration pattern (used 2026-09-01 to fix 5 skills):**
+1. `grep -rn "mcp__fst_pmpractice__" skills/<skill>/` → find all usages
+2. Replace `mcp__fst_pmpractice__get_view(` → `mcp_call(sid, "get_view", {`
+3. Fix syntax — old kwargs `entityName="X"` → dict `"entityName": "X"`
+4. Add `"filters": {}` (Pitfall #18)
+5. Add `from mcp_config import mcp_call` if missing
+6. Run tests
+
+**Regex migrations:** `re.sub(r'mcp__fst_pmpractice__get_view\(', 'mcp_call(sid, "get_view", {', content)`
+
+**Migrated 2026-09-01:** project-search (v2.0.0), project-effort-plan, project-effort-write, project-timing-control, project-completeness-check.
+
+---
+
+## Portability rule for skills (added 2026-09-02)
+
+**Hard rule:** never hardcode `/root/...` paths in skill scripts/tests. Use `Path(__file__).resolve().parent.parent`.
+
+**Wrong:**
+```python
+SKILL_DIR = Path("/root/.hermes/profiles/fst-control/skills/productivity/fst-project-health")
+```
+
+**Right:**
+```python
+SKILL_DIR = Path(__file__).resolve().parent.parent
+```
+
+**Why:** user must be able to `tar czf skill.tar.gz <skill>/`, copy to another server, untar, and have everything work without modification. Verified by simulating copy to `/tmp/test-portability/` — both `tests/run_all_tests.py` and pipeline work from the new location.
+
+**Files to patch:** every `SKILL_DIR = Path("/root/...")` in `scripts/*.py` and `tests/*.py`. Use `sed -i 's|SKILL_DIR = Path("/root/...|SKILL_DIR = Path(__file__).resolve().parent.parent|'`.
+
+**Also applies to:** `mcp_config.py` `ENV_FILE = Path.home() / ".hermes/profiles/fst-control/.env"` — this is FINE (uses `Path.home()`), but the dirname `.hermes/profiles/fst-control/` may not match on another server. Document the env var convention; don't rely on a specific profile name.
+
+---
+
+## Related-skill minimalism (added 2026-09-02)
+
+When user asks «что у нас в related_skills?», default to MINIMUM viable set. Don't list every conceivable helper.
+
+**Decision rule:**
+- Include a related_skill ONLY if it gets loaded by the agent in normal use of this skill.
+- Do NOT include skills that are merely mentioned in references/.
+- Do NOT include `fst-pmpractice` (base class — implicit).
+- Do NOT include future/planned skills.
+
+**Example for `fst-project-health`:**
+```yaml
+related_skills: [project-search, mcp-server-probing]  # 2 only
+```
+Not 6+ like "project-completeness-check, project-timing-control, ..." — those are separate reports, not parts of fst-project-health.

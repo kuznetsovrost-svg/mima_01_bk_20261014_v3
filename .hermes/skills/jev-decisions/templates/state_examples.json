@@ -1,0 +1,118 @@
+{
+  "comment": "Examples of structured state for JEV. Use JSON instead of long text strings when context has several parts.",
+  "examples": [
+    {
+      "name": "audio_file",
+      "description": "Audio file metadata + content for transcription pipeline",
+      "state": {
+        "file": {
+          "name": "lecture_2026_10_15.mp3",
+          "size_kb": 5400,
+          "format": "mp3"
+        },
+        "audio": {
+          "duration_sec": 1800,
+          "bitrate_bps": 128000,
+          "channels": 1,
+          "sample_rate_hz": 44100
+        },
+        "metadata": {
+          "title": "Лекция 5: BPMN шлюзы",
+          "date": "2026-10-15",
+          "speaker": "Иванов И.И."
+        }
+      }
+    },
+    {
+      "name": "tz_requirement",
+      "description": "Single requirement from TZ for classification",
+      "state": {
+        "requirement": {
+          "id": "REQ-042",
+          "text": "Система должна обеспечивать формирование и ведение карточки проекта",
+          "source": "ТЗ ФГК 2021"
+        },
+        "context": {
+          "domain": "управление проектами",
+          "total_requirements": 100,
+          "current_group": "Управление проектами"
+        }
+      }
+    },
+    {
+      "name": "wiki_page",
+      "description": "Wiki page for annotation and enrichment prioritization",
+      "state": {
+        "page": {
+          "title": "BPMN: Exclusive Gateway",
+          "path": "02-Domains/BPMN/Concepts/Exclusive-Gateway.md",
+          "word_count": 850,
+          "incoming_links": 12,
+          "outgoing_links": 8
+        },
+        "content_preview": "Exclusive gateway (XOR) — тип шлюза в BPMN...",
+        "vault_context": {
+          "total_pages": 487,
+          "domain_pages": 45
+        }
+      }
+    },
+    {
+      "name": "incoming_message",
+      "description": "Telegram message for routing decision",
+      "state": {
+        "message": {
+          "text": "пришли мне playbook по JEV",
+          "from": "user_123",
+          "timestamp": "2026-10-04T10:30:00Z"
+        },
+        "user": {
+          "id": "user_123",
+          "is_admin": true,
+          "active_profile": "default"
+        },
+        "context": {
+          "time_of_day": "morning",
+          "recent_topics": ["transcription", "JEV"]
+        }
+      }
+    },
+    {
+      "name": "pair_comparison",
+      "description": "Two requirements for pairwise similarity scoring",
+      "state": {
+        "req_a": {
+          "id": "REQ-A-042",
+          "text": "Просмотр реестра проектов в иерархическом виде",
+          "source": "ТЗ ФГК 2021"
+        },
+        "req_b": {
+          "id": "REQ-B-031",
+          "text": "Система должна обеспечивать отображение иерархии проектов",
+          "source": "ТЗ Заказчик 2026"
+        }
+      }
+    },
+    {
+      "name": "llm_output_validation",
+      "description": "LLM output for JEV quality gate",
+      "state": {
+        "output": "Сгенерированный текст после LLM-обработки...",
+        "prompt": "Original prompt that was sent to LLM",
+        "model": "MiniMax-M3",
+        "context": {
+          "expected_format": "markdown",
+          "domain": "BA / BPMN",
+          "audience": "BA-аналитик"
+        }
+      }
+    }
+  ],
+  "principles": [
+    "Prefer named JSON fields when context has several parts",
+    "Reference nested state in instructions with backticks: `req_a.text`",
+    "Include relevant metadata (file size, timestamps, IDs) for context",
+    "Keep content previews short (first 1-3K chars)",
+    "Don't pass full 50K char text — use summaries"
+  ]
+}

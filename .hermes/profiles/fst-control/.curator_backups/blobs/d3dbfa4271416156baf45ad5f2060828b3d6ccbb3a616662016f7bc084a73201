@@ -1,0 +1,188 @@
+# MCP SSE-парсинг + UTF-8 ловушка
+
+> Зафиксировано 2026-08-05 при отладке `fst-project-health` против
+> MCP `https://ppreplica.hera.pmpractice.ru/mcp` (версия 3.2.4).
+> Воспроизводится на любых MCP-эндпоинтах, которые возвращают
+> `Content-Type: text/event-stream` без явного `charset=utf-8`.
+
+## TL;DR
+
+```python
+resp = requests.post(URL, json=payload, headers=HEADERS, timeout=60)
+resp.raise_for_status()
+resp.encoding = "utf-8"        # ← КРИТИЧНО: без этого кириллица ломается
+for line in resp.text.splitlines():
+    if line.startswith("data: "):
+        envelope = json.loads(line[6:])
+        break
+inner = json.loads(envelope["result"]["content"][0]["text"])
+```
+
+## Проблема 1 — кириллица ломается без `resp.encoding = "utf-8"`
+
+**Симптом:** `json.loads` падает на «Unterminated string starting at
+column 68» (или похожих), в данных видны `ÐÑÐ¾ÐµºÑ` вместо `Проекты».
+
+**Корень:** MCP-сервер отдаёт `Content-Type: text/event-stream` **без
+charset**. `requests` в этом случае выставляет `resp.encoding =
+"ISO-8859-1"`. Реальные байты в теле — UTF-8. После latin-1→unicode
+байты `0xd0 0x9f` (буква «П») превращаются в U+00D0 U+009F, JSON
+парсер видит мусор и падает на первой же кавычке.
+
+**Проверка-в-одну-строку:**
+
+```python
+r = requests.post(URL, json=payload, headers=h, timeout=60)
+print(r.encoding, r.apparent_encoding, r.content[:30])
+# ISO-8859-1 utf-8  b'\\xd0\\x9f\\xd1\\x80\\xd0\\xbe...'  ← этот случай
+# utf-8       utf-8  b'...'                                ← всё ок
+```
+
+**Фикс — принудительный UTF-8 перед чтением `r.text`:**
+
+```python
+r = requests.post(URL, json=payload, headers=h, timeout=60)
+r.raise_for_status()
+r.encoding = "utf-8"          # ← ОБЯЗАТЕЛЬНО
+for line in r.text.splitlines():
+    ...
+```
+
+Применять **после каждого `requests.post(...)` к MCP-эндпоинту**, у
+которого Content-Type не содержит `charset`. Это общая проблема
+SSE-эндпоинтов Форсайт, не специфика одной версии.
+
+## Проблема 2 — `stream=True` + `iter_lines` теряет строки на больших ответах
+
+**Симптом:** на view с >100 записей (например, `MyProject`) парсер
+теряет часть SSE-строк на границе chunked transfer, в результате
+`data:`-строка оказывается обрезанной и `json.loads` падает с той же
+«Unterminated string» ошибкой. Или возвращается неполный JSON.
+
+**Корень:** `iter_lines(decode_unicode=True)` читает потоково. На
+больших телах (38+ КБ для `get_view(Project, MyProject)`) строки
+могут приходить порциями через TCP-chunking, и парсер склеивает/
+обрезает их на границе chunk'а. Плюс `decode_unicode=True` иногда
+даёт странное на многобайтовых UTF-8 границах.
+
+**Фикс — читать тело целиком, без `stream=True`:**
+
+```python
+resp = requests.post(URL, json=payload, headers=h, timeout=60)
+resp.raise_for_status()
+resp.encoding = "utf-8"
+for line in resp.text.splitlines():    # ← НЕ iter_lines
+    if line.startswith("data: "):
+        return json.loads(line[6:])
+```
+
+## Проблема 3 — двойное кодирование envelope → text
+
+Структура ответа MCP `tools/call` — **JSON-в-строке**:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"ViewName\":\"MyProject\",\"data\":[…]}"  // ← это JSON-строка
+      }
+    ]
+  }
+}
+```
+
+То есть нужно **два** `json.loads`:
+
+```python
+envelope = json.loads(line[6:])                                 # 1) envelope
+inner    = json.loads(envelope["result"]["content"][0]["text"]) # 2) payload
+```
+
+## Полный рабочий шаблон клиента
+
+```python
+import requests, json, os
+
+MCP_URL = "https://ppreplica.hera.pmpractice.ru/mcp"
+TOKEN = os.environ.get("PMP_TOKEN")
+if not TOKEN:
+    raise RuntimeError("PMP_TOKEN не задан")
+
+BASE_HEADERS = {
+    "Accept": "application/json, text/event-stream",
+    "Content-Type": "application/json",
+    "Authorization": f"Bearer {TOKEN}",
+}
+
+
+def mcp_init() -> tuple[str, dict]:
+    """Initialize session. Returns (session_id, serverInfo)."""
+    payload = {
+        "jsonrpc": "2.0", "id": 1, "method": "initialize",
+        "params": {"protocolVersion": "2024-11-05",
+                   "capabilities": {},
+                   "clientInfo": {"name": "client", "version": "1.0"}},
+    }
+    r = requests.post(MCP_URL, json=payload, headers=BASE_HEADERS, timeout=30)
+    r.raise_for_status()
+    r.encoding = "utf-8"   # ← CRITICAL
+    sid = r.headers.get("mcp-session-id")
+    if not sid:
+        raise RuntimeError("no session id")
+    # Парсим serverInfo
+    info = {}
+    for line in r.text.splitlines():
+        if line.startswith("data: "):
+            env = json.loads(line[6:])
+            info = env.get("result", {}).get("serverInfo", {})
+            break
+    # notifications/initialized
+    requests.post(MCP_URL, json={"jsonrpc":"2.0","method":"notifications/initialized"},
+                  headers={**BASE_HEADERS, "mcp-session-id": sid}, timeout=10)
+    return sid, info
+
+
+def mcp_call(sid: str, tool_name: str, arguments: dict) -> dict:
+    """Call a tool, return parsed result content[0].text (or {_error: ...})."""
+    payload = {"jsonrpc":"2.0","id":1,"method":"tools/call",
+               "params":{"name": tool_name, "arguments": arguments}}
+    r = requests.post(MCP_URL, json=payload,
+                      headers={**BASE_HEADERS, "mcp-session-id": sid},
+                      timeout=60)
+    r.raise_for_status()
+    r.encoding = "utf-8"   # ← CRITICAL
+    envelope = None
+    for line in r.text.splitlines():
+        if line.startswith("data: "):
+            envelope = json.loads(line[6:])
+            break
+    if envelope is None:
+        raise RuntimeError("no data: line in SSE")
+    result = envelope.get("result", {})
+    if result.get("isError"):
+        return {"_error": result["content"][0]["text"]}
+    return json.loads(result["content"][0]["text"])
+```
+
+## Чек-лист
+
+- [ ] После `requests.post(...)` сразу `resp.encoding = "utf-8"`
+- [ ] НЕ используется `stream=True` + `iter_lines` для MCP-ответов
+- [ ] Парсится в два этапа: envelope → `content[0].text` → inner JSON
+- [ ] Все заголовки на месте: `Accept: application/json, text/event-stream`,
+      `Content-Type: application/json`, `Authorization: Bearer ...`,
+      `mcp-session-id: ...` (после initialize)
+- [ ] Между `initialize` и первым `tools/call` отправлен
+      `notifications/initialized` (без поля `id`)
+
+## Связанные находки
+
+- `references/contract-binding-via-parentfullname.md` — привязка
+  контракт↔проект (другая находка того же дня, 2026-08-05)
+- `references/save-entity-pitfalls.md` — параметры save_entity
+- `fst-project-health/references/forsight-mcp-quirks.md` — те же pitfall'ы
+  в контексте конкретного скилла, более детальные live-repro

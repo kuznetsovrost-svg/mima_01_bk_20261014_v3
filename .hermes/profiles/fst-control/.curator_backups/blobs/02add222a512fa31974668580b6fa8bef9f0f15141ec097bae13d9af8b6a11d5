@@ -1,0 +1,60 @@
+{
+  "timestamp": "2026-08-21 21:35:05",
+  "skill": "fst-project-health",
+  "version": "0.9.0",
+  "total_tests": 6,
+  "pass_count": 6,
+  "fail_count": 0,
+  "skipped_count": 0,
+  "total_duration_sec": 1.272,
+  "tests": [
+    {
+      "name": "test_helpers.py",
+      "status": "PASS",
+      "duration_sec": 0.157,
+      "returncode": 0,
+      "stdout_tail": "",
+      "stderr_tail": "keys_deprecated)\nMETA_TIME_KEYS помечен как DEPRECATED (live-probe 2026-08-07). ... ok\ntest_project_budget_view_constant (__main__.TestMcpConfigHelpers.test_project_budget_view_constant) ... ok\ntest_project_budget_view_for (__main__.TestMcpConfigHelpers.test_project_budget_view_for) ... ok\ntest_project_resource_plan_view_for (__main__.TestMcpConfigHelpers.test_project_resource_plan_view_for) ... ok\n\n----------------------------------------------------------------------\nRan 8 tests in 0.000s\n\nOK\n"
+    },
+    {
+      "name": "test_imports.py",
+      "status": "PASS",
+      "duration_sec": 0.211,
+      "returncode": 0,
+      "stdout_tail": "",
+      "stderr_tail": "test_all_scripts_importable (__main__.TestImports.test_all_scripts_importable) ... ok\ntest_build_html_main_exists (__main__.TestImports.test_build_html_main_exists) ... ok\ntest_build_word_main_exists (__main__.TestImports.test_build_word_main_exists) ... ok\ntest_run_all_main_exists (__main__.TestImports.test_run_all_main_exists)\nrun_all.py имеет функцию main() для CLI. ... ok\n\n----------------------------------------------------------------------\nRan 4 tests in 0.126s\n\nOK\n"
+    },
+    {
+      "name": "test_no_hardcode.py",
+      "status": "PASS",
+      "duration_sec": 0.075,
+      "returncode": 0,
+      "stdout_tail": "",
+      "stderr_tail": "_production)\nВ production скриптах не должно быть \"504-595\" в коде (вне комментариев). ... ok\ntest_no_hardcoded_project_id_in_production (__main__.TestNoHardcode.test_no_hardcoded_project_id_in_production)\nВ production скриптах не должно быть 'data_id: 4595' в коде. ... ok\ntest_production_scripts_exist (__main__.TestNoHardcode.test_production_scripts_exist)\nВсе production скрипты существуют. ... ok\n\n----------------------------------------------------------------------\nRan 4 tests in 0.019s\n\nOK\n"
+    },
+    {
+      "name": "test_pipeline_integration.py",
+      "status": "PASS",
+      "duration_sec": 0.606,
+      "returncode": 0,
+      "stdout_tail": "",
+      "stderr_tail": "n__.TestPipelineIntegration.test_rebuild_report_help)\npython3 scripts/rebuild_report.py без аргументов показывает usage. ... ok\ntest_run_all_help (__main__.TestPipelineIntegration.test_run_all_help)\npython3 scripts/run_all.py --help работает. ... ok\ntest_run_all_requires_code (__main__.TestPipelineIntegration.test_run_all_requires_code)\npython3 scripts/run_all.py без --code падает с ошибкой. ... ok\n\n----------------------------------------------------------------------\nRan 6 tests in 0.545s\n\nOK\n"
+    },
+    {
+      "name": "test_run_all.py",
+      "status": "PASS",
+      "duration_sec": 0.16,
+      "returncode": 0,
+      "stdout_tail": "",
+      "stderr_tail": "ture)\nmain() принимает --code (required). ... ok\ntest_parse_date_handles_iso (__main__.TestRunAllCLI.test_parse_date_handles_iso)\nparse_date обрабатывает ISO формат. ... ok\ntest_parse_date_handles_null (__main__.TestRunAllCLI.test_parse_date_handles_null) ... ok\ntest_save_project_json_returns_path (__main__.TestRunAllCLI.test_save_project_json_returns_path)\nsave_project_json возвращает Path. ... ok\n\n----------------------------------------------------------------------\nRan 9 tests in 0.007s\n\nOK\n"
+    },
+    {
+      "name": "test_skill_md_integrity.py",
+      "status": "PASS",
+      "duration_sec": 0.064,
+      "returncode": 0,
+      "stdout_tail": "",
+      "stderr_tail": "estSkillMdIntegrity.test_lists_output_formats)\nSKILL.md упоминает все 4 формата вывода (MD, HTML, MD Форма 2, WORD Форма 1). ... ok\ntest_no_figma_functionality (__main__.TestSkillMdIntegrity.test_no_figma_functionality)\nSKILL.md не содержит FIGMA-bridge функционал. ... ok\ntest_version_at_least_090 (__main__.TestSkillMdIntegrity.test_version_at_least_090)\nВерсия >= 0.9.0 (после FIGMA-отката). ... ok\n\n----------------------------------------------------------------------\nRan 8 tests in 0.007s\n\nOK\n"
+    }
+  ]
+}

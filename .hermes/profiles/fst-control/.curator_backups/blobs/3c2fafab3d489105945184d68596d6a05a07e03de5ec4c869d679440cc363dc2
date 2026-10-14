@@ -1,0 +1,62 @@
+__version__ = "1.0.19"
+# Показатель 3 раздела 4: проверка наличия паспорта проекта.
+#
+# Логика (v2, исправлено 2026-08-06):
+# - На стадии Пресейл (phase_num < 2) паспорт обычно ещё не прикрепляется.
+#   «Нет» на этой стадии = НОРМА, не замечание.
+# - На стадии Инициирование и позже (phase_num >= 2) паспорт ОБЯЗАН быть.
+#   «Нет» на этих стадиях = КРИТИЧЕСКОЕ замечание.
+#
+# Раньше: phase_ok = phase_num <= 2 (то есть «допустимо что паспорта нет»).
+# Теперь: phase_requires_passport = phase_num >= 2 (то есть «паспорт обязателен»).
+
+PHASE_ORDER = {
+    "Пресейл": 1, "Инициирование": 2, "Подготовка": 3,
+    "Реализация": 4, "Завершение": 5, "Архив": 6,
+}
+
+# 1. Данные проекта
+proj = mcp__fst_pmpractice__get_entity_data(
+    entityName="Project", data_id="4595"
+)
+phase_field = proj["properties"].get("ActivityPhaseId") or {}
+phase_value = phase_field.get("value")
+
+# Защита: если стадия не указана или пустой массив — считаем «неизвестно»
+if not phase_value or not isinstance(phase_value, dict):
+    phase_display = ""
+    phase_num = 999  # «неизвестно» — трактуем как требующую паспорт (критично)
+else:
+    phase_display = phase_value.get("display", "")
+    phase_num = PHASE_ORDER.get(phase_display, 999)
+
+# ⚠️ НОВАЯ ЛОГИКА: паспорт обязателен только на Инициирование и позже
+phase_requires_passport = phase_num >= 2
+
+# 2. Документы
+docs = mcp__fst_pmpractice__get_view(
+    entityName="DocumentFile", viewName="DocumentFileViewAll"
+)
+passport = False
+for r in docs["data"]:
+    if (r.get("EntityTitle") == "Проект"
+        and "504-595" in (r.get("DataName") or "")
+        and "паспорт" in (r.get("DocumentName") or "").lower()):
+        passport = True
+        break
+
+# 3. Итог — логика зависит от стадии ЖЦ
+if passport:
+    result = "Да"
+    detail = f"Паспорт прикреплён, стадия «{phase_display}»"
+elif not phase_requires_passport:
+    # Стадия Пресейл (или неизвестно) — паспорт НЕ обязателен
+    result = "Да"
+    detail = (f"Стадия «{phase_display}» (Пресейл/до-Инициирования) — "
+              f"паспорт на этой стадии не требуется")
+else:
+    # Стадия Инициирование и позже — паспорт ОБЯЗАН быть
+    result = "Нет"
+    reasons = [f"паспорт не прикреплён на стадии «{phase_display}» "
+              f"(обязателен с «Инициирование»)"]
+    detail = "; ".join(reasons)

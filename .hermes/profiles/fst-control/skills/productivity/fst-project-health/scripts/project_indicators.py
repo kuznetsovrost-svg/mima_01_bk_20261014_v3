@@ -1,0 +1,2743 @@
+__version__ = "1.0.19"
+"""
+project_indicators.py — все 16 индикаторов для секции «Показатели проекта» (v1.0.0).
+
+Структура каждого индикатора:
+1. Функция `check_<name>(project, sid, ...) -> IndicatorResult`
+2. Docstring с 4 секциями: Назначение / Получение / Интерпретация / Вывод
+3. Возвращает dataclass `IndicatorResult`
+
+Кеширование:
+- Все запросы к MCP кешируются в /tmp/.cache_indicators_<pid>.json (TTL=5 мин)
+- Если 2 индикатора запрашивают одни данные — переиспользуем (из кеша или одного запроса)
+
+Добавление нового индикатора:
+1. Добавить функцию `check_<name>(...)` с docstring
+2. Зарегистрировать в `INDICATORS` (список всех индикаторов в порядке)
+3. Добавить пороги в `indicator_thresholds.py`
+"""
+from dataclasses import dataclass, field
+from typing import Optional, List, Dict, Any, Tuple
+from pathlib import Path
+import json
+import time
+import sys
+import os
+
+# Импортируем общие компоненты
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from lc_stage_kt_registry import (
+    LC_STAGES, MANDATORY_KT_BY_STAGE,
+    heuristic_evaluate, get_stage_index, compare_actual_with_expected,
+    is_point_confirmed, is_point_completed,
+)
+
+
+@dataclass
+class IndicatorResult:
+    """Результат проверки одного индикатора.
+
+    Attributes:
+        number: Номер индикатора (1..16) → отображается как "6.N"
+        name: Название индикатора (на русском)
+        result: "Да" / "Нет" / "Да/Нет с деталями" — результат проверки
+        detail: Краткая детализация (1 строка)
+        verdict: "Норма" / "Информационное" / "Существенное" / "Критическое"
+        table: Опциональная таблица для раскрытия (3-й уровень)
+        table_title: Заголовок раскрывающейся таблицы (если есть)
+    """
+    number: int
+    name: str
+    result: str
+    detail: str
+    verdict: str = "Норма"
+    table: Optional[List[Dict[str, Any]]] = None
+    table_title: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Для JSON-сериализации."""
+        return {
+            "number": self.number,
+            "name": self.name,
+            "result": self.result,
+            "detail": self.detail,
+            "verdict": self.verdict,
+            "table": self.table,
+            "table_title": self.table_title,
+        }
+
+
+@dataclass
+class SectionVerdict:
+    """Вердикт всей секции «Показатели проекта»."""
+    verdict: str  # Норма / Информационное / Существенное / Критическое
+    counts: Dict[str, int] = field(default_factory=lambda: {
+        "critical": 0, "substantial": 0, "informational": 0, "normal": 0
+    })
+
+    def from_results(results: List[IndicatorResult]) -> "SectionVerdict":
+        """Вычислить вердикт секции по результатам всех индикаторов."""
+        counts = {"critical": 0, "substantial": 0, "informational": 0, "normal": 0}
+        for r in results:
+            if r.verdict == "Критическое":
+                counts["critical"] += 1
+            elif r.verdict == "Существенное":
+                counts["substantial"] += 1
+            elif r.verdict == "Информационное":
+                counts["informational"] += 1
+            else:
+                counts["normal"] += 1
+        if counts["critical"] > 0:
+            verdict = "Критическое"
+        elif counts["substantial"] > 0:
+            verdict = "Существенное"
+        elif counts["informational"] > 0:
+            verdict = "Информационное"
+        else:
+            verdict = "Норма"
+
+        return SectionVerdict(verdict=verdict, counts=counts)
+
+    def __str__(self) -> str:
+        """Строковое представление для отображения в отчёте."""
+        return self.verdict
+
+
+# ============================================================================
+# ИНДИКАТОРЫ (16 штук)
+# ============================================================================
+
+# Список всех индикаторов в порядке (1..16) — для рендеринга секции.
+# Заполняется в конце файла, чтобы избежать циклических импортов.
+INDICATORS: List[Any] = []
+
+
+# --------------------------------------------------------------------------
+# 6.1 — Юрлицо проекта/пресейла указано
+# --------------------------------------------------------------------------
+
+def check_jurlico(project: dict, sid) -> IndicatorResult:
+    """Индикатор 6.1: Юрлицо проекта/пресейла указано.
+
+    Назначение:
+        Проверить что в карточке проекта указано юридическое лицо, от имени
+        которого ведётся проект с Заказчиком. Без юрлица невозможно
+        корректное ведение корпоративного учёта — заранее спрогнозировать
+        поступление средств на конкретный расчётный счёт не получится.
+
+    Получение данных:
+        View: Project/ProjectParameter (entityName="Project").
+        Поле: ProjectCompanyNames (str) — название юрлица.
+        Live-probe 2026-09-02 (504-595): ProjectCompanyNames = "Проектная ПРАКТИКА".
+
+    Интерпретация:
+        - Указано (непустая строка) → result=ProjectCompanyNames, verdict="Норма"
+        - Не указано (None или "") → result="Нет", verdict="Критическое"
+
+    Вывод:
+        Колонка "Результат": название юрлица (например "Проектная ПРАКТИКА")
+        или "Нет" если пусто.
+        Колонка "Детали": пустая (нет вложенной таблицы).
+    """
+    project_id = project["project_id"]
+    rows = fetch_with_cache(
+        sid, "Project", "_get_entity_data_",
+        filters={},  # ProjectParameter не поддерживает фильтры через наш кеш
+        project_id=project_id,
+        limit=200,
+    )
+
+    # Ищем наш проект (теперь в списке только один — текущий)
+    target = rows[0] if rows else None
+    if not target:
+        return IndicatorResult(
+            number=1,
+            name="Юрлицо проекта/пресейла указано",
+            result="Ошибка",
+            detail="Проект не найден в ProjectParameter",
+            verdict="Критическое",
+        )
+
+    company = (target.get("ProjectCompanyNames") or "").strip()
+
+    if company:
+        return IndicatorResult(
+            number=1,
+            name="Юрлицо проекта/пресейла указано",
+            result=company,
+            detail="",
+            verdict="Норма",
+        )
+    else:
+        return IndicatorResult(
+            number=1,
+            name="Юрлицо проекта/пресейла указано",
+            result="Нет",
+            detail="невозможно спрогнозировать поступление средств на р/с",
+            verdict="Критическое",
+        )
+
+
+# --------------------------------------------------------------------------
+# 6.2 — Актуальность состояния ЖЦ
+# --------------------------------------------------------------------------
+
+def _format_kt_remark(issue: dict) -> str:
+    """Форматирует одну запись issues в человекочитаемое замечание.
+
+    Примеры:
+        overdue_kt      → "КТ 'Пресейл закрыт' не выполнена, просрочено 10 дн."
+        kt_missing      → "Не создана КТ 'Пресейл закрыт'"
+        not_confirmed   → "КТ 'Пресейл закрыт' выполнена, но не подтверждена согласующим"
+        stage_not_advanced → "Не отдана команда на переход в следующую стадию ЖЦ"
+        no_transition_command → "Не отдана команда на переход в следующую стадию ЖЦ"
+    """
+    kt = issue.get("kt_name", "?")
+    if issue["type"] == "overdue_kt":
+        days = issue.get("days_overdue", 0)
+        return f"КТ '{kt}' не выполнена, просрочено {days} дн."
+    elif issue["type"] == "mandatory_kt_overdue":
+        days = issue.get("days_overdue", 0)
+        return f"Просрочена обязательная КТ '{kt}', {days} дн."
+    elif issue["type"] == "kt_missing":
+        return f"Не создана КТ '{kt}'"
+    elif issue["type"] == "mandatory_kt_missing":
+        return f"Не создана КТ '{kt}' (требуется для стадии '{issue.get('stage', '?')}')"
+    elif issue["type"] == "not_confirmed":
+        return f"КТ '{kt}' выполнена, но не подтверждена согласующим"
+    elif issue["type"] == "kt_unconfirmed":
+        days = issue.get("days_unconfirmed", 0)
+        return f"КТ '{kt}' выполнена, но не подтверждена {days} дн."
+    elif issue["type"] == "stage_not_advanced":
+        # Согласно Q3: "Рекомендацию по стадии отдельно не выводить никуда.
+        # Пользователю должно быть понятно что делать из замечаний"
+        return "Не отдана команда на переход в следующую стадию ЖЦ"
+    elif issue["type"] == "no_transition_command":
+        return "Не отдана команда на переход в следующую стадию ЖЦ"
+    return f"Замечание по КТ '{kt}'"
+
+
+def check_lifecycle_stage(project: dict, sid) -> IndicatorResult:
+    """Индикатор 6.2: Актуальность состояния ЖЦ.
+
+    Назначение:
+        Проверить что указанная в карточке стадия ЖЦ соответствует реальной
+        ситуации в проекте. Пользователи иногда не переводят проект
+        своевременно — это блокирует работу.
+
+    Получение данных:
+        - Стадия проекта: Project/ProjectParameter.activityphase (или
+          Project/MyProject.ActivityPhaseName).
+        - КТ проекта: Point/AllMyPoint с фильтром ProjectId=<id>.
+          Поля: Name (название), FactDate (закрыта ли), ForecastDate (срок),
+          IndicatorTitle ("В работе"/"Подтверждено"/"Просрочено").
+        - Справочник обязательных КТ по стадиям: scripts/lc_stage_kt_registry.py.
+
+    Интерпретация (3 варианта несоответствия):
+        1. Обязательная КТ просрочена → Критическое
+           (стадия не завершилась вовремя).
+        2. КТ выполнена, но IndicatorTitle != "Подтверждено"
+           (не подтверждена согласующим) → Существенное.
+        3. Все КТ стадии закрыты и подтверждены, но проект
+           не переведён в следующую стадию → Информационное.
+
+    Вывод:
+        - Колонка "Результат": "Да <Стадия>" если соответствует, иначе
+          "Нет <Стадия>".
+        - Вложенная таблица (▼): список замечаний по КТ.
+        - Рекомендация по стадии НЕ выводится отдельно (считывается из замечаний).
+    """
+    project_id = project["project_id"]
+
+    # 1. Получаем стадию ЖЦ из ProjectParameter (там есть lowercase 'activityphase')
+    param_rows = fetch_with_cache(
+        sid, "Project", "_get_entity_data_",
+        filters={}, project_id=project_id, limit=200,
+    )
+    param = param_rows[0] if param_rows else {}
+    actual_stage = (param.get("activityphase") if param else None) or ""
+
+    # 2. Получаем все КТ проекта
+    points = fetch_with_cache(
+        sid, "Point", "AllMyPoint",
+        filters={"ProjectId": project_id},
+        project_id=project_id, limit=200,
+    )
+
+    # 3. Формируем списки для эвристики
+    kt_names = [p.get("Name", "") for p in points if p.get("Name")]
+
+    kt_with_fact = []
+    for p in points:
+        fact = p.get("FactDate")
+        forecast = p.get("ForecastDate")
+        if not fact and forecast:
+            # Только КТ БЕЗ фактической даты (просроченные или в работе)
+            kt_with_fact.append({
+                "name": p.get("Name", ""),
+                "FactDate": fact,
+                "ForecastDate": forecast,
+            })
+
+    # Связь IndicatorTitle с "подтверждено" (используем справочник)
+    kt_with_approvers = []
+    for p in points:
+        fact = p.get("FactDate")
+        indicator = p.get("IndicatorTitle", "")
+        is_confirmed = is_point_confirmed(indicator)
+        kt_with_approvers.append({
+            "name": p.get("Name", ""),
+            "FactDate": fact,
+            "ApproverConfirmed": is_confirmed,
+        })
+
+    # 4. Эвристика
+    result = heuristic_evaluate(
+        actual_stage=actual_stage,
+        actual_kt_names=kt_names,
+        kt_with_fact_dates=kt_with_fact,
+        kt_with_approvers=kt_with_approvers,
+    )
+
+    # 5. Формируем ответ
+    issues = result.get("issues", [])
+    verdict = result["verdict"]
+
+    # Результат: "Да <Стадия>" или "Нет <Стадия>"
+    prefix = "Да" if verdict == "Норма" else "Нет"
+    result_text = f"{prefix} {actual_stage}"
+
+    # Вложенная таблица
+    # Инициализация таблицы замечаний (None = нет замечаний)
+    table: Optional[list] = None
+    if issues:
+        table = []
+        for i, issue in enumerate(issues, 1):
+            table.append({
+                "n": i,
+                "remark": _format_kt_remark(issue),
+                "severity": issue.get("severity", "informational"),
+            })
+
+    # Дополнительно: показать отсутствующие обязательные КТ ТЕКУЩЕЙ стадии в таблице.
+    # (по Шагу 2 — нарушение правил ведения проекта).
+    #
+    # ВАЖНО: по Шагу 6 — мы обращаем внимание ТОЛЬКО на КТ текущей стадии.
+    # КТ предыдущих стадий (если они отсутствуют) НЕ выводятся здесь.
+    # Это по логике пользователя 2026-09-02: "мы идём последовательно по
+    # стадиям ЖЦ и обращаем внимание только на то, что относится к ДАННОЙ стадии".
+    if actual_stage in MANDATORY_KT_BY_STAGE:
+        current_mandatory = MANDATORY_KT_BY_STAGE[actual_stage]
+        if current_mandatory:
+            # Получаем список названий КТ из points (point - это dict с полем Name)
+            kt_names_list = [p.get("Name", "") for p in points if p.get("Name")]
+            # Какие из текущих обязательных КТ отсутствуют
+            current_missing = [
+                m for m in current_mandatory
+                if not any(m.lower() in n.lower() or n.lower() in m.lower()
+                          for n in kt_names_list)
+            ]
+            # Если есть отсутствующие обязательные КТ текущей стадии
+            # и в плане есть другие КТ → Шаг 2
+            if current_missing and kt_names_list:
+                if table is None:
+                    table = []
+                # Проверяем что не дублируем
+                existing_kts = {
+                    row.get("remark", "") for row in (table or [])
+                }
+                for m in current_missing:
+                    remark = f"Не создана КТ '{m}' (требуется для стадии '{actual_stage}')"
+                    # Проверяем что это замечание ещё не добавлено
+                    if not any(remark in existing for existing in existing_kts):
+                        table.append({
+                            "n": len(table) + 1,
+                            "remark": remark,
+                            "severity": "substantial",
+                        })
+
+    return IndicatorResult(
+        number=2,
+        name="Актуальность состояния ЖЦ",
+        result=result_text,
+        detail="",  # колонка Детали содержит только ▼
+        verdict=verdict,
+        table=table if table else None,
+        table_title="Замечания по ЖЦ" if table else None,
+    )
+
+
+# ============================================================================
+# Кеширование MCP-ответов
+# ============================================================================
+
+CACHE_DIR = Path("/tmp")
+CACHE_TTL_SEC = 300  # 5 минут
+
+# In-memory cache: project_id -> {cache_key: (timestamp, data)}
+_MEMORY_CACHE: Dict[int, Dict[str, Tuple[float, Any]]] = {}
+
+
+def _cache_key(view_name: str, filters: Dict[str, Any]) -> str:
+    """Генерирует ключ кеша."""
+    filters_str = json.dumps(filters, sort_keys=True, ensure_ascii=False)
+    return f"{view_name}|{filters_str}"
+
+
+def _cache_path(project_id: int) -> Path:
+    """Путь к файлу кеша для проекта."""
+    return CACHE_DIR / f".cache_indicators_{project_id}.json"
+
+
+def _load_disk_cache(project_id: int) -> Dict[str, Tuple[float, Any]]:
+    """Загружает кеш с диска (в memory cache)."""
+    if project_id in _MEMORY_CACHE:
+        return _MEMORY_CACHE[project_id]
+
+    cache_file = _cache_path(project_id)
+    disk_data = {}
+    if cache_file.exists():
+        try:
+            cache_data = json.loads(cache_file.read_text(encoding="utf-8"))
+            for key, entry in cache_data.items():
+                disk_data[key] = (entry.get("timestamp", 0), entry.get("data"))
+        except Exception:
+            pass
+
+    _MEMORY_CACHE[project_id] = disk_data
+    return disk_data
+
+
+def get_cached(view_name: str, filters: Dict[str, Any], project_id: int):
+    """Получить данные из кеша (если не истёк TTL).
+
+    OPTIMIZATION v1.1.2: Используем in-memory cache для скорости.
+    Каждый запрос раньше читал файл 1 МБ с диска — теперь из памяти.
+
+    Returns:
+        Данные из кеша или None если кеш отсутствует/истёк.
+    """
+    key = _cache_key(view_name, filters)
+    mem = _load_disk_cache(project_id)
+
+    entry = mem.get(key)
+    if not entry:
+        return None
+
+    # Распаковываем (старый формат) или (timestamp, data) (новый)
+    if isinstance(entry, tuple) and len(entry) == 2:
+        ts, data = entry
+    elif isinstance(entry, dict):
+        ts = entry.get("timestamp", 0)
+        data = entry.get("data")
+    else:
+        return None
+
+    age = time.time() - ts
+    if age > CACHE_TTL_SEC:
+        return None
+
+    return data
+
+
+def set_cached(view_name: str, filters: Dict[str, Any], data: Any, project_id: int):
+    """Сохранить данные в кеш (in-memory + disk)."""
+    global _MEMORY_CACHE
+
+    key = _cache_key(view_name, filters)
+    ts = time.time()
+
+    # Обновляем in-memory cache
+    mem = _load_disk_cache(project_id)
+    mem[key] = (ts, data)
+
+    # Сохраняем на диск
+    cache_file = _cache_path(project_id)
+    try:
+        # Сериализуем обратно в формат на диске
+        disk_data = {}
+        for k, v in mem.items():
+            disk_data[k] = {"timestamp": v[0], "data": v[1]}
+        cache_file.write_text(
+            json.dumps(disk_data, ensure_ascii=False, default=str),
+            encoding="utf-8"
+        )
+    except Exception:
+        pass  # disk write failure не критична — есть memory cache
+        pass  # не критично если кеш не записался
+
+
+def fetch_with_cache(sid, entity_name: str, view_name: str,
+                    filters: Dict[str, Any], project_id: int,
+                    limit: int = 1000) -> List[Dict[str, Any]]:
+    """Получить данные из MCP с кешированием (TTL=5 мин).
+
+    Специальный случай: если view_name == "_get_entity_data_" — получает
+    все свойства проекта через get_entity_data (оптимизация).
+
+    Args:
+        sid: MCP session ID
+        entity_name: имя сущности (Project / Point / InContract)
+        view_name: имя view (или "_get_entity_data_" для оптимизации)
+        filters: dict с фильтрами
+        project_id: для ключа кеша
+        limit: макс. строк
+
+    Returns:
+        Список строк из view.
+    """
+    # Спецслучай: get_entity_data для проекта (оптимизация)
+    if view_name == "_get_entity_data_" and entity_name == "Project":
+        return [_get_project_card_cached(sid, project_id)]
+
+    # Проверяем кеш
+    cached = get_cached(view_name, filters, project_id)
+    if cached is not None:
+        return cached
+
+    # Запрос к MCP
+    from mcp_config import mcp_call
+    resp = mcp_call(sid, "get_view", {
+        "entityName": entity_name,
+        "viewName": view_name,
+        "filters": filters,
+        "limit": limit,
+    })
+    rows = resp.get("data", [])
+
+    # Сохраняем в кеш
+    set_cached(view_name, filters, rows, project_id)
+    return rows
+
+
+def _get_project_card_cached(sid, project_id: int) -> Dict[str, Any]:
+    """Получает карточку проекта через get_entity_data с кешем 5 мин.
+
+    Возвращает dict с ВСЕМИ свойствами проекта (вместо множества запросов
+    к разным views).
+    """
+    import os, time, json
+    cache_dir = "/tmp"
+    cache_file = os.path.join(cache_dir, f".cache_project_card_{project_id}.json")
+
+    if os.path.exists(cache_file):
+        age = time.time() - os.path.getmtime(cache_file)
+        if age < 300:
+            try:
+                with open(cache_file) as f:
+                    return json.load(f)
+            except Exception:
+                pass
+
+    from mcp_config import mcp_call
+    r = mcp_call(sid, "get_entity_data", {
+        "entityName": "Project",
+        "data_id": str(project_id),
+    })
+
+    # Разворачиваем properties в плоский dict
+    result = {"_source": "get_entity_data"}
+    if isinstance(r, dict) and "properties" in r:
+        for key, prop in r["properties"].items():
+            if isinstance(prop, dict):
+                result[key] = prop.get("value")
+
+    try:
+        with open(cache_file, "w") as f:
+            json.dump(result, f)
+    except Exception:
+        pass
+
+    return result
+
+
+# ============================================================================
+# Сбор всех индикаторов и расчёт вердикта секции
+# ============================================================================
+
+def _prefetch_project_data(project: dict, sid) -> None:
+    """Предзагрузка общих view для всех 16 индикаторов.
+
+    Один раз запрашивает все view, которые нужны нескольким индикаторам.
+    Все индикаторы затем читают из кеша (fetch_with_cache) без сетевых запросов.
+
+    OPTIMIZATION v1.1.1: Где возможно — добавляем фильтры по дате (startdate/enddate).
+    Это уменьшает объём данных и ускоряет получение.
+
+    Главный выигрыш:
+    - 8 индикаторов используют _get_entity_data_ → 1 запрос + 7 чтений из кеша
+    - 8 индикаторов используют AllMyPoint → 1 запрос + 7 чтений из кеша
+    - 5 индикаторов используют ProjectBudgetCompleteBusiness → 1 запрос + 4 чтения
+    - 6 индикаторов используют ProjectResourcePlan → 1 запрос (фильтр ProjectId + даты)
+
+    Итого: вместо 30+ сетевых запросов делаем 7-8.
+    """
+    project_id = project["project_id"]
+
+    # Сегодняшняя дата и дата через год (для фильтров по дате)
+    import datetime as dt
+    today_str = dt.date.today().isoformat()
+    one_year_later = (dt.date.today() + dt.timedelta(days=365)).isoformat()
+
+    # 1. Карточка проекта (нужна 8 индикаторам: 1, 2, 3, 4, 5, 7, 15, 16)
+    fetch_with_cache(
+        sid, "Project", "_get_entity_data_",
+        filters={}, project_id=project_id, limit=200,
+    )
+
+    # 2. КТ проекта (нужна 8 индикаторам)
+    # ВНИМАНИЕ: filter startdate/enddate НЕ задокументирован в list_views для
+    # AllMyPoint (хотя работает через live-call). Не добавляем.
+    fetch_with_cache(
+        sid, "Point", "AllMyPoint",
+        filters={"ProjectId": project_id},
+        project_id=project_id, limit=500,
+    )
+
+    # 3. Ресурсный план проекта (нужна 6 индикаторам)
+    # Уже оптимизирован в v1.1.0
+    fetch_with_cache(
+        sid, "Project", "ProjectResourcePlan",
+        filters={
+            "ProjectId": project_id,
+            "startdate": today_str,
+            "enddate": one_year_later,
+        },
+        project_id=project_id, limit=2000,
+    )
+
+    # 4. Бюджет проекта (нужна 5 индикаторам: 10, 11, 12, 14, 16)
+    # ВНИМАНИЕ: для ProjectBudgetCompleteBusiness фильтр startdate/enddate
+    # НЕ задокументирован в list_views (хотя молча работает через live-call).
+    fetch_with_cache(
+        sid, "Project", "ProjectBudgetCompleteBusiness",
+        filters={"ProjectId": project_id},
+        project_id=project_id, limit=500,
+    )
+
+    # 5. MyProject (нужна 2 индикаторам: 8, 9 — для ProjectTypeName)
+    fetch_with_cache(
+        sid, "Project", "MyProject",
+        filters={}, project_id=project_id, limit=200,
+    )
+
+    # 6. InContractBudgetBusiness (нужна 2 индикаторам: 8, 9)
+    # ВНИМАНИЕ: для InContractBudgetBusiness фильтр startdate/enddate
+    # НЕ задокументирован в list_views (хотя молча работает).
+    fetch_with_cache(
+        sid, "InContract", "InContractBudgetBusiness",
+        filters={"ProjectId": project_id},
+        project_id=project_id, limit=500,
+    )
+
+    # 7. ApprovedBudget (нужна 1 индикатору: 15) — уже фильтруется по Year
+    fetch_with_cache(
+        sid, "Project", "ApprovedBudget",
+        filters={"ActivityId": project_id, "Year": dt.date.today().year},
+        project_id=project_id, limit=200,
+    )
+
+
+def run_all_indicators(project: dict, sid) -> List[IndicatorResult]:
+    """Запустить все 16 индикаторов и собрать результаты.
+
+    Перед запуском делает предзагрузку всех общих view (prefetch),
+    чтобы каждый индикатор получил данные из кеша (а не делал сетевой запрос).
+
+    Args:
+        project: dict с полями code, project_id, name (из find_project)
+        sid: MCP session ID
+
+    Returns:
+        Список IndicatorResult в порядке 1..16.
+    """
+    # Предзагрузка общих view (заполняет кеш для всех индикаторов)
+    _prefetch_project_data(project, sid)
+
+    results = []
+    for i, check_fn in enumerate(INDICATORS, 1):
+        try:
+            result = check_fn(project, sid)
+            if not isinstance(result, IndicatorResult):
+                result = IndicatorResult(
+                    number=i, name=getattr(check_fn, '__name__', f'#{i}'),
+                    result="Ошибка", detail=str(result)[:100], verdict="Норма"
+                )
+        except Exception as e:
+            result = IndicatorResult(
+                number=i,
+                name=getattr(check_fn, '__name__', f'#{i}'),
+                result="Ошибка",
+                detail=f"{type(e).__name__}: {str(e)[:80]}",
+                verdict="Норма",
+            )
+        results.append(result)
+    return results
+
+
+def compute_section_verdict(results: List[IndicatorResult]) -> SectionVerdict:
+    """Вычислить вердикт всей секции по 16 индикаторам."""
+    return SectionVerdict.from_results(results)
+
+
+# --------------------------------------------------------------------------
+# 6.3 — Прогнозы по ресурсам заданы
+# --------------------------------------------------------------------------
+
+def _parse_iso_date(s: str):
+    """Парсит ISO-дату в date. Возвращает None при ошибке."""
+    from datetime import datetime
+    if not s:
+        return None
+    try:
+        if isinstance(s, str):
+            return datetime.fromisoformat(s.replace("Z", "+00:00")).date()
+        return s
+    except (ValueError, TypeError):
+        return None
+
+
+def _format_month_year(d) -> str:
+    """Форматирует дату как 'Месяц-Год' (например 'Сентябрь-2026')."""
+    months_ru = [
+        "", "Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
+        "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь",
+    ]
+    return f"{months_ru[d.month]}-{d.year}"
+
+
+def check_effort_forecast(project: dict, sid) -> IndicatorResult:
+    """Индикатор 6.3: Прогнозы по ресурсам заданы.
+
+    Назначение:
+        Прогноз по ресурсам необходим для управления процессом разработки ПО.
+        Косвенный признак нарушений — отсутствие прогнозных данных за длительные
+        периоды (целые месяцы).
+
+    Получение данных:
+        View: Project/ProjectResourcePlan с фильтром ProjectId=<id>.
+        Поля:
+          - planning_date (str): дата планирования
+          - forecast_hours (float): прогнозные часы
+          - fact_hours (float): фактические часы
+          - plan_hours (float): плановые часы
+          - username (str): имя пользователя
+          - specialization (str): специализация (для РП — "Руководитель проекта")
+
+    Интерпретация:
+        - Прогнозов нет вообще (Σ = 0) → "Нет", Критическое.
+        - Прогнозы есть за каждый месяц + РП учтён → "Да, N ч", Норма.
+        - Прогнозы частично или РП не учтён → "Вопросы, N ч", Существенное.
+
+    Вывод:
+        - Колонка "Результат":
+          * "Да, NNN ч" — полностью
+          * "Нет" — прогнозов нет
+          * "Вопросы, NNN ч" — частично или РП не учтён
+        - Колонка "Детали" (▼): вложенная таблица с месяцами, где есть проблемы.
+          Колонки: #, Период, Примечание, Severity.
+    """
+    from datetime import date
+    from collections import defaultdict
+
+    project_id = project["project_id"]
+    pm_spec = "Руководитель проекта"
+
+    # 1. Получаем данные о прогнозах из ProjectResourcePlan
+    rows = fetch_with_cache(
+        sid, "Project", "ProjectResourcePlan",
+        filters={"ProjectId": project_id},
+        project_id=project_id, limit=2000,
+    )
+
+    # 2. Получаем карточку проекта для дат периода
+    param_rows = fetch_with_cache(
+        sid, "Project", "_get_entity_data_",
+        filters={}, project_id=project_id, limit=200,
+    )
+    param = param_rows[0] if param_rows else {}
+
+    start_date = (
+        _parse_iso_date(param.get("projectstart_plandate")) if param else None
+    )
+    # По приоритету: FinishForecast → FinishPlan
+    end_date = (
+        (_parse_iso_date(param.get("projectclose_plandate")) if param else None)  # нет FinishForecast
+        or (_parse_iso_date(param.get("phasefinish_forecastdate")) if param else None)
+        or (_parse_iso_date(param.get("phasefinish_plandate")) if param else None)
+    )
+    # Если дат нет — берём из КТ (min plan, max forecast)
+    if not start_date or not end_date:
+        points = fetch_with_cache(
+            sid, "Point", "AllMyPoint",
+            filters={"ProjectId": project_id},
+            project_id=project_id, limit=200,
+        )
+        plan_dates = [_parse_iso_date(p.get("PlanDate")) for p in points]
+        plan_dates = [d for d in plan_dates if d]
+        fcst_dates = [_parse_iso_date(p.get("ForecastDate")) for p in points]
+        fcst_dates = [d for d in fcst_dates if d]
+        if not start_date and plan_dates:
+            start_date = min(plan_dates)
+        if not end_date:
+            if fcst_dates:
+                end_date = max(fcst_dates)
+            elif plan_dates:
+                end_date = max(plan_dates)
+
+    # 3. Считаем прогнозы по месяцам
+    total_forecast = 0.0
+    months_forecast = defaultdict(float)  # (year, month) -> total forecast
+    months_pm_forecast = defaultdict(float)  # для РП
+
+    for row in rows:
+        date_str = row.get("planning_date", "")
+        d = _parse_iso_date(date_str)
+        if not d:
+            continue
+        forecast = row.get("forecast_hours") or 0
+        spec = row.get("specialization") or ""
+        month_key = (d.year, d.month)
+
+        total_forecast += forecast
+        months_forecast[month_key] += forecast
+        if spec == pm_spec:
+            months_pm_forecast[month_key] += forecast
+
+    # 4. Определяем период (если данных нет — отчёт невозможен)
+    if not start_date or not end_date:
+        return IndicatorResult(
+            number=3,
+            name="Прогнозы по ресурсам заданы",
+            result="Н/Д",
+            detail="нет данных о периоде проекта",
+            verdict="Норма",
+        )
+
+    # 5. Генерируем список месяцев периода (включая неполные)
+    period_months = []
+    y, m = start_date.year, start_date.month
+    end_y, end_m = end_date.year, end_date.month
+    while (y, m) <= (end_y, end_m):
+        period_months.append((y, m))
+        m += 1
+        if m > 12:
+            m = 1
+            y += 1
+
+    # 6. Анализ по месяцам
+    missing_months = []  # месяцы без прогноза
+    missing_pm_months = []  # месяцы без прогноза РП
+
+    for y, m in period_months:
+        key = (y, m)
+        if months_forecast.get(key, 0) == 0:
+            missing_months.append(key)
+        if months_pm_forecast.get(key, 0) == 0:
+            missing_pm_months.append(key)
+
+    # 7. Формируем вердикт
+    if total_forecast == 0:
+        verdict = "Критическое"
+        result_text = "Нет"
+        table_title = "Месяцы без прогнозов"
+    elif missing_months or missing_pm_months:
+        verdict = "Существенное"
+        result_text = f"Вопросы, {round(total_forecast)} ч"
+        table_title = "Месяцы с проблемами в прогнозах"
+    else:
+        verdict = "Норма"
+        result_text = f"Да, {round(total_forecast)} ч"
+        table_title = None
+
+    # 8. Формируем вложенную таблицу с объединением строк
+    table = None
+    if verdict in ("Критическое", "Существенное"):
+        table = []
+        # Создаём уникальный набор месяцев с проблемами
+        problem_months = set(missing_months) | set(missing_pm_months)
+
+        # Сортируем по дате
+        sorted_months = sorted(problem_months)
+        for n, (y, m) in enumerate(sorted_months, 1):
+            forecast = months_forecast.get((y, m), 0)
+            pm_forecast = months_pm_forecast.get((y, m), 0)
+
+            # Формируем примечание (объединяем если оба)
+            parts = []
+            if forecast == 0:
+                parts.append("Трудозатраты не заданы")
+            if pm_forecast == 0:
+                parts.append("Не учтены трудозатраты РП")
+            remark = ", ".join(parts)
+
+            # Определяем severity
+            # Приоритет: 🔴 если прогнозов нет, иначе 🟡
+            if forecast == 0:
+                severity = "critical"
+            else:
+                severity = "substantial"
+
+            table.append({
+                "n": n,
+                "period": _format_month_year(date(y, m, 1)),
+                "remark": remark,
+                "severity": severity,
+            })
+
+    return IndicatorResult(
+        number=3,
+        name="Прогнозы по ресурсам заданы",
+        result=result_text,
+        detail="",
+        verdict=verdict,
+        table=table,
+        table_title=table_title,
+    )
+
+
+# --------------------------------------------------------------------------
+# 6.4 — Плановые трудозатраты заданы (аналог 6.3, но plan_hours)
+# --------------------------------------------------------------------------
+
+def check_plan_effort(project: dict, sid) -> IndicatorResult:
+    """Индикатор 6.4: Плановые трудозатраты заданы.
+
+    Назначение:
+        Проверить что плановые трудозатраты по проекту заданы на весь период
+        (за каждый месяц) и что учтены трудозатраты РП.
+
+    Получение данных:
+        Те же данные что и для 6.3 — Project/ProjectResourcePlan,
+        но используем поле plan_hours вместо forecast_hours.
+
+    Интерпретация:
+        - Планов нет (Σ = 0) → "Нет", Критическое.
+        - Планы за каждый месяц + РП учтён → "Да, N ч", Норма.
+        - Планы частично или РП не учтён → "Вопросы, N ч", Существенное.
+
+    Вывод:
+        Аналогично 6.3, но для плановых трудозатрат.
+    """
+    from datetime import date
+    from collections import defaultdict
+
+    project_id = project["project_id"]
+    pm_spec = "Руководитель проекта"
+
+    # 1. Получаем данные из ProjectResourcePlan
+    rows = fetch_with_cache(
+        sid, "Project", "ProjectResourcePlan",
+        filters={"ProjectId": project_id},
+        project_id=project_id, limit=2000,
+    )
+
+    # 2. Получаем карточку проекта для дат периода
+    param_rows = fetch_with_cache(
+        sid, "Project", "_get_entity_data_",
+        filters={}, project_id=project_id, limit=200,
+    )
+    param = param_rows[0] if param_rows else {}
+
+    start_date = (
+        _parse_iso_date(param.get("projectstart_plandate")) if param else None
+    )
+    # По приоритету: FinishForecast → FinishPlan
+    end_date = (
+        (_parse_iso_date(param.get("phasefinish_forecastdate")) if param else None)
+        or (_parse_iso_date(param.get("phasefinish_plandate")) if param else None)
+    )
+    # Если дат нет — берём из КТ (min plan, max forecast)
+    if not start_date or not end_date:
+        points = fetch_with_cache(
+            sid, "Point", "AllMyPoint",
+            filters={"ProjectId": project_id},
+            project_id=project_id, limit=200,
+        )
+        plan_dates = [_parse_iso_date(p.get("PlanDate")) for p in points]
+        plan_dates = [d for d in plan_dates if d]
+        fcst_dates = [_parse_iso_date(p.get("ForecastDate")) for p in points]
+        fcst_dates = [d for d in fcst_dates if d]
+        if not start_date and plan_dates:
+            start_date = min(plan_dates)
+        if not end_date:
+            if fcst_dates:
+                end_date = max(fcst_dates)
+            elif plan_dates:
+                end_date = max(plan_dates)
+
+    # 3. Считаем планы по месяцам
+    total_plan = 0.0
+    months_plan = defaultdict(float)
+    months_pm_plan = defaultdict(float)
+
+    for row in rows:
+        date_str = row.get("planning_date", "")
+        d = _parse_iso_date(date_str)
+        if not d:
+            continue
+        plan = row.get("plan_hours") or 0  # <-- plan_hours вместо forecast_hours
+        spec = row.get("specialization") or ""
+        month_key = (d.year, d.month)
+
+        total_plan += plan
+        months_plan[month_key] += plan
+        if spec == pm_spec:
+            months_pm_plan[month_key] += plan
+
+    # 4. Если дат периода нет
+    if not start_date or not end_date:
+        return IndicatorResult(
+            number=4,
+            name="Плановые трудозатраты заданы",
+            result="Н/Д",
+            detail="нет данных о периоде проекта",
+            verdict="Норма",
+        )
+
+    # 5. Генерируем список месяцев периода
+    period_months = []
+    y, m = start_date.year, start_date.month
+    end_y, end_m = end_date.year, end_date.month
+    while (y, m) <= (end_y, end_m):
+        period_months.append((y, m))
+        m += 1
+        if m > 12:
+            m = 1
+            y += 1
+
+    # 6. Анализ по месяцам
+    missing_months = []
+    missing_pm_months = []
+
+    for y, m in period_months:
+        key = (y, m)
+        if months_plan.get(key, 0) == 0:
+            missing_months.append(key)
+        if months_pm_plan.get(key, 0) == 0:
+            missing_pm_months.append(key)
+
+    # 7. Формируем вердикт
+    if total_plan == 0:
+        verdict = "Критическое"
+        result_text = "Нет"
+        table_title = "Месяцы без планов"
+    elif missing_months or missing_pm_months:
+        verdict = "Существенное"
+        result_text = f"Вопросы, {round(total_plan)} ч"
+        table_title = "Месяцы с проблемами в планах"
+    else:
+        verdict = "Норма"
+        result_text = f"Да, {round(total_plan)} ч"
+        table_title = None
+
+    # 8. Вложенная таблица (объединение строк)
+    table = None
+    if verdict in ("Критическое", "Существенное"):
+        table = []
+        problem_months = set(missing_months) | set(missing_pm_months)
+        sorted_months = sorted(problem_months)
+        for n, (y, m) in enumerate(sorted_months, 1):
+            plan_v = months_plan.get((y, m), 0)
+            pm_plan_v = months_pm_plan.get((y, m), 0)
+
+            parts = []
+            if plan_v == 0:
+                parts.append("Трудозатраты не заданы")
+            if pm_plan_v == 0:
+                parts.append("Не учтены трудозатраты РП")
+            remark = ", ".join(parts)
+
+            if plan_v == 0:
+                severity = "critical"
+            else:
+                severity = "substantial"
+
+            table.append({
+                "n": n,
+                "period": _format_month_year(date(y, m, 1)),
+                "remark": remark,
+                "severity": severity,
+            })
+
+    return IndicatorResult(
+        number=4,
+        name="Плановые трудозатраты заданы",
+        result=result_text,
+        detail="",
+        verdict=verdict,
+        table=table,
+        table_title=table_title,
+    )
+
+
+# --------------------------------------------------------------------------
+# 6.5 — Прогнозы ресурсов на исполнителя не превышают 100%
+# --------------------------------------------------------------------------
+
+def _count_workdays(start_date, end_date) -> int:
+    """Считает количество рабочих дней (пн-пт) в периоде."""
+    from datetime import timedelta
+    if not start_date or not end_date or end_date < start_date:
+        return 0
+    workdays = 0
+    current = start_date
+    while current <= end_date:
+        # понедельник=0, воскресенье=6
+        if current.weekday() < 5:
+            workdays += 1
+        current += timedelta(days=1)
+    return workdays
+
+
+def check_resource_overload(project: dict, sid) -> IndicatorResult:
+    """Индикатор 6.5: Прогнозы ресурсов на исполнителя не превышают 100%.
+
+    Назначение:
+        Выявить ситуации когда прогноз на исполнителя > 100% его доступного
+        времени в месяц. Это нарушение планирования ресурсов.
+
+    Получение данных:
+        View: Project/ProjectResourcePlan с фильтром ProjectId=<id>.
+        Поля: planning_date, forecast_hours, username.
+        Период проекта: из ProjectParameter или из КТ (fallback).
+
+    Интерпретация:
+        Норма = 8ч × рабочие_дни_в_месяце (по производственному календарю).
+        Процент = (Σ_прогноз_за_месяц / норма) × 100%.
+        Severity по проценту:
+          - >100% до 110%  → informational
+          - >110% до 150%  → substantial
+          - >150%          → critical
+
+    Вывод:
+        - Колонка "Результат": "Да" (нет превышений) или "Нет" (есть превышения)
+        - Колонка "Детали" (▼): вложенная таблица с помесячными строками для каждого
+          исполнителя с превышением.
+        - Колонки: #, ФИО, Период, Прогноз в проекте, Доступно, Превышение, %.
+    """
+    from datetime import date, timedelta
+    from collections import defaultdict
+    from overload_thresholds import INDICATOR_THRESHOLDS as OVERLOAD_CFG, classify_overload_percent
+
+    project_id = project["project_id"]
+    cfg = OVERLOAD_CFG["6.5_overload"]
+    hours_per_day = cfg["hours_per_day"]
+
+    # 1. Получаем данные из ProjectResourcePlan
+    rows = fetch_with_cache(
+        sid, "Project", "ProjectResourcePlan",
+        filters={"ProjectId": project_id},
+        project_id=project_id, limit=2000,
+    )
+
+    # 2. Получаем период проекта
+    param_rows = fetch_with_cache(
+        sid, "Project", "_get_entity_data_",
+        filters={}, project_id=project_id, limit=200,
+    )
+    param = param_rows[0] if param_rows else {}
+    start_date = _parse_iso_date(param.get("projectstart_plandate")) if param else None
+    end_date = (
+        _parse_iso_date(param.get("phasefinish_forecastdate")) if param else None
+    ) or (_parse_iso_date(param.get("phasefinish_plandate")) if param else None)
+
+    # Fallback на КТ
+    if not start_date or not end_date:
+        points = fetch_with_cache(
+            sid, "Point", "AllMyPoint",
+            filters={"ProjectId": project_id},
+            project_id=project_id, limit=200,
+        )
+        plan_dates = [_parse_iso_date(p.get("PlanDate")) for p in points]
+        plan_dates = [d for d in plan_dates if d]
+        fcst_dates = [_parse_iso_date(p.get("ForecastDate")) for p in points]
+        fcst_dates = [d for d in fcst_dates if d]
+        if not start_date and plan_dates:
+            start_date = min(plan_dates)
+        if not end_date:
+            end_date = max(fcst_dates or plan_dates or [date.today()])
+
+    if not start_date or not end_date:
+        return IndicatorResult(
+            number=5,
+            name="Прогнозы ресурсов на исполнителя не превышают 100%",
+            result="Н/Д",
+            detail="нет данных о периоде проекта",
+            verdict="Норма",
+        )
+
+    # 3. Группируем прогнозы по (исполнитель, месяц) только с текущей даты
+    today = date.today()
+    # Эффективная дата начала — max(today, start_date)
+    effective_start = max(today, start_date)
+    if effective_start > end_date:
+        # Проект уже завершён
+        return IndicatorResult(
+            number=5,
+            name="Прогнозы ресурсов на исполнителя не превышают 100%",
+            result="Да",
+            detail="",
+            verdict="Норма",
+        )
+
+    # Группируем forecast по (username, (year, month))
+    user_month_forecast = defaultdict(float)  # (user, (y, m)) -> total forecast
+    for row in rows:
+        date_str = row.get("planning_date", "")
+        d = _parse_iso_date(date_str)
+        if not d or d < effective_start or d > end_date:
+            continue
+        forecast = row.get("forecast_hours") or 0
+        user = row.get("username", "")
+        if not user:
+            continue
+        key = (user, (d.year, d.month))
+        user_month_forecast[key] += forecast
+
+    # 4. Генерируем месяцы периода
+    period_months = []
+    y, m = effective_start.year, effective_start.month
+    end_y, end_m = end_date.year, end_date.month
+    while (y, m) <= (end_y, end_m):
+        period_months.append((y, m))
+        m += 1
+        if m > 12:
+            m = 1
+            y += 1
+
+    # 5. Для каждого (user, month) считаем норму и превышение
+    overload_rows = []
+    has_critical = False
+    has_substantial = False
+    has_informational = False
+
+    for (user, (y, m)) in user_month_forecast:
+        forecast = user_month_forecast[(user, (y, m))]
+        if forecast <= 0:
+            continue  # нет прогнозов → не выводим (Q4)
+
+        # Определяем период для нормы (от effective_start до конца месяца или project end)
+        month_start = date(y, m, 1)
+        # Первый день месяца — max(today, 1 число)
+        period_start = max(effective_start, month_start)
+        # Последний день месяца
+        if m == 12:
+            month_end = date(y, 12, 31)
+        else:
+            month_end = date(y, m + 1, 1) - timedelta(days=1)
+        # Последний день = min(month_end, project_end)
+        period_end = min(month_end, end_date)
+
+        # Считаем рабочие дни
+        workdays = _count_workdays(period_start, period_end)
+        # Норма = workdays × 8ч
+        norm = workdays * hours_per_day
+
+        if norm <= 0:
+            continue  # нет рабочих дней (выходные целый месяц) — пропускаем
+
+        # Превышение
+        overload = forecast - norm
+        if overload <= 0:
+            continue  # нет превышения
+
+        # Процент
+        percent = (forecast / norm) * 100
+
+        # Severity
+        severity = classify_overload_percent(percent, cfg)
+        if severity == "critical":
+            has_critical = True
+        elif severity == "substantial":
+            has_substantial = True
+        elif severity == "informational":
+            has_informational = True
+
+        overload_rows.append({
+            "user": user,
+            "period": _format_month_year(date(y, m, 1)),
+            "forecast": round(forecast, 1),
+            "available": round(norm, 1),
+            "overload": round(overload, 1),
+            "percent": round(percent, 1),
+            "severity": severity,
+        })
+
+    # 6. Сортируем по severity (сначала critical, потом substantial, потом info), затем по проценту убыв.
+    severity_order = {"critical": 0, "substantial": 1, "informational": 2}
+    overload_rows.sort(key=lambda r: (severity_order.get(r["severity"], 9), -r["percent"]))
+
+    # 7. Формируем вердикт
+    if has_critical:
+        verdict = "Критическое"
+    elif has_substantial:
+        verdict = "Существенное"
+    elif has_informational:
+        verdict = "Информационное"
+    else:
+        verdict = "Норма"
+
+    # 8. Результат
+    result_text = "Да" if verdict == "Норма" else "Нет"
+
+    # 9. Вложенная таблица
+    table = None
+    if overload_rows:
+        table = []
+        for n, row in enumerate(overload_rows, 1):
+            table.append({
+                "n": n,
+                "user": row["user"],
+                "period": row["period"],
+                "forecast": f"{row['forecast']} ч",
+                "available": f"{row['available']} ч",
+                "overload": f"{row['overload']} ч",
+                "percent": f"{row['percent']}%",
+                "severity": row["severity"],
+            })
+
+    return IndicatorResult(
+        number=5,
+        name="Прогнозы ресурсов на исполнителя не превышают 100%",
+        result=result_text,
+        detail="",
+        verdict=verdict,
+        table=table,
+        table_title="Перегрузка исполнителей" if table else None,
+    )
+
+
+# --------------------------------------------------------------------------
+# 6.6 — Есть нереализованные прогнозы по ролевым ресурсам (в прошлом)
+# --------------------------------------------------------------------------
+
+def check_unfilled_roles(project: dict, sid) -> IndicatorResult:
+    """Индикатор 6.6: Есть нереализованные прогнозы по ролевым ресурсам.
+
+    Назначение:
+        Выявить прогнозы по РОЛЯМ (а не по конкретным ФИО), которые
+        остались нереализованными — то есть пользователь не "привязал" роль
+        к конкретному сотруднику, и при этом время прогноза уже прошло.
+
+    Получение данных:
+        View: Project/ProjectResourcePlan с фильтром ProjectId=<id>.
+        Поля: planning_date, forecast_hours, username, specialization.
+
+    Интерпретация:
+        Роль определяется как username == specialization.
+        Замечание возникает если planning_date < today.
+        Severity всегда informational.
+
+    Вывод:
+        - Колонка "Результат": "Да" (нет нарушений) или "Нет" (есть нарушения)
+        - Колонка "Детали" (▼): вложенная таблица с ролями, у которых
+          есть нереализованные прогнозы в прошлом.
+        - Колонки: #, Наименование ресурса, Нереализованный прогноз.
+    """
+    from datetime import date
+    from collections import defaultdict
+    from unfilled_roles_thresholds import is_role_resource
+
+    project_id = project["project_id"]
+    today = date.today()
+
+    # 1. Получаем данные из ProjectResourcePlan
+    rows = fetch_with_cache(
+        sid, "Project", "ProjectResourcePlan",
+        filters={"ProjectId": project_id},
+        project_id=project_id, limit=2000,
+    )
+
+    # 2. Группируем по роли и суммируем forecast в прошлом
+    role_past_forecast = defaultdict(float)  # role_name -> total past forecast
+    for row in rows:
+        username = (row.get("username") or "").strip()
+        specialization = (row.get("specialization") or "").strip()
+        date_str = row.get("planning_date") or ""
+
+        # Признак роли
+        if not is_role_resource(username, specialization):
+            continue
+
+        # Парсим дату
+        d = _parse_iso_date(date_str)
+        if not d:
+            continue
+
+        # В прошлом
+        if d < today:
+            forecast = row.get("forecast_hours") or 0  # <-- forecast, не plan!
+            role_past_forecast[username] += forecast
+
+    # 3. Формируем вердикт
+    # По требованию пользователя 2026-09-03: для 6.6 НЕТ цветовой подсветки.
+    # verdict всегда "Норма", даже если есть нереализованные прогнозы.
+    # Таблица с ролями при этом показывается (▼ кликабельный, если есть данные).
+    if role_past_forecast:
+        verdict = "Норма"  # без цветовой подсветки
+        result_text = "Нет"
+    else:
+        verdict = "Норма"
+        result_text = "Да"
+
+    # 4. Вложенная таблица
+    table = None
+    if role_past_forecast:
+        table = []
+        sorted_roles = sorted(role_past_forecast.items(), key=lambda x: -x[1])
+        for n, (role, total) in enumerate(sorted_roles, 1):
+            table.append({
+                "n": n,
+                "resource": role,
+                "unfilled_forecast": f"{round(total, 1)} ч",
+                "severity": "informational",
+            })
+
+    return IndicatorResult(
+        number=6,
+        name="Есть нереализованные прогнозы по ролевым ресурсам",
+        result=result_text,
+        detail="",
+        verdict=verdict,
+        table=table,
+        table_title="Роли с нереализованными прогнозами" if table else None,
+    )
+
+
+# --------------------------------------------------------------------------
+# 6.7 — Перегрузка исполнителей по всем активностям (ПО ПРОГНОЗУ)
+# --------------------------------------------------------------------------
+
+def check_cross_activity_overload(project: dict, sid) -> IndicatorResult:
+    """Индикатор 6.7: Есть исполнители у которых прогноз в сумме с др.активностями > 100%.
+
+    Назначение:
+        Выявить исполнителей, у которых прогноз по текущему проекту кажется
+        допустимым, но в сумме с другими проектами превышает 100% доступного
+        времени в месяц.
+
+    Получение данных:
+        1. Из текущего проекта получаем список исполнителей (username).
+        2. Из view Project/ProjectResourcePlan БЕЗ фильтра по ProjectId
+           получаем все строки по этим исполнителям за текущий период.
+        3. Суммируем forecast_hours (НЕ plan_hours) по каждому исполнитель+месяц.
+           Переделано на прогноз по требованию пользователя 2026-09-03.
+
+    ВАЖНО:
+        Данные по проектам, НЕДОСТУПНЫМ на чтение пользователю,
+        под аккаунтом которого строится отчёт, НЕ учитываются.
+        (Это особенность MCP — автоматически фильтрует недоступные записи.)
+
+    Интерпретация:
+        Норма = 8ч × рабочие_дни_в_месяце.
+        Процент = (Σ plan_по_всем_проектам / норма) × 100.
+        Severity:
+          - >100% до 110% → informational
+          - >110% до 150% → substantial
+          - >150%         → critical
+
+    Вывод:
+        - Колонка "Результат": "Да" (нет перегрузок) или "Нет" (есть)
+        - Колонка "Детали" (▼): вложенная таблица с исполнителями с перегрузкой
+        - Колонки: #, ФИО, Период, План, Доступно, Превышение, %
+    """
+    from datetime import date, timedelta
+    from collections import defaultdict
+    from cross_activity_overload_thresholds import (
+        INDICATOR_THRESHOLDS as CFG, classify_overload_percent
+    )
+
+    project_id = project["project_id"]
+    cfg = CFG["6.7_cross_activity_overload"]
+    hours_per_day = cfg["hours_per_day"]
+
+    # 1. Получаем список исполнителей ТЕКУЩЕГО проекта (с их accountid)
+    current_rows = fetch_with_cache(
+        sid, "Project", "ProjectResourcePlan",
+        filters={"ProjectId": project_id},
+        project_id=project_id, limit=2000,
+    )
+    # Исполнители текущего проекта: username -> accountid
+    current_users = {}  # username -> accountid
+    for row in current_rows:
+        username = (row.get("username") or "").strip()
+        accountid = row.get("accountid")
+        if username:
+            current_users[username] = accountid
+
+    # Убираем роли (username == specialization)
+    from unfilled_roles_thresholds import is_role_resource
+    real_users = {
+        u: aid for u, aid in current_users.items()
+        if not is_role_resource(u, next(
+            (r.get("specialization", "") for r in current_rows if r.get("username") == u),
+            ""
+        ))
+    }
+
+    if not real_users:
+        return IndicatorResult(
+            number=7,
+            name="Есть исполнители у которых план в сумме с др.активностями > 100%",
+            result="Н/Д",
+            detail="нет исполнителей в текущем проекте",
+            verdict="Норма",
+        )
+
+    # 2. Получаем ВСЕ проекты по каждому исполнителю через фильтр по accountid
+    # Последовательные запросы (параллельные вызывают таймаут на MCP).
+    # Данные фильтруются в Python по planning_date (MCP-фильтр StartDate не работает).
+    # ВНИМАНИЕ: получаем данные от текущей даты (today) до завершения проекта,
+    # а не за весь доступный период исполнителя!
+    #
+    # ВАЖНО: project_id и accountid — ЭТО РАЗНЫЕ СУЩНОСТИ:
+    # - project_id = уникальный ID проекта (используется в get_view filters={ProjectId: N})
+    # - accountid = уникальный ID исполнителя (поле accountid в ProjectResourcePlan)
+    # НЕ ПУТАТЬ!
+    all_rows = []
+
+    # Получаем период проекта (нужен до запросов чтобы фильтровать по дате)
+    param_rows = fetch_with_cache(
+        sid, "Project", "_get_entity_data_",
+        filters={}, project_id=project_id, limit=200,
+    )
+    param = param_rows[0] if param_rows else {}
+    start_date = _parse_iso_date(param.get("projectstart_plandate"))
+    end_date = _parse_iso_date(param.get("phasefinish_forecastdate")) or _parse_iso_date(
+        param.get("phasefinish_plandate")
+    )
+
+    if not start_date or not end_date:
+        # Fallback по точкам
+        points = fetch_with_cache(
+            sid, "Point", "AllMyPoint",
+            filters={"ProjectId": project_id},
+            project_id=project_id, limit=200,
+        )
+        plan_dates = [_parse_iso_date(p.get("PlanDate")) for p in points]
+        plan_dates = [d for d in plan_dates if d]
+        fcst_dates = [_parse_iso_date(p.get("ForecastDate")) for p in points]
+        fcst_dates = [d for d in fcst_dates if d]
+        if not start_date and plan_dates:
+            start_date = min(plan_dates)
+        if not end_date:
+            end_date = max(fcst_dates or plan_dates or [date.today()])
+
+    if not start_date or not end_date:
+        return IndicatorResult(
+            number=7,
+            name="Есть исполнители у которых план в сумме с др.активностями > 100%",
+            result="Н/Д",
+            detail="нет данных о периоде",
+            verdict="Норма",
+        )
+
+    today = date.today()
+    effective_start = max(today, start_date)
+
+    if effective_start > end_date:
+        return IndicatorResult(
+            number=7,
+            name="Есть исполнители у которых план в сумме с др.активностями > 100%",
+            result="Да",
+            detail="",
+            verdict="Норма",
+        )
+
+    # OPTIMIZATION v1.1.0: Используем фильтры startdate/enddate (разработчики добавили!)
+    # Получаем ТОЛЬКО нужные строки исполнителей в нужном периоде (от today до конца проекта)
+    # ВАЖНО: project_id != accountid (см. SKILL.md Pitfall #152)
+    # Эти фильтры ЗАДОКУМЕНТИРОВАНЫ в list_views ProjectResourcePlan (description обновлён разработчиками 2026-09-03)
+    for username, accountid in real_users.items():
+        if not accountid:
+            continue
+        user_rows = fetch_with_cache(
+            sid, "Project", "ProjectResourcePlan",
+            filters={
+                "accountid": accountid,
+                "startdate": effective_start.isoformat(),  # от текущей даты
+                "enddate": end_date.isoformat(),            # до конца проекта
+            },
+            project_id=project_id,  # это project_id, не accountid (для кеша)
+            limit=200,  # меньше лимит нужно (только нужный период)
+        )
+        all_rows.extend(user_rows)
+
+    user_month_plan = defaultdict(float)  # (user, (y, m)) -> sum forecast по ВСЕМ проектам
+    user_month_current_project = defaultdict(float)  # (user, (y, m)) -> forecast по ТЕКУЩЕМУ проекту (отчёта)
+    for row in all_rows:
+        username = (row.get("username") or "").strip()
+        # Только исполнители текущего проекта
+        if username not in real_users:
+            continue
+
+        date_str = row.get("planning_date") or ""
+        d = _parse_iso_date(date_str)
+        if not d or d < effective_start or d > end_date:
+            continue
+
+        # Пропускаем роли (username == specialization) — они не "привязаны" к ФИО
+        specialization = (row.get("specialization") or "").strip()
+        if username == specialization:
+            continue
+
+        # Суммируем forecast_hours (не plan_hours) — по требованию 2026-09-03
+        forecast = row.get("forecast_hours") or 0
+        user_month_plan[(username, (d.year, d.month))] += forecast
+
+        # Прогноз ТОЛЬКО по текущему проекту отчёта (для колонки "Прогноз по активн.")
+        row_projectid = row.get("projectid")
+        if row_projectid is not None and str(row_projectid) == str(project_id):
+            user_month_current_project[(username, (d.year, d.month))] += forecast
+
+    # 5. Генерируем месяцы периода
+    period_months = []
+    y, m = effective_start.year, effective_start.month
+    end_y, end_m = end_date.year, end_date.month
+    while (y, m) <= (end_y, end_m):
+        period_months.append((y, m))
+        m += 1
+        if m > 12:
+            m = 1
+            y += 1
+
+    # 6. Для каждого (user, month) считаем норму и превышение
+    overload_rows = []
+    has_critical = False
+    has_substantial = False
+    has_informational = False
+
+    for (user, (y, m)) in user_month_plan:
+        plan_total = user_month_plan[(user, (y, m))]
+        if plan_total <= 0:
+            continue
+
+        # Определяем период для нормы
+        month_start = date(y, m, 1)
+        if m == 12:
+            month_end = date(y, 12, 31)
+        else:
+            month_end = date(y, m + 1, 1) - timedelta(days=1)
+        period_start = max(effective_start, month_start)
+        period_end = min(month_end, end_date)
+
+        workdays = _count_workdays(period_start, period_end)
+        norm = workdays * hours_per_day
+        if norm <= 0:
+            continue
+
+        overload = plan_total - norm
+        if overload <= 0:
+            continue
+
+        percent = (plan_total / norm) * 100
+        severity = classify_overload_percent(percent, cfg)
+        if severity == "critical":
+            has_critical = True
+        elif severity == "substantial":
+            has_substantial = True
+        elif severity == "informational":
+            has_informational = True
+
+        overload_rows.append({
+            "user": user,
+            "period": _format_month_year(date(y, m, 1)),
+            "plan": round(plan_total, 1),              # суммарный прогноз (по всем проектам) — для "Превышение сумм."
+            "current_project_forecast": round(user_month_current_project.get((user, (y, m)), 0), 1),  # прогноз по проекту отчёта — для "Прогноз по активн."
+            "available": round(norm, 1),
+            "overload": round(overload, 1),
+            "percent": round(percent, 1),
+            "severity": severity,
+        })
+
+    # 7. Сортируем
+    severity_order = {"critical": 0, "substantial": 1, "informational": 2}
+    overload_rows.sort(key=lambda r: (severity_order.get(r["severity"], 9), -r["percent"]))
+
+    # 8. Вердикт
+    if has_critical:
+        verdict = "Критическое"
+    elif has_substantial:
+        verdict = "Существенное"
+    elif has_informational:
+        verdict = "Информационное"
+    else:
+        verdict = "Норма"
+
+    # 9. Результат и таблица
+    result_text = "Да" if verdict == "Норма" else "Нет"
+
+    # Формат таблицы 6.7 (по требованию пользователя 2026-09-03, прогноз):
+    # # | ФИО | Прогноз по активн. | Превышение сумм. | %Превышения
+    # Сортировка по алфавиту ФИО.
+    # Если строк нет — table=[] (пустой массив), чтобы отрендерить серый ▼ неактивный.
+    # ВАЖНО:
+    #   "Прогноз по активн." = прогноз (forecast_hours) по проекту отчёта (504-595)
+    #   "Превышение сумм." = насколько СУММАРНЫЙ прогноз (по всем проектам) больше нормы
+    #   "%Превышения" = (суммарный прогноз / норма) × 100
+    table = []
+    sorted_overload = sorted(overload_rows, key=lambda r: (r["user"] or "").lower())
+    for n, row in enumerate(sorted_overload, 1):
+        table.append({
+            "n": n,
+            "user": row["user"],
+            "plan": f"{row['current_project_forecast']} ч",  # прогноз ТОЛЬКО по проекту отчёта
+            "overload": f"{row['overload']} ч",                # превышение суммарное
+            "percent": f"{row['percent']}%",                   # процент превышения суммарного
+            "severity": row["severity"],
+        })
+
+    return IndicatorResult(
+        number=7,
+        name="Есть исполнители у которых прогноз в сумме с др.активностями > 100%",
+        result=result_text,
+        detail="",
+        verdict=verdict,
+        table=table,
+        table_title="Исполнители с превышением ресурсов" if table else None,
+    )
+
+
+# --------------------------------------------------------------------------
+# 6.8 — Соблюдение сроков финансовых КТ (сроки актов и оплат)
+# --------------------------------------------------------------------------
+
+def check_financial_deadlines(project: dict, sid) -> IndicatorResult:
+    """Индикатор 6.8: Соблюдение сроков финансовых КТ.
+
+    Назначение:
+        Проверка соблюдения финансовой дисциплины на проекте.
+
+    Получение данных:
+        View: Point/AllFinancePoint с фильтром ProjectId=<id>.
+        Возвращает финансовые КТ (привязанные к контрактам, ParentEntityName=InContract).
+        Иерархия: Проект → Контракт → Финансовая КТ (parent=InContract).
+
+        v1.0.x refactor (2026-09-04): раньше брали InContractBudgetBusiness
+        (готовые акты/оплаты). Теперь берём сами КТ — это даёт правильные
+        code/name/plan/forecast/fact КТ проекта, а не "Акт-4724".
+
+    Интерпретация:
+        КТ считается просроченной если: ForecastDate < today AND FactDate is None.
+        Severity (как в пункте 1 "Замечания по срокам"):
+          - diff >= 10 → Критическое
+          - diff >= 2  → Существенное
+          - diff >= 1  → Информационное
+
+    Вывод:
+        - Колонка "Результат": "Да" / "Нет" / "-" (для не-коммерческих)
+        - Колонка "Детали" (▼): вложенная таблица с просроченными финансовыми КТ.
+        - Колонки: #, Код, Наименование, План, Прогноз (как в разделе 3 «Замечания по срокам»).
+    """
+    from datetime import date
+    from financial_deadlines_thresholds import (
+        INDICATOR_THRESHOLDS as CFG, classify_financial_delay
+    )
+
+    project_id = project["project_id"]
+    cfg = CFG["6.8_financial_deadlines"]
+    commercial_type = cfg["commercial_type_name"]
+
+    # 1. Получаем тип проекта
+    my_rows = fetch_with_cache(
+        sid, "Project", "MyProject",
+        filters={}, project_id=project_id, limit=200,
+    )
+    project_type = None
+    for row in my_rows:
+        if str(row.get("Code", "")).strip() == project["code"]:
+            project_type = (row.get("ProjectTypeName") or "").strip()
+            break
+
+    # Если не коммерческий — прочерк, без проверки
+    if project_type != commercial_type:
+        return IndicatorResult(
+            number=8,
+            name="Соблюдение сроков финансовых КТ",
+            result="-",
+            detail=f"тип проекта: {project_type or 'не указан'} (проверка не выполняется)",
+            verdict="Норма",
+        )
+
+    # 2. Получаем финансовые КТ (привязанные к контрактам)
+    rows = fetch_with_cache(
+        sid, "Point", "AllFinancePoint",
+        filters={"ProjectId": project_id},
+        project_id=project_id, limit=200,
+    )
+
+    today = date.today()
+    overdue_rows = []
+    has_critical = False
+    has_substantial = False
+    has_informational = False
+
+    for row in rows:
+        plan_date = _parse_iso_date(row.get("PlanDate"))
+        forecast_date = _parse_iso_date(row.get("ForecastDate"))
+        fact_date = _parse_iso_date(row.get("FactDate"))
+
+        # Только просроченные: forecast_date < today AND нет факта
+        if not forecast_date or forecast_date >= today:
+            continue
+        if fact_date is not None:
+            continue
+
+        diff = (today - forecast_date).days
+        severity = classify_financial_delay(diff, cfg)
+        if severity == "critical":
+            has_critical = True
+        elif severity == "substantial":
+            has_substantial = True
+        elif severity == "informational":
+            has_informational = True
+
+        overdue_rows.append({
+            "n": len(overdue_rows) + 1,
+            "code": row.get("Code") or "",
+            "name": row.get("Name") or "",
+            "plan": (row.get("PlanDate") or "")[:10],
+            "forecast": (row.get("ForecastDate") or "")[:10],
+            "diff": diff,
+            "severity": severity,
+        })
+
+    # 3. Сортируем по severity и diff
+    severity_order = {"critical": 0, "substantial": 1, "informational": 2}
+    overdue_rows.sort(key=lambda r: (severity_order.get(r["severity"], 9), -r["diff"]))
+    # Перенумеровываем
+    for n, row in enumerate(overdue_rows, 1):
+        row["n"] = n
+
+    # 4. Вердикт
+    if has_critical:
+        verdict = "Критическое"
+    elif has_substantial:
+        verdict = "Существенное"
+    elif has_informational:
+        verdict = "Информационное"
+    else:
+        verdict = "Норма"
+
+    result_text = "Да" if verdict == "Норма" else "Нет"
+    table = overdue_rows if overdue_rows else []
+
+    return IndicatorResult(
+        number=8,
+        name="Соблюдение сроков финансовых КТ",
+        result=result_text,
+        detail="",
+        verdict=verdict,
+        table=table,
+        table_title="Просроченные финансовые КТ" if table else None,
+    )
+
+
+# --------------------------------------------------------------------------
+# 6.9 — Суммы актов и оплат
+# --------------------------------------------------------------------------
+
+def check_act_pay_amounts(project: dict, sid) -> IndicatorResult:
+    """Индикатор 6.9: Суммы актов и оплат.
+
+    Назначение:
+        Понять разницу между суммой актов и запланированных оплат.
+        Если разница > 0 — оплаты не покрывают обязательств по актам.
+
+    Получение данных:
+        1. Проверка ProjectTypeName == "Коммерческий" (через MyProject).
+           Если нет — прочерк в результате.
+        2. View: InContract/InContractBudgetBusiness с фильтром ProjectId.
+           Суммируем ActForecastSum (акты) и PayForecastSum (оплаты).
+
+    Интерпретация:
+        Δ = Σ актов - Σ оплат.
+        Δ ≤ 0 — Норма.
+        Δ > 0 — замечание по severity:
+          - 0 < Δ ≤ 100 000 → Информационное
+          - 100 000 < Δ ≤ 1 000 000 → Существенное
+          - Δ > 1 000 000 → Критическое
+
+    Вывод:
+        Колонка "Результат": "По актам:N руб./По оплатам:M руб./Δ= X руб."
+        (Сокраши в "млн. руб." с 3 знаками)
+        Без вложенной таблицы.
+    """
+    from act_pay_amounts_thresholds import (
+        INDICATOR_THRESHOLDS as CFG,
+        classify_amount_delta,
+        format_amount_short,
+    )
+
+    project_id = project["project_id"]
+    cfg = CFG["6.9_act_pay_amounts"]
+    commercial_type = cfg["commercial_type_name"]
+
+    # 1. Получаем тип проекта
+    my_rows = fetch_with_cache(
+        sid, "Project", "MyProject",
+        filters={}, project_id=project_id, limit=200,
+    )
+    project_type = None
+    for row in my_rows:
+        if str(row.get("Code", "")).strip() == project["code"]:
+            project_type = (row.get("ProjectTypeName") or "").strip()
+            break
+
+    # Если не коммерческий — прочерк
+    if project_type != commercial_type:
+        return IndicatorResult(
+            number=9,
+            name="Суммы актов и оплат",
+            result="-",
+            detail=f"тип проекта: {project_type or 'не указан'} (проверка не выполняется)",
+            verdict="Норма",
+        )
+
+    # 2. Получаем бюджет контрактов по КТ
+    rows = fetch_with_cache(
+        sid, "InContract", "InContractBudgetBusiness",
+        filters={"ProjectId": project_id},
+        project_id=project_id, limit=500,
+    )
+
+    # 3. Суммируем прогнозные суммы
+    total_act = 0.0
+    total_pay = 0.0
+
+    for row in rows:
+        act_fcst_sum = row.get("ActForecastSum") or 0
+        pay_fcst_sum = row.get("PayForecastSum") or 0
+        total_act += act_fcst_sum
+        total_pay += pay_fcst_sum
+
+    # 4. Δ и severity
+    delta = total_act - total_pay
+    severity = classify_amount_delta(delta, cfg)
+
+    if severity == "critical":
+        verdict = "Критическое"
+    elif severity == "substantial":
+        verdict = "Существенное"
+    elif severity == "informational":
+        verdict = "Информационное"
+    else:
+        verdict = "Норма"
+
+    # 5. Формат "Результат"
+    # По актам:N руб./По оплатам:M руб./Δ= X руб.
+    act_str = format_amount_short(total_act)
+    pay_str = format_amount_short(total_pay)
+    # Δ тоже в формате млн
+    delta_str = format_amount_short(delta)
+    result_text = f"По актам:{act_str}/По оплатам:{pay_str}/Δ= {delta_str}"
+
+    return IndicatorResult(
+        number=9,
+        name="Суммы актов и оплат",
+        result=result_text,
+        detail="",
+        verdict=verdict,
+        table=None,  # нет вложенной таблицы
+        table_title=None,
+    )
+
+
+# --------------------------------------------------------------------------
+# 6.10 — В бюджете указаны прямые затраты
+# --------------------------------------------------------------------------
+
+def check_direct_costs(project: dict, sid) -> IndicatorResult:
+    """Индикатор 6.10: В бюджете указаны прямые затраты.
+
+    Назначение:
+        Выявить проекты с прямыми затратами (закупки, услуги) для
+        индивидуального контроля.
+
+    Получение данных:
+        View: Project/ProjectBudgetCompleteBusiness с фильтром ProjectId.
+        Фильтруем по budgettype == "Расход ручной ввод"
+        И financesourceid != 128 (статья "611-13 НДС" — не считается).
+
+    Интерпретация:
+        Вердикт всегда нейтральный (не критическое).
+
+    Вывод:
+        Колонка "Результат":
+        - "Да, NNN млн. руб." если прямые затраты > 0
+        - "Нет" если сумма = 0
+        Формат суммы как в 6.9 (млн. руб. с 3 знаками).
+        Без вложенной таблицы.
+    """
+    from act_pay_amounts_thresholds import format_amount_short
+
+    project_id = project["project_id"]
+    nd = 128  # ID статьи "611-13 НДС" — исключаем
+
+    rows = fetch_with_cache(
+        sid, "Project", "ProjectBudgetCompleteBusiness",
+        filters={"ProjectId": project_id},
+        project_id=project_id, limit=500,
+    )
+
+    # Прямые затраты = "Расход ручной ввод" И НЕ НДС
+    # Приоритет по суммам (по уточнению пользователя):
+    # payfactsum > payforecastsum > payplansum > actfactsum > actforecastsum > actplansum > 0
+    def _pick_amount(r):
+        # Сначала оплаты (приоритет: факт → прогноз → план)
+        if (r.get("payfactsum") or 0) > 0:
+            return r["payfactsum"]
+        if (r.get("payforecastsum") or 0) > 0:
+            return r["payforecastsum"]
+        if (r.get("payplansum") or 0) > 0:
+            return r["payplansum"]
+        # Затем акты (приоритет: факт → прогноз → план)
+        if (r.get("actfactsum") or 0) > 0:
+            return r["actfactsum"]
+        if (r.get("actforecastsum") or 0) > 0:
+            return r["actforecastsum"]
+        if (r.get("actplansum") or 0) > 0:
+            return r["actplansum"]
+        return 0
+
+    total_direct = 0.0
+    for row in rows:
+        bt = row.get("budgettype")
+        fs_id = row.get("financesourceid")
+        if bt == "Расход ручной ввод" and fs_id != nd:
+            total_direct += _pick_amount(row)
+
+    # Вердикт всегда нейтральный
+    if total_direct > 0:
+        result_text = f"Да, {format_amount_short(total_direct)}"
+    else:
+        result_text = "Нет"
+
+    return IndicatorResult(
+        number=10,
+        name="В бюджете указаны прямые затраты",
+        result=result_text,
+        detail="",
+        verdict="Норма",
+        table=None,
+        table_title=None,
+    )
+
+
+# --------------------------------------------------------------------------
+# 6.11 — В затратах указан НДС
+# --------------------------------------------------------------------------
+
+def check_vat(project: dict, sid) -> IndicatorResult:
+    """Индикатор 6.11: В затратах указан НДС.
+
+    Назначение:
+        Проверить, что НДС по актам/оплатам указан в статье расходов.
+        Юрлица платят НДС 5% — нужно контролировать, чтобы он был
+        корректно отражён в бюджете.
+
+    Получение данных:
+        View: Project/ProjectBudgetCompleteBusiness с фильтром ProjectId.
+        Фильтруем: budgettype = "Расход ручной ввод"
+                    И financesourceid = 128 (статья "611-13 НДС").
+
+    Интерпретация:
+        Если актов и оплат вообще нет → прочерк (НДС не контролируется).
+        Если хотя бы одна сумма НДС > 0 → "Да".
+        Иначе → "Нет".
+
+    Вывод:
+        Колонка "Результат":
+        - "Да" если хотя бы одна сумма НДС > 0
+        - "Нет" если НДС = 0 (но акты/оплаты есть)
+        - "-" если актов/оплат вообще нет
+        Без вложенной таблицы.
+    """
+    project_id = project["project_id"]
+    nd_id = 128  # ID статьи "611-13 НДС"
+
+    rows = fetch_with_cache(
+        sid, "Project", "ProjectBudgetCompleteBusiness",
+        filters={"ProjectId": project_id},
+        project_id=project_id, limit=500,
+    )
+
+    # Если бюджет пуст → прочерк
+    if not rows:
+        return IndicatorResult(
+            number=11,
+            name="В затратах указан НДС",
+            result="-",
+            detail="акты и оплаты не заданы (НДС не контролируется)",
+            verdict="Норма",
+        )
+
+    # Считаем общую сумму НДС (по приоритету для каждой строки)
+    total_nd = 0.0
+    has_nd_rows = False
+    for row in rows:
+        if (row.get("budgettype") == "Расход ручной ввод"
+                and row.get("financesourceid") == nd_id):
+            has_nd_rows = True
+            # Приоритет по суммам
+            if (row.get("payfactsum") or 0) > 0:
+                total_nd += row["payfactsum"]
+            elif (row.get("payforecastsum") or 0) > 0:
+                total_nd += row["payforecastsum"]
+            elif (row.get("payplansum") or 0) > 0:
+                total_nd += row["payplansum"]
+            elif (row.get("actfactsum") or 0) > 0:
+                total_nd += row["actfactsum"]
+            elif (row.get("actforecastsum") or 0) > 0:
+                total_nd += row["actforecastsum"]
+            elif (row.get("actplansum") or 0) > 0:
+                total_nd += row["actplansum"]
+
+    # Если строк НДС вообще нет, но акты/оплаты есть — считаем что НДС = 0
+    # (тогда "Нет")
+
+    if total_nd > 0:
+        result_text = "Да"
+    else:
+        result_text = "Нет"
+
+    return IndicatorResult(
+        number=11,
+        name="В затратах указан НДС",
+        result=result_text,
+        detail="",
+        verdict="Норма",
+        table=None,
+        table_title=None,
+    )
+
+
+# --------------------------------------------------------------------------
+# 6.12 — Сумма НДС расчётная
+# --------------------------------------------------------------------------
+
+def check_vat_amount(project: dict, sid) -> IndicatorResult:
+    """Индикатор 6.12: Сумма НДС расчётная.
+
+    Назначение:
+        Проверить правильность указания НДС в статье 611-13 пользователем.
+        В оценке НДС участвуют только акты по доходным контрактам.
+        В суммах актов уже заложена ставка НДС 5% (она нигде не отображается).
+        Пользователь вручную заводит сумму НДС в статью 611-13 и мы её проверяем.
+
+    Получение данных:
+        View: Project/ProjectBudgetCompleteBusiness с фильтром ProjectId.
+        - Строки budgettype="Доходный контракт" — суммы актов/оплат.
+        - Строки financesourceid=128 (статья 611-13 НДС) — указанный НДС.
+
+    Логика (по требованию пользователя 2026-09-04):
+        По каждому периоду:
+        1. Берём amount (приоритет: факт > прогноз > план, pay И act).
+        2. Берём vat в том же сценарии, что и amount:
+           - если amount взят из факта → vat из факта
+           - если из прогноза → vat из прогноза
+           - если из плана → vat из плана.
+        Суммируем amount и vat за все периоды.
+        Расчётный НДС = total_amount / 105 × 5 (ставка 5%).
+        Сравниваем с total_vat по допуску 0.0001 ₽.
+        Фактический % = (total_vat / (total_amount − total_vat)) × 100.
+
+    Вывод:
+        - "Да" если указанный НДС == расчётному (в пределах допуска).
+        - "Нет, Должно быть:X руб./Указано:Y руб./%:Z" если есть расхождение.
+    """
+    from vat_constants import DEFAULT_VAT_RATE, VAT_TOLERANCE_RUB
+    from vat_calc import calculate_vat_from_total
+
+    project_id = project["project_id"]
+    nd_id = 128  # ID статьи "611-13 НДС"
+    vat_rate = DEFAULT_VAT_RATE  # 5%
+
+    rows = fetch_with_cache(
+        sid, "Project", "ProjectBudgetCompleteBusiness",
+        filters={"ProjectId": project_id},
+        project_id=project_id, limit=500,
+    )
+
+    if not rows:
+        return IndicatorResult(
+            number=12,
+            name="Сумма НДС расчётная",
+            result="-",
+            detail="нет данных по бюджету",
+            verdict="Норма",
+        )
+
+    # Группировка по периоду и сценарию (факт/прогноз/план).
+    # Для каждого периода у нас может быть amount (fs != 128) и vat (fs == 128).
+    # Берём amount в приоритете факт > прогноз > план (для каждого pay/act макс).
+    # vat берём в том же сценарии, что и amount.
+
+    # period_amount[period][scenario] = max amount
+    # period_vat[period][scenario] = max vat
+    # scenario in {"fact", "forecast", "plan"}
+    period_amount = {}  # period -> {scenario: amount}
+    period_vat = {}     # period -> {scenario: vat}
+
+    for row in rows:
+        fs_id = row.get("financesourceid")
+        date = (row.get("date") or "")[:7]
+        if not date:
+            continue
+
+        # Определяем сценарии и их суммы (макс из pay/act)
+        fact = max(row.get("payfactsum") or 0, row.get("actfactsum") or 0)
+        forecast = max(row.get("payforecastsum") or 0, row.get("actforecastsum") or 0)
+        plan = max(row.get("payplansum") or 0, row.get("actplansum") or 0)
+
+        if fs_id == nd_id:
+            # Это строка НДС (статья 611-13)
+            if date not in period_vat:
+                period_vat[date] = {}
+            # НДС пишем в каждый сценарий где есть данные
+            if fact > 0:
+                period_vat[date]["fact"] = max(period_vat[date].get("fact", 0), fact)
+            if forecast > 0:
+                period_vat[date]["forecast"] = max(period_vat[date].get("forecast", 0), forecast)
+            if plan > 0:
+                period_vat[date]["plan"] = max(period_vat[date].get("plan", 0), plan)
+        else:
+            # Это сумма акта/оплаты (только доходный контракт)
+            if row.get("budgettype") != "Доходный контракт":
+                continue
+            if date not in period_amount:
+                period_amount[date] = {}
+            if fact > 0:
+                period_amount[date]["fact"] = max(period_amount[date].get("fact", 0), fact)
+            if forecast > 0:
+                period_amount[date]["forecast"] = max(period_amount[date].get("forecast", 0), forecast)
+            if plan > 0:
+                period_amount[date]["plan"] = max(period_amount[date].get("plan", 0), plan)
+
+    # 2. По каждому периоду: берём amount в приоритете факт > прогноз > план,
+    #    и vat в ТОМ ЖЕ сценарии.
+    total_amount = 0.0
+    total_vat = 0.0
+    has_data = False
+    for period in sorted(set(period_amount.keys()) | set(period_vat.keys())):
+        amounts = period_amount.get(period, {})
+        vats = period_vat.get(period, {})
+        # Приоритет сценария
+        for scenario in ("fact", "forecast", "plan"):
+            if scenario in amounts and amounts[scenario] > 0:
+                total_amount += amounts[scenario]
+                # Берём vat в том же сценарии, если есть; иначе fallback
+                total_vat += vats.get(scenario, 0)
+                has_data = True
+                break  # этот период обработан
+
+    # 3. Расчёт и сравнение
+    if not has_data or total_amount <= 0:
+        return IndicatorResult(
+            number=12,
+            name="Сумма НДС расчётная",
+            result="-",
+            detail="нет данных по актам/оплатам",
+            verdict="Норма",
+        )
+
+    calculated_vat = calculate_vat_from_total(total_amount, vat_rate)
+    actual_pct = (total_vat / (total_amount - total_vat) * 100) if total_amount > total_vat else 0
+
+    if abs(total_vat - calculated_vat) <= VAT_TOLERANCE_RUB:
+        result_text = "Да"
+        detail = (
+            f"всё совпадает (Должно быть:{calculated_vat:.2f} руб./"
+            f"Указано:{total_vat:.2f} руб./%:{actual_pct:.4f})"
+        )
+        verdict = "Норма"
+    else:
+        result_text = (
+            f"Нет, Должно быть:{calculated_vat:.2f} руб./"
+            f"Указано:{total_vat:.2f} руб./%:{actual_pct:.4f}"
+        )
+        detail = ""
+        verdict = "Норма"  # подсветку не включаем (по аналогии с 6.6 — справочная)
+
+    return IndicatorResult(
+        number=12,
+        name="Сумма НДС расчётная",
+        result=result_text,
+        detail=detail,
+        verdict=verdict,
+        table=None,
+        table_title=None,
+    )
+
+
+# --------------------------------------------------------------------------
+# 6.15 — У проекта есть утверждённый бюджет
+# --------------------------------------------------------------------------
+
+def check_approved_budget(project: dict, sid) -> IndicatorResult:
+    """Индикатор 6.15: У проекта есть утверждённый бюджет.
+
+    Назначение:
+        Проверить, что на каждый календарный год периода проекта есть
+        утверждённый бюджет.
+
+    Получение данных:
+        View: Project/ApprovedBudget с фильтром ActivityId.
+        Поля: Year, Value.
+
+    Интерпретация:
+        Все года имеют бюджет → "Да" (Норма).
+        Часть годов без бюджета → "Вопрос" (Существенное).
+        Ни один год без бюджета → "Нет" (Существенное).
+
+    Вывод:
+        - Колонка "Результат": "Да, N руб." / "Вопрос, N руб." / "Нет, -"
+        - Колонка "Детали" (▼): вложенная таблица всегда доступ.
+        - Колонки: #, Год, Примечание (сумма или "Нет утв.бюджета").
+    """
+    from datetime import date
+    from act_pay_amounts_thresholds import format_amount_short
+
+    project_id = project["project_id"]
+
+    # 1. Получаем период проекта
+    param_rows = fetch_with_cache(
+        sid, "Project", "_get_entity_data_",
+        filters={}, project_id=project_id, limit=200,
+    )
+    param = param_rows[0] if param_rows else {}
+    start_date = (
+        _parse_iso_date(param.get("projectstart_forecastdate")) if param else None
+    ) or (_parse_iso_date(param.get("projectstart_plandate")) if param else None)
+    end_date = (
+        _parse_iso_date(param.get("phasefinish_forecastdate")) if param else None
+    ) or (_parse_iso_date(param.get("phasefinish_plandate")) if param else None)
+
+    # Fallback на КТ
+    if not start_date or not end_date:
+        points = fetch_with_cache(
+            sid, "Point", "AllMyPoint",
+            filters={"ProjectId": project_id},
+            project_id=project_id, limit=200,
+        )
+        plan_dates = [_parse_iso_date(p.get("PlanDate")) for p in points]
+        plan_dates = [d for d in plan_dates if d]
+        fcst_dates = [_parse_iso_date(p.get("ForecastDate")) for p in points]
+        fcst_dates = [d for d in fcst_dates if d]
+        if not start_date and plan_dates:
+            start_date = min(plan_dates)
+        if not start_date and fcst_dates:
+            start_date = min(fcst_dates)
+        if not end_date and fcst_dates:
+            end_date = max(fcst_dates)
+        if not end_date and plan_dates:
+            end_date = max(plan_dates)
+
+    if not start_date or not end_date:
+        return IndicatorResult(
+            number=15,
+            name="У проекта есть утверждённый бюджет",
+            result="-",
+            detail="нет данных о периоде проекта",
+            verdict="Норма",
+        )
+
+    # 2. Годы периода
+    years = list(range(start_date.year, end_date.year + 1))
+
+    # 3. Получаем утверждённые бюджеты
+    ab_rows = fetch_with_cache(
+        sid, "Project", "ApprovedBudget",
+        filters={"ActivityId": project_id},
+        project_id=project_id, limit=200,
+    )
+    by_year = {}  # year -> Value
+    for row in ab_rows:
+        y = row.get("Year")
+        v = row.get("Value")
+        if y is not None and v is not None:
+            by_year[int(y)] = v
+
+    # 4. Анализ по годам
+    table = []
+    total_budget = 0.0
+    has_any = False
+    missing_years = []
+
+    for n, year in enumerate(years, 1):
+        if year in by_year:
+            value = by_year[year]
+            total_budget += value
+            has_any = True
+            table.append({
+                "n": n,
+                "year": str(year),
+                "remark": f"{value:,.0f} руб.".replace(",", " "),
+                "severity": "normal",
+            })
+        else:
+            missing_years.append(year)
+            table.append({
+                "n": n,
+                "year": str(year),
+                "remark": "Нет утв.бюджета",
+                "severity": "substantial",
+            })
+
+    # 5. Формируем вердикт
+    if not missing_years:
+        verdict = "Норма"
+        result_text = f"Да, {format_amount_short(total_budget)}"
+    elif has_any:
+        verdict = "Существенное"
+        result_text = f"Вопрос, {format_amount_short(total_budget)}"
+    else:
+        verdict = "Существенное"
+        result_text = "Нет, -"
+
+    return IndicatorResult(
+        number=15,
+        name="У проекта есть утверждённый бюджет",
+        result=result_text,
+        detail="",
+        verdict=verdict,
+        table=table,
+        table_title="Утверждённый бюджет по годам",
+    )
+
+
+# --------------------------------------------------------------------------
+# 6.16 — Проставлены метки для отнесения КТ к проекту или пресейлу
+# --------------------------------------------------------------------------
+
+def check_kp_labels(project: dict, sid) -> IndicatorResult:
+    """Индикатор 6.16: Проставлены метки для отнесения КТ к проекту/пресейлу.
+
+    Назначение:
+        Проверить, что у всех элементов календарного плана проставлена метка
+        отнесения к проекту или пресейлу.
+
+    Получение данных:
+        1. Point/AllMyPoint — ВСЕ КТ проекта (даже без привязки к бюджету).
+        2. Из бюджета берём isprojectbudget/ispresalebudget.
+        3. Из AllMyPoint — PointTagName ("Проект"/"Пресейл") как fallback.
+        4. Исключаем обязательные КТ из нашего справочника (п. 6.2).
+
+    Интерпретация:
+        Если хотя бы у одной КТ (не обязательной) метка не определена
+        (isprojectbudget=None AND ispresalebudget=None И PointTagName не 'Проект'/'Пресейл')
+        → существенное замечание.
+
+    Вывод:
+        - Колонка "Результат": "Да" / "Нет"
+        - Колонка "Детали" (▼): вложенная таблица с КТ без меток
+        - Колонки: #, Код, Тип, Наименование, План, Прогноз.
+    """
+    from kp_labels_thresholds import has_label
+    from lc_stage_kt_registry import MANDATORY_KT_BY_STAGE, get_stage_index
+
+    project_id = project["project_id"]
+    project_code = project["code"]
+
+    # 1. Получаем карточку проекта (для стадии ЖЦ)
+    param_rows = fetch_with_cache(
+        sid, "Project", "_get_entity_data_",
+        filters={}, project_id=project_id, limit=200,
+    )
+    param = param_rows[0] if param_rows else {}
+    current_stage = (param.get("activityphase") or "").strip() if param else ""
+
+    # Обязательные КТ для текущей стадии (исключаем из проверки)
+    mandatory_kts = MANDATORY_KT_BY_STAGE.get(current_stage, [])
+
+    # 2. Получаем бюджет проекта — для меток isprojectbudget/ispresalebudget
+    budget_rows = fetch_with_cache(
+        sid, "Project", "ProjectBudgetCompleteBusiness",
+        filters={"ProjectId": project_id},
+        project_id=project_id, limit=500,
+    )
+    budget_by_point_id = {}
+    for row in budget_rows:
+        pid = row.get("pointid")
+        if pid:
+            budget_by_point_id[int(pid)] = row
+
+    # 3. Получаем ВСЕ КТ проекта
+    points_rows = fetch_with_cache(
+        sid, "Point", "AllMyPoint",
+        filters={"ProjectId": project_id},
+        project_id=project_id, limit=500,
+    )
+
+    if not points_rows:
+        return IndicatorResult(
+            number=16,
+            name="Проставлены метки для отнесения КТ к проекту или пресейлу",
+            result="-",
+            detail="нет элементов КП в проекте",
+            verdict="Норма",
+        )
+
+    # 4. Проверяем метки
+    missing = []
+    for point in points_rows:
+        point_id = point.get("PointId") or point.get("id")
+        point_name = point.get("Name", "")
+        point_code = point.get("Code", "")
+
+        # Исключаем обязательные КТ
+        is_mandatory = any(
+            (mk.lower() in point_name.lower() or point_name.lower() in mk.lower())
+            for mk in mandatory_kts
+        )
+        if is_mandatory:
+            continue
+
+        # Ищем метку
+        budget_row = budget_by_point_id.get(int(point_id), {}) if point_id else {}
+
+        # Приоритет: PointTagName > isprojectbudget/ispresalebudget
+        tag = point.get("PointTagName", "") or ""
+        is_project = budget_row.get("isprojectbudget")
+        is_presale = budget_row.get("ispresalebudget")
+
+        # Метка считается "определённой" если:
+        # - PointTagName в ("Проект", "Пресейл"), ИЛИ
+        # - isprojectbudget или ispresalebudget = True
+        # "Процесс" — тоже не определено (по уточнению пользователя 2026-09-02)
+        has_defined_label = False
+
+        if tag in ("Проект", "Пресейл"):
+            has_defined_label = True
+        elif is_project is True or is_presale is True:
+            has_defined_label = True
+        # Note: tag="Процесс" или None — "не определено" → замечание
+
+        if not has_defined_label:
+            missing.append({
+                "pointid": point_id,
+                "code": point_code,
+                "type": point.get("pcdName", ""),  # "К" или "Р"
+                "name": point_name,
+                "plan": point.get("PlanDate", ""),
+                "forecast": point.get("ForecastDate", ""),
+                "tag": tag,
+                "is_project": is_project,
+                "is_presale": is_presale,
+            })
+
+    # 5. Формируем результат
+    if not missing:
+        verdict = "Норма"
+        result_text = "Да"
+        table = None
+    else:
+        verdict = "Существенное"
+        result_text = "Нет"
+        table = []
+        for n, m in enumerate(missing, 1):
+            table.append({
+                "n": n,
+                "code": m["code"],
+                "type": m["type"],
+                "name": m["name"],
+                "plan": m["plan"][:10] if m["plan"] else "",
+                "forecast": m["forecast"][:10] if m["forecast"] else "",
+                "severity": "substantial",
+            })
+
+    return IndicatorResult(
+        number=16,
+        name="Проставлены метки для отнесения КТ к проекту или пресейлу",
+        result=result_text,
+        detail="",
+        verdict=verdict,
+        table=table,
+        table_title="Элементы КП без метки" if table else None,
+    )
+
+
+# --------------------------------------------------------------------------
+# 6.13 — Бюджет проекта/пресейла
+# --------------------------------------------------------------------------
+
+def check_budget_limits(project: dict, sid) -> IndicatorResult:
+    """Индикатор 6.13: Бюджет проекта/пресейла.
+
+    Назначение:
+        Отобразить установленный бюджет проекта, пресейла и % пресейла от бюджета.
+
+    Получение данных:
+        Через get_entity_data(Project, data_id) получаем:
+        - ProjectBudgetGrade — Бюджет проекта (оценка), руб.
+        - PresaleLimit — Лимит на пресейл, руб.
+        - PresaleBudgetPercentage — % пресейла от бюджета.
+
+    Интерпретация:
+        Вердикт всегда нейтральный.
+
+    Вывод:
+        Колонка "Результат":
+        {Сумма проекта:N руб./Пресейл:M руб./Лимит %:Y}
+    """
+    from mcp_config import get_project_card
+
+    project_id = project["project_id"]
+
+    # OPTIMIZATION v1.1.2: 1 вызов get_entity_data вместо 3 отдельных
+    card = get_project_card(sid, project_id) or {}
+    project_budget = card.get("ProjectBudgetGrade") or 0
+    presale_limit = card.get("PresaleLimit") or 0
+    presale_pct = card.get("PresaleBudgetPercentage") or 0
+
+    def fmt(v):
+        if v is None:
+            return "-"
+        return f"{int(v):,}".replace(",", " ")
+
+    result_text = (
+        f"Сумма проекта:{fmt(project_budget)} руб./"
+        f"Пресейл:{fmt(presale_limit)} руб./"
+        f"Лимит %:{presale_pct}"
+    )
+
+    return IndicatorResult(
+        number=13,
+        name="Бюджет проекта/пресейла",
+        result=result_text,
+        detail="",
+        verdict="Норма",
+        table=None,
+        table_title=None,
+    )
+
+
+# --------------------------------------------------------------------------
+# 6.14 — Расход лимита пресейла
+# --------------------------------------------------------------------------
+
+def check_presale_limit_spending(project: dict, sid) -> IndicatorResult:
+    """Индикатор 6.14: Расход лимита пресейла.
+
+    Назначение:
+        Контроль расхода лимита пресейла. Если лимит превышен — информация
+        для руководства.
+
+    Получение данных:
+        A = PresaleLimit (из get_entity_data, поле "Лимит на пресейл, руб.")
+        B = Σ расходов с меткой "Пресейл" из ProjectBudgetCompleteBusiness
+            (budgettype="Расход расчет по ресурсам" с ispresalebudget=True
+             или PointTagName="Пресейл")
+
+    Вывод:
+        Колонка "Результат":
+        {Лимит: N руб./Потрачено: M руб./Δ= X руб.}
+        Δ = Лимит - Потрачено (может быть отрицательным)
+        Без вложенной таблицы.
+    """
+    from mcp_config import get_project_card
+    from act_pay_amounts_thresholds import format_amount_short
+    from vat_calc import pick_amount_by_priority
+
+    project_id = project["project_id"]
+    project_code = project["code"]
+
+    # A = PresaleLimit
+    card = get_project_card(sid, project_id, project_code)
+    limit = card.get("PresaleLimit") or 0
+
+    # B = Σ расходов с меткой "Пресейл" из бюджетного представления
+    rows = fetch_with_cache(
+        sid, "Project", "ProjectBudgetCompleteBusiness",
+        filters={"ProjectId": project_id},
+        project_id=project_id, limit=500,
+    )
+
+    # Ищем КТ проекта для проверки PointTagName
+    points_rows = fetch_with_cache(
+        sid, "Point", "AllMyPoint",
+        filters={"ProjectId": project_id},
+        project_id=project_id, limit=500,
+    )
+    points_by_id = {}
+    for p in points_rows:
+        pid = p.get("PointId") or p.get("id")
+        if pid:
+            points_by_id[int(pid)] = p
+
+    spent = 0.0
+    for row in rows:
+        # Метка пресейл — двумя способами:
+        # 1. ispresalebudget=True
+        # 2. PointTagName == "Пресейл"
+        is_presale = row.get("ispresalebudget") is True
+        if not is_presale:
+            pid = row.get("pointid")
+            if pid:
+                point = points_by_id.get(int(pid), {})
+                if point.get("PointTagName") == "Пресейл":
+                    is_presale = True
+
+        if not is_presale:
+            continue
+
+        # Только затраты на трудозатраты (Расход расчет по ресурсам)
+        if row.get("budgettype") != "Расход расчет по ресурсам":
+            continue
+
+        # Приоритет по суммам (факт → прогноз → план, оплаты → акты)
+        spent += pick_amount_by_priority(row)
+
+    # Δ = Лимит - Потрачено
+    delta = limit - spent
+
+    def fmt(v):
+        if v == 0:
+            return "0 руб."
+        # Используем формат: млн с переходом на рубли
+        return format_amount_short(v) if v != int(v) else format_amount_short(v)
+
+    # Но формат в 6.13 был "X руб." без "млн"
+    def fmt_rub(v):
+        if v == 0:
+            return "0 руб."
+        return f"{int(round(v)):,} руб.".replace(",", " ")
+
+    result_text = (
+        f"Лимит:{fmt_rub(limit)}/Потрачено:{fmt_rub(spent)}/Δ={fmt_rub(delta)}"
+    )
+
+    return IndicatorResult(
+        number=14,
+        name="Расход лимита пресейла",
+        result=result_text,
+        detail="",
+        verdict="Норма",
+        table=None,
+        table_title=None,
+    )
+
+
+# ============================================================================
+# Регистрация индикаторов (в порядке 1..16)
+# ============================================================================
+
+INDICATORS = [
+    check_jurlico,  # 6.1
+    check_lifecycle_stage,  # 6.2
+    check_effort_forecast,  # 6.3
+    check_plan_effort,  # 6.4
+    check_resource_overload,  # 6.5
+    check_unfilled_roles,  # 6.6
+    check_cross_activity_overload,  # 6.7
+    check_financial_deadlines,  # 6.8
+    check_act_pay_amounts,  # 6.9
+    check_direct_costs,  # 6.10
+    check_vat,  # 6.11
+    check_vat_amount,  # 6.12
+    check_budget_limits,  # 6.13
+    check_presale_limit_spending,  # 6.14
+    check_approved_budget,  # 6.15
+    check_kp_labels,  # 6.16
+]

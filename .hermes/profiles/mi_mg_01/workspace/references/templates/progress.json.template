@@ -1,0 +1,19 @@
+{
+  "task_id": "TASK-YYYY-MM-DD-<name>",
+  "state": "draft",
+  "profile": "mi_mg_01",
+  "created": "YYYY-MM-DDTHH:MM:SS+03:00",
+  "updated": "YYYY-MM-DDTHH:MM:SS+03:00",
+  "author": "Rost",
+  "priority": "normal",
+  "steps": [
+    {
+      "ts": "YYYY-MM-DDTHH:MM:SS+03:00",
+      "status": "pending",
+      "title": "создать task-файл"
+    }
+  ],
+  "errors": [],
+  "outputs": [],
+  "decisions": []
+}

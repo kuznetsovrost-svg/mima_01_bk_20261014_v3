@@ -1,0 +1,1015 @@
+__version__ = "1.0.19"
+"""
+build_html_report.py — generic генератор HTML-отчёта для любого проекта.
+
+Использование:
+    # 1. Живой прогон (требует /tmp/proj_<code>.json с метаданными):
+    python3 scripts/build_html_report.py --code 504-595
+    python3 scripts/build_html_report.py --code 503-152 --output /tmp/custom.html
+
+    # 2. Список доступных проектов (есть /tmp/project_*_report.md):
+    python3 scripts/build_html_report.py --ls
+
+    # 3. Рендер из MD-снапшота (v1.0.19, БЕЗ /tmp/proj_*.json):
+    #    Метаданные проекта (Code, Name, ProjectId) берутся из самого MD.
+    #    Используется для исторических отчётов и для проверки
+    #    самодостаточности снапшота.
+    python3 scripts/build_html_report.py --md /path/to/snapshot.md
+    python3 scripts/build_html_report.py --md /path/to/snapshot.md --output /tmp/x.html
+
+Ожидаемая структура в /tmp/ (для режимов 1 и 2):
+    /tmp/project_<code>_report.md   # MD-отчёт (собирается scripts/rebuild_report.py)
+    /tmp/proj_<code>.json           # метаданные проекта (собирается run_all.py)
+
+    Для режима 3 (--md) — только MD-файл, ничего в /tmp/ не нужно.
+
+Выход:
+    /tmp/project_<code>_report.html — HTML-отчёт с:
+      - цветным индикатором (radial-gradient, 4 статуса)
+      - **6 таблицами-открывашками** (v1.0.19):
+        3. Замечания по срокам / 4. Полнота / 5. Прогнозы /
+        6. Показатели проекта (16) / 7. Финансы / 8. Тех. данные
+      - подкраской строк по статусу (critical/substantial/informational)
+      - preview-строками (формат зависит от секции):
+        - Классические 3..7: «**Статус раздела:** X **—** <итог>»
+        - Показатели 6: «Критическое замечание: N крит., N сущ., …»
+
+Импорт программный:
+    from build_html_report import build_html
+    html = build_html(report_md, project_data)
+
+    v1.0.19 также доступна функция build_html_from_md_file():
+        from build_html_report import build_html_from_md_file
+        out = build_html_from_md_file(Path('/tmp/snap.md'))
+
+v1.0.19: парсер раздела 6 «Показатели проекта» не обращается к
+локальному JSON `/tmp/section_6_indicators_data.json` — берёт
+verdict и severity из HTML-комментариев внутри pipe-table самого MD.
+HTML-движок работает **только по MD + YAML front-matter**, без обращения
+к MCP.
+
+    Технические детали реализации (`_parse_indicators_from_md`,
+    `self_extract_table(flexible=True)`, `extract_section(?m)`,
+    `compute_verdict`) — в CHANGELOG семейства `fst-project-health-*`
+    секция v1.0.19. Здесь не дублирую — главное для пользователя выше.
+"""
+import argparse
+import json
+import re
+import sys
+from datetime import datetime
+from pathlib import Path
+from typing import NamedTuple
+
+
+# ============ Парсер MD-таблиц ============
+def parse_md_table(text: str) -> tuple[list[str], list[list[str]]]:
+    """Ищет первую pipe-table в тексте, возвращает (headers, rows)."""
+    table_lines = []
+    in_table = False
+    for line in text.split("\n"):
+        if line.startswith("|"):
+            table_lines.append(line)
+            in_table = True
+        elif in_table and line.strip():
+            break
+    if not table_lines:
+        return [], []
+    headers = [c.strip() for c in table_lines[0].split("|")[1:-1]]
+    body_rows = []
+    for line in table_lines[2:]:  # пропускаем header + разделитель
+        if not line.strip():
+            continue
+        cells = [c.strip() for c in line.split("|")[1:-1]]
+        body_rows.append(cells)
+    return headers, body_rows
+
+
+def parse_project_metadata_from_md(text: str) -> dict:
+    """Извлекает из MD метаданные проекта: Code, Name, ProjectId.
+
+    v1.0.19: позволяет рендерить HTML из MD-снапшота без /tmp/proj_<code>.json.
+    Источник — заголовок MD (между front-matter и первым `---`).
+    """
+    text = strip_front_matter(text)
+    out = {"Code": "???", "Name": "", "ProjectId": 0}
+    m = re.search(r"# Отчёт о здоровье проекта «([^»]+)»", text)
+    if m:
+        out["Name"] = m.group(1).strip()
+    m = re.search(r"\*\*Target:\*\*\s*([^\s(]+)\s*\(ProjectId=(\d+)\)", text)
+    if m:
+        out["Code"] = m.group(1).strip()
+        try:
+            out["ProjectId"] = int(m.group(2))
+        except ValueError:
+            pass
+    return out
+
+
+def parse_front_matter(text: str) -> dict:
+    """Парсит YAML-front-matter (между первыми ---...---) в начале MD.
+
+    Поддерживает простой плоский YAML (без вложенности, без списков).
+    Возвращает dict с полями. Если front-matter отсутствует — {}.
+    """
+    m = re.match(r"^---\s*\n(.+?)\n---\s*\n", text, re.DOTALL)
+    if not m:
+        return {}
+    out = {}
+    for line in m.group(1).splitlines():
+        kv = re.match(r"^([A-Za-z_][\w]*)\s*:\s*(.*?)\s*$", line)
+        if not kv:
+            continue
+        key, val = kv.group(1), kv.group(2)
+        # снять кавычки
+        if len(val) >= 2 and val[0] == val[-1] and val[0] in ('"', "'"):
+            val = val[1:-1]
+        out[key] = val
+    return out
+
+
+def strip_front_matter(text: str) -> str:
+    """Удаляет YAML-front-matter из начала текста, если он есть."""
+    m = re.match(r"^---\s*\n.+?\n---\s*\n", text, re.DOTALL)
+    return text[m.end():] if m else text
+
+
+def extract_section(text: str, section_num: int) -> str:
+    """Извлекает раздел section_num (3..8) из MD-отчёта.
+
+    v1.0.18: снимает YAML-front-matter.
+    v1.0.19: lookahead `(?=^## \\d|m^## Сводка)` — якорь на начало строки,
+    иначе «## 6.3» ложно матчится как «## 6».
+    """
+    text = strip_front_matter(text)
+    # ИСПОЛЬЗУЕМ (?m) multiline чтобы ^ ловил начало строки
+    pattern = rf"(?m)^## {section_num}\. .*?(?=^## \d|^## Сводка)"
+    match = re.search(pattern, text, re.DOTALL)
+    return match.group(0) if match else ""
+
+
+# ============ Preview-строки ============
+def _extract_preview(section_md: str) -> str:
+    """Извлекает «Вердикт раздела:» и «Итог:» из MD-раздела для preview-bar.
+
+    Формат: «Вердикт раздела» + (если есть) « — Итог».
+    Если «Итог» нет в MD — вычисляем автоматически.
+    """
+    status = ""
+    summary = ""
+
+    # В MD используется "Вердикт раздела: ..." (например, "Болен", "Требует внимания", "Здоров")
+    m = re.search(r"\*\*(?:Вердикт раздела|Статус раздела):\*\*\s*(.+)", section_md)
+    if m:
+        status = m.group(1).strip()
+
+    m = re.search(r"\*\*(?:Итог по замечаниям|Итог):\*\*\s*(.+)", section_md)
+    if m:
+        summary = m.group(1).strip()
+
+    if not summary:
+        summary = _auto_summary(section_md)
+
+    if status and summary:
+        return f"{status} — {summary}"
+    elif status:
+        return status
+    elif summary:
+        return summary
+    return "Нет данных"
+
+
+def _auto_summary(section_md: str) -> str:
+    """Вычисляет итог по замечаниям из таблицы (если «Итог» в MD нет)."""
+    n_critical = 0
+    n_uncertain = 0
+    for line in section_md.split("\n"):
+        if "|" not in line:
+            continue
+        cells = [c.strip() for c in line.split("|")[1:-1]]
+        if len(cells) < 3:
+            continue
+        if cells[2] == "Да":
+            n_critical += 1
+        elif cells[2] == "Неопределено":
+            n_uncertain += 1
+    parts = []
+    if n_critical:
+        parts.append(f"{n_critical} показателей = «Да»")
+    if n_uncertain:
+        parts.append(f"{n_uncertain} «Неопределено»")
+    if not parts:
+        return "без замечаний"
+    return ", ".join(parts)
+
+
+# ============ Статус → CSS-класс ============
+def status_class(status_text: str) -> str:
+    """Определяет CSS-класс подсветки строки по текстовому маркеру.
+
+    Поддерживает:
+    - критическое: "критическ", "красн", "🔴"
+    - существенное: "существен", "жёлт", "желт" (ё и е), "🟡"
+    - информационное: "информацион", "синий", "⚪", "норма"
+    """
+    s = status_text.lower()
+    if "критическ" in s or "красн" in s or "🔴" in status_text:
+        return "status-critical"
+    # "жёлт" (ё) и "желт" (е) — оба варианта встречаются в MD
+    if ("существен" in s or "жёлт" in s or "желт" in s or "🟡" in status_text):
+        return "status-warning"
+    if "информацион" in s or "синий" in s or "⚪" in status_text or "норма" in s:
+        return "status-info"
+    return ""
+
+
+# ============ Генерация таблиц ============
+def render_tbl1_kt(report_md: str) -> str:
+    """tbl1: замечания по срокам (5 колонок). MD-таблица раздела 3.
+    Колонки MD: [#, Цвет, Статус, Код, Наименование, План, Прогноз, Факт, Исполнитель]
+    Колонки FIGMA: [#, Код, Наименование, План, Прогноз]
+    """
+    headers, rows = parse_md_table(extract_section(report_md, 3))
+    out = ["<table class='tbl tbl-kt'>"]
+    out.append("<thead><tr><th>#</th><th>Код</th><th>Наименование</th><th>План</th><th>Прогноз</th></tr></thead><tbody>")
+    for r in rows:
+        color_text = r[1] if len(r) > 1 else ""
+        cls = status_class(color_text)
+        out.append(f"<tr class='{cls}'>")
+        out.append(f"<td>{r[0] if len(r) > 0 else ''}</td>")
+        out.append(f"<td>{r[3] if len(r) > 3 else ''}</td>")
+        out.append(f"<td>{r[4] if len(r) > 4 else ''}</td>")
+        out.append(f"<td>{r[5] if len(r) > 5 else ''}</td>")
+        out.append(f"<td>{r[6] if len(r) > 6 else ''}</td>")
+        out.append("</tr>")
+    out.append("</tbody></table>")
+    return "\n".join(out)
+
+
+def render_tbl2_completeness(report_md: str) -> str:
+    """tbl2: полнота заполнения (5 показателей). Заполняется на ЛЮБОЙ стадии ЖЦ."""
+    sec4_text = extract_section(report_md, 4)
+    rows_data = []
+    for line in sec4_text.split("\n"):
+        m = re.match(r"\|\s*(\d+)\s*\|\s*([^|]+)\s*\|\s*([^|]+)\s*\|\s*([^|]+)\s*\|\s*([^|]+)\s*\|", line)
+        if m and m.group(1).isdigit():
+            rows_data.append((int(m.group(1)), m.group(2).strip(),
+                            m.group(3).strip(), m.group(4).strip(), m.group(5).strip()))
+    out = ["<table class='tbl tbl-completeness'>"]
+    out.append("<thead><tr><th>#</th><th>Показатель</th><th>Результат</th></tr></thead><tbody>")
+    if not rows_data:
+        for n, name in [(1, "Куратор назначен"), (2, "РП назначен"),
+                        (3, "Паспорт готов на стадии Инициирование"),
+                        (4, "Актуальность данных проекта по трудозатратам"),
+                        (5, "Корректность заполнения графика платежей проекта")]:
+            out.append(f"<tr><td class='col-num'>{n}</td>")
+            out.append(f"<td class='col-name'>{name}</td>")
+            out.append(f"<td class='col-result'>— нет данных —</td></tr>")
+    for n, name, result, detail, status in rows_data:
+        cls = ""
+        if "Критическ" in status or "Нет" in result:
+            cls = "status-critical"
+        elif "Существен" in status or "Неопределено" in result:
+            cls = "status-warning"
+        full_result = f"{result} — {detail}" if detail else result
+        out.append(f"<tr class='{cls}'>" if cls else "<tr>")
+        out.append(f"<td class='col-num'>{n}</td>")
+        out.append(f"<td class='col-name'>{name}</td>")
+        out.append(f"<td class='col-result'>{full_result}</td>")
+        out.append("</tr>")
+    out.append("</tbody></table>")
+    return "\n".join(out)
+
+
+def render_tbl3_overdue(report_md: str) -> str:
+    """tbl3: актуальность прогнозов (6 колонок). MD-таблица раздела 5.
+
+    Колонки MD (run_all.py): [# | Цвет | Статус | Код КТ | Название | План | Прогноз | Дней]
+    Индексы:                    r[0]  r[1]   r[2]    r[3]     r[4]      r[5]   r[6]     r[7]
+
+    ВАЖНО (fix 2026-08-21):
+    - r[3] = Код КТ (НЕ r[2]!)
+    - r[4] = Название (НЕ r[3]!)
+    - r[7] = колонка "Дней" — это уже overdue_days = today - forecast_date
+      (пересчитанный в run_all.py, НЕ forecast - plan).
+    """
+    from datetime import date
+    headers, rows = parse_md_table(extract_section(report_md, 5))
+    out = ["<table class='tbl tbl-overdue'>"]
+    out.append("<thead><tr><th>#</th><th>Код</th><th>Название</th><th>План</th><th>Прогноз</th><th>Просрочка, дн</th></tr></thead><tbody>")
+    today = date.today()
+    for r in rows:
+        color_text = r[1] if len(r) > 1 else ""
+        cls = status_class(color_text)
+        out.append(f"<tr class='{cls}'>")
+        # r[0]=#, r[3]=Код КТ, r[4]=Название, r[5]=План, r[6]=Прогноз
+        out.append(f"<td>{r[0] if len(r) > 0 else ''}</td>")
+        out.append(f"<td>{r[3] if len(r) > 3 else ''}</td>")
+        out.append(f"<td>{r[4] if len(r) > 4 else ''}</td>")
+        out.append(f"<td>{r[5] if len(r) > 5 else ''}</td>")
+        out.append(f"<td>{r[6] if len(r) > 6 else ''}</td>")
+        # Просрочка: r[7] уже содержит overdue_days (today - forecast_date).
+        # На случай если в MD старое значение — пересчитываем от ForecastDate.
+        overdue_text = ""
+        forecast_str = r[6] if len(r) > 6 else ""
+        try:
+            if forecast_str and forecast_str.strip() and forecast_str != "—":
+                fd = date.fromisoformat(forecast_str.strip())
+                if fd < today:
+                    overdue_text = f"{(today - fd).days}"
+                else:
+                    overdue_text = "0"
+            else:
+                overdue_text = r[7] if len(r) > 7 else "—"
+        except Exception:
+            overdue_text = r[7] if len(r) > 7 else "—"
+        out.append(f"<td>{overdue_text}</td>")
+        out.append("</tr>")
+    out.append("</tbody></table>")
+    return "\n".join(out)
+
+
+def render_tbl4_finance(report_md: str) -> str:
+    """tbl4: финансы (3 показателя × 70px строки).
+
+    Формат (по эталону 26, 2026-08-07):
+    # | Показатель | Результат (с детализацией через '→ критическое/существенное')
+    Подсветка: r[2] содержит 'критическ' → status-critical.
+
+    Берём колонку «Детализация» (r[3]) и объединяем с «Результат» (r[2]) в одну ячейку.
+
+    v1.0.18: Финансы теперь = раздел 7 в MD (после перенумерации —
+    раздел 6 занят «Показателями проекта»).
+    """
+    headers, rows = parse_md_table(extract_section(report_md, 7))
+    out = ["<table class='tbl tbl-finance'>"]
+    out.append("<thead><tr><th>#</th><th>Показатель</th><th>Результат</th></tr></thead><tbody>")
+    for r in rows:
+        result = r[2] if len(r) >= 3 else ""  # «Да»
+        detail = r[3] if len(r) >= 4 else ""  # «Прогноз фин.результата: -222,493.00 ₽ — критическое замечание (убыток)»
+        # Объединяем как в эталоне: «Да — Прогноз фин.результата: -222,493.00 ₽ → критическое»
+        if detail and result == "Да":
+            # Если detail уже содержит «критическое замечание», заменяем на «→ критическое»
+            cell = f"{result} — {detail}"
+        else:
+            cell = f"{result} — {detail}" if detail else result
+        cls = status_class(cell)  # ищет «критическ» в тексте
+        out.append(f"<tr class='{cls}'>")
+        out.append(f"<td class='col-num'>{r[0]}</td>")
+        out.append(f"<td class='col-name'>{r[1]}</td>")
+        out.append(f"<td class='col-result'>{cell}</td>")
+        out.append("</tr>")
+    out.append("</tbody></table>")
+    return "\n".join(out)
+
+
+def _extract_preview_section_6_indicators(report_md: str) -> str:
+    """Извлекает краткий preview для секции 6 (16 индикаторов).
+
+    v1.0.19: данные берутся ТОЛЬКО из MD — больше нет fallback на JSON.
+    Источник verdict и counts — `_parse_indicators_from_md()` (тот же
+    парсер, что используется для рендера главной таблицы), так что
+    preview ВСЕГДА совпадает со сводными числами на странице.
+
+    Если MD не содержит секцию 6 (старый формат до v1.0.19), вернёт
+    «Нет данных» — без попыток читать локальные JSON.
+    """
+    sec_text = extract_section(report_md, 6)
+    if not sec_text:
+        return "Нет данных"
+
+    # Считаем counts напрямую из verdict каждого показателя, который
+    # вытащили из MD-HTML-комментариев — это та же логика, что в
+    # рендере главной таблицы. Так preview и страница не разойдутся.
+    indicators = _parse_indicators_from_md(report_md)
+    counts = {"critical": 0, "substantial": 0, "informational": 0, "normal": 0}
+    sev_order_ru = {"Критическое": "critical", "Существенное": "substantial",
+                    "Информационное": "informational", "Норма": "normal"}
+    for ind in indicators:
+        v = ind.get("verdict", "Норма")
+        sev_key = sev_order_ru.get(v, "normal")
+        counts[sev_key] += 1
+
+    # Внешний verdict берём из "**Вердикт раздела:**" — это агрегат
+    # от compute_section_verdict в run_all.py.
+    verdict_match = re.search(r"\*\*Вердикт раздела:\*\*\s*(\S+)", sec_text)
+    if verdict_match:
+        verdict = verdict_match.group(1).strip()
+    else:
+        # Если в MD нет «**Вердикт раздела:**» — вычисляем агрегат сами.
+        verdict = "Критическое" if counts["critical"] else (
+            "Существенное" if counts["substantial"] else (
+            "Информационное" if counts["informational"] else "Норма"))
+
+    label_map = {
+        "Критическое": "Критическое замечание",
+        "Существенное": "Существенное замечание",
+        "Информационное": "Информационное замечание",
+        "Норма": "Норма",
+    }
+    verdict_label = label_map.get(verdict, verdict)
+
+    parts = []
+    if counts.get("critical", 0) > 0:
+        parts.append(f"{counts['critical']} крит.")
+    if counts.get("substantial", 0) > 0:
+        parts.append(f"{counts['substantial']} сущ.")
+    if counts.get("informational", 0) > 0:
+        parts.append(f"{counts['informational']} инф.")
+
+    if parts:
+        return f"{verdict_label}: {', '.join(parts)}"
+    return f"{verdict_label} (нет замечаний)"
+
+
+# ============ Карта заголовков колонок для вложенных таблиц 6.X ============
+_NESTED_HEADERS_RU = {
+    "n": "#", "code": "Код", "type": "Тип", "name": "Наименование",
+    "plan": "План", "forecast": "Прогноз", "diff": "Δ дн.",
+    "period": "Период", "remark": "Примечание",
+    "user": "ФИО", "year": "Год",
+    "available": "Доступно", "overload": "Превышение",
+    "percent": "%", "resource": "Ресурс",
+    "unfilled_forecast": "Нереализ. прогноз",
+}
+
+
+def _severity_to_class(sev: str) -> str:
+    """Переводит «Критическое/Существенное/Информационное/Норма» в data-атрибут."""
+    sev = (sev or "").strip()
+    if sev == "Критическое":
+        return "critical"
+    if sev == "Существенное":
+        return "substantial"
+    if sev == "Информационное":
+        return "informational"
+    return "normal"
+
+
+def _parse_indicators_from_md(report_md: str) -> list[dict]:
+    """Парсит раздел 6 («Показатели проекта») из MD-слепка.
+
+    v1.0.19: самодостаточный парсер — данные и verdict берутся прямо из MD,
+    без обращения к /tmp/section_6_indicators_data.json. Это позволяет
+    рендерить HTML из MD-снапшота без зависимостей в файловой системе.
+
+    Возвращает список dict-ов с ключами:
+        number, name, result, verdict, table_title, table (list of dict).
+    """
+    sec_text = extract_section(report_md, 6)
+    if not sec_text:
+        return []
+
+    # === 1. Главная таблица: | 6.N | Название | Результат | ▼<!-- verdict=... --> | ===
+    indicators = []
+    sec_lines = sec_text.split("\n")
+    i = 0
+    # пропускаем заголовок, пустую строку, "Вердикт раздела:" и саму pipe-table-шапку
+    while i < len(sec_lines) and not (sec_lines[i].startswith("| ") and "Показатель" in sec_lines[i]):
+        i += 1
+    # шапка: "| # | Показатель | Результат | Детали |"
+    # разделитель: "|---|---|---|---|"
+    if i + 2 > len(sec_lines):
+        return []
+    i += 2  # пропустить header + divider
+
+    # === 2. Читаем строки главной таблицы до первой пустой строки или "### 6."
+    while i < len(sec_lines):
+        line = sec_lines[i]
+        if not line.startswith("|"):
+            break
+        # пропускаем разделитель
+        if re.match(r"^\|[\s\-:|]+\|\s*$", line):
+            i += 1
+            continue
+
+        cells = [c.strip() for c in line.split("|")[1:-1]]
+        if len(cells) < 4:
+            i += 1
+            continue
+        # Ячейка [0] = "6.N"
+        m_num = re.match(r"6\.(\d+)", cells[0])
+        if not m_num:
+            i += 1
+            continue
+        num = m_num.group(1)
+        name = cells[1]
+        result = cells[2]
+        details_cell = cells[3]
+        # verdict вытаскиваем из HTML-комментария ВНУТРИ ячейки "Детали"
+        m_v = re.search(r'<!--\s*6\.\d+\s+verdict="([^"]+)"\s*-->', details_cell)
+        verdict = m_v.group(1) if m_v else "Норма"
+        # ▼ (только если есть в details_cell и она не "False")
+        has_details = "▼" in details_cell
+
+        indicators.append({
+            "number": num,
+            "name": name,
+            "result": result,
+            "verdict": verdict,
+            "table": [],          # заполним ниже
+            "table_title": "",    # заполним ниже
+            "has_details_marker": has_details,
+        })
+        i += 1
+
+    # === 3. Вложенные таблицы для каждого "### 6.N"
+    by_num = {ind["number"]: ind for ind in indicators}
+    while i < len(sec_lines):
+        m = re.match(r"^### 6\.(\d+)\s+(.+)$", sec_lines[i])
+        if not m:
+            i += 1
+            continue
+        sub_num = m.group(1)
+        # Следующая строка — заголовок "Месяцы с проблемами..."
+        i += 1
+        table_title = ""
+        if i < len(sec_lines) and sec_lines[i].startswith("*"):
+            table_title = sec_lines[i].strip("*").strip()
+            i += 1
+        # пустая строка
+        if i < len(sec_lines) and sec_lines[i].strip() == "":
+            i += 1
+        # header pipe-table
+        if i >= len(sec_lines) or not sec_lines[i].startswith("|"):
+            continue
+        hdr_cells = [c.strip() for c in sec_lines[i].split("|")[1:-1]]
+        i += 1
+        # divider
+        if i < len(sec_lines) and re.match(r"^\|[\s\-:|]+\|\s*$", sec_lines[i]):
+            i += 1
+        # rows
+        rows = []
+        while i < len(sec_lines):
+            line = sec_lines[i]
+            if not line.startswith("|"):
+                break
+            cells = [c.strip() for c in line.split("|")[1:-1]]
+            # severity — из HTML-комментария ВНУТРИ последней ячейки
+            last_cell = cells[-1] if cells else ""
+            m_s = re.search(r'<!--\s*6\.\d+\s+severity="([^"]+)"\s*-->', last_cell)
+            severity = m_s.group(1) if m_s else "normal"
+            # уберём комментарий из последней ячейки, чтобы не светился в HTML
+            if m_s:
+                cells[-1] = re.sub(r'\s*<!--\s*6\.\d+\s+severity="[^"]+"\s*-->\s*', '', last_cell).strip()
+            row = dict(zip(hdr_cells, cells))
+            row["_severity"] = severity
+            rows.append(row)
+            i += 1
+
+        if sub_num in by_num:
+            by_num[sub_num]["table"] = rows
+            by_num[sub_num]["table_title"] = table_title
+
+    return indicators
+
+
+def render_tbl6_indicators(report_md: str) -> str:
+    """tbl6: 16 показателей проекта.
+
+    v1.0.19: данные читаются ТОЛЬКО из MD-раздела 6 — без обращения к JSON.
+    Это позволяет рендерить HTML из MD-снапшота (самодостаточный артефакт)
+    без зависимостей от /tmp/section_6_indicators_data.json.
+
+    Verdict каждого показателя и severity каждой строки вложенной таблицы
+    хранятся в MD как HTML-комментарии:
+        | 6.3 | ... | Вопросы, 703 ч | ▼<!-- 6.3 verdict="Существенное" --> |
+        | 1 | Октябрь-2026 | ... <!-- 6.3 severity="substantial" --> |
+
+    Структура главной таблицы:
+    - 4 колонки: #, Показатель, Результат, Детали
+    - Подкраска строк по severity
+    - Вложенные таблицы через CSS-only details/summary (без JS)
+    """
+    indicators = _parse_indicators_from_md(report_md)
+    if not indicators:
+        return "<p><em>Нет данных по разделу 6 (Показатели проекта).</em></p>"
+
+    out = []
+
+    # 1) Заголовок общей таблицы
+    out.append("<table class='tbl tbl-indicators tbl-indicators-header'>")
+    out.append("<colgroup>")
+    out.append("<col class='col-num'><col class='col-name'>"
+               "<col class='col-result'><col class='col-details'>")
+    out.append("</colgroup>")
+    out.append("<thead><tr>")
+    out.append("<th>#</th><th>Показатель</th><th>Результат</th><th>Детали</th>")
+    out.append("</tr></thead>")
+    out.append("</table>")
+
+    # 2) Каждый индикатор — <details> с <summary> (мини-таблица) и panel
+    for ind in indicators:
+        num = ind.get("number", "")
+        name = ind.get("name", "")
+        result = ind.get("result", "")
+        verdict = ind.get("verdict", "Норма")
+        table = ind.get("table") or []
+        table_title = ind.get("table_title", "")
+
+        severity_class = _severity_to_class(verdict)
+        status_attr = f' data-status="{severity_class}"'
+
+        has_data = bool(table) and len(table) > 0
+        details_class = "indicator-details" + (" has-details" if has_data else "")
+
+        # Список подпунктов, у которых МОГУТ быть вложенные таблицы.
+        allowed_numbers = {2, 3, 4, 5, 6, 7, 8, 15, 16}
+        can_have_details = int(num) in allowed_numbers
+
+        # Если подпункт не может иметь вложенную таблицу —
+        # рисуем строку БЕЗ ▼ вообще.
+        if not can_have_details:
+            out.append("<table class='tbl tbl-indicators'>")
+            out.append("<colgroup>")
+            out.append("<col class='col-num'><col class='col-name'>"
+                       "<col class='col-result'><col class='col-details'>")
+            out.append("</colgroup>")
+            out.append("<tbody>")
+            out.append(f"<tr{status_attr}>")
+            out.append(f"<td>6.{num}</td>")
+            out.append(f"<td>{name}</td>")
+            out.append(f"<td>{result}</td>")
+            # Пустая ячейка "Детали" — без ▼ вообще
+            out.append("<td class='col-details'></td>")
+            out.append("</tr>")
+            out.append("</tbody>")
+            out.append("</table>")
+            continue
+
+        # Если у допустимого подпункта НЕТ данных для вложенной таблицы —
+        # НЕ создаём <details>, только мини-таблицу-строку с серым неактивным ▼.
+        if not has_data:
+            out.append("<table class='tbl tbl-indicators'>")
+            out.append("<colgroup>")
+            out.append("<col class='col-num'><col class='col-name'>"
+                       "<col class='col-result'><col class='col-details'>")
+            out.append("</colgroup>")
+            out.append("<tbody>")
+            out.append(f"<tr{status_attr}>")
+            out.append(f"<td>6.{num}</td>")
+            out.append(f"<td>{name}</td>")
+            out.append(f"<td>{result}</td>")
+            # Серый неактивный ▼ — для подпункта без данных
+            out.append("<td class='col-details'>"
+                       "<span class='col-details-marker-disabled'>▼</span></td>")
+            out.append("</tr>")
+            out.append("</tbody>")
+            out.append("</table>")
+            continue
+
+        # Есть данные — оборачиваем в <details> с <summary> и panel
+        out.append(f"<details class='{details_class}' data-status='{severity_class}'>")
+        out.append("<summary>")
+
+        # Мини-таблица-строка внутри <summary>
+        out.append("<table class='tbl tbl-indicators'>")
+        out.append("<colgroup>")
+        out.append("<col class='col-num'><col class='col-name'>"
+                   "<col class='col-result'><col class='col-details'>")
+        out.append("</colgroup>")
+        out.append("<tbody>")
+        out.append(f"<tr{status_attr}>")
+        out.append(f"<td>6.{num}</td>")
+        out.append(f"<td>{name}</td>")
+        out.append(f"<td>{result}</td>")
+        out.append("<td class='col-details'>"
+                   "<span class='col-details-marker'>▼</span></td>")
+        out.append("</tr>")
+        out.append("</tbody>")
+        out.append("</table>")
+
+        out.append("</summary>")
+
+        # Panel с вложенной таблицей
+        out.append("<div class='indicator-details-panel'>")
+        if table_title:
+            out.append(f"<div class='tbl-nested-title'>{table_title}</div>")
+
+        # Колонки — из ключей первой строки (мы их клали как dict-ключи)
+        first_row = table[0]
+        cols = [k for k in first_row.keys() if k != "_severity"]
+        # «n» — всегда первая, если есть
+        if "n" in cols:
+            cols = ["n"] + [c for c in cols if c != "n"]
+        headers = [_NESTED_HEADERS_RU.get(c.lower(), c) for c in cols]
+
+        out.append("<table class='tbl tbl-nested'>")
+        out.append("<thead><tr>")
+        for h in headers:
+            # 6.7 — спец. переименования колонок
+            if str(num) == "7":
+                if h == "План":
+                    h = "Прогноз по активн."
+                elif h == "Превышение":
+                    h = "Превышение сумм."
+                elif h == "%":
+                    h = "%Превышения"
+            out.append(f"<th>{h}</th>")
+        out.append("</tr></thead><tbody>")
+        for row in table:
+            sev = row.get("_severity", "normal")
+            sev_attr = f' data-status="{sev}"'
+            out.append(f"<tr{sev_attr}>")
+            for c in cols:
+                v = row.get(c, "")
+                v_str = str(v) if v is not None else ""
+                out.append(f"<td>{v_str}</td>")
+            out.append("</tr>")
+        out.append("</tbody></table>")
+        out.append("</div>")  # .indicator-details-panel
+
+        out.append("</details>")
+
+    return "\n".join(out)
+
+
+def render_tbl5_tech(report_md: str) -> str:
+    """tbl5: тех. данные (6 показателей). Заполняется на ЛЮБОЙ стадии ЖЦ.
+
+    Структура таблицы (по эталону 26, 2026-08-07):
+    1. Пользователь
+    2. Титул системы
+    3. URL MCP-сервера
+    4. Версия скилла
+    5. Версия MCP
+    6. Версия Core (ПМ «Форсайт»)
+    """
+    sec8_text = extract_section(report_md, 8)
+    rows_data = []
+    for line in sec8_text.split("\n"):
+        m = re.match(r"\|\s*(\d+)\s*\|\s*([^|]+)\s*\|\s*([^|]+)\s*\|", line)
+        if m and m.group(1).isdigit():
+            rows_data.append((int(m.group(1)), m.group(2).strip(), m.group(3).strip()))
+    out = ["<table class='tbl tbl-tech'>"]
+    out.append("<thead><tr><th>#</th><th>Показатель</th><th>Значение</th></tr></thead><tbody>")
+    if not rows_data:
+        for n, name in [(1, "Пользователь"), (2, "Титул системы"),
+                        (3, "URL MCP-сервера"), (4, "Версия скилла"),
+                        (5, "Версия MCP"), (6, "Версия Core (ПМ «Форсайт»)")]:
+            out.append(f"<tr><td class='col-num'>{n}</td>")
+            out.append(f"<td class='col-name'>{name}</td>")
+            out.append(f"<td class='col-value'>— нет данных —</td></tr>")
+    for n, name, value in rows_data:
+        out.append("<tr>")
+        out.append(f"<td class='col-num'>{n}</td>")
+        out.append(f"<td class='col-name'>{name}</td>")
+        out.append(f"<td class='col-value'>{value}</td>")
+        out.append("</tr>")
+    out.append("</tbody></table>")
+    return "\n".join(out)
+
+
+# ============ Сводный вердикт ============
+def compute_verdict(report_md: str) -> tuple[str, str, str]:
+    """Возвращает (text, status_class, emoji_unused) для индикатора.
+
+    Логика (v1.0.18 — после перенумерации разделов):
+      - Если ЛЮБОЙ из разделов 3/4/5/6/7 имеет вердикт «Болен» ИЛИ «Критическое»
+        (показатели) → status_class='sick', text='Проект болен'.
+      - Иначе если ЛЮБОЙ = «Требует внимания» ИЛИ «Существенное» → 'attention'.
+      - Иначе → 'healthy', 'Здоров'.
+
+    Раздел 6 в MD = «Показатели проекта» (verdict ∈ {Норма, Информационное, Существенное, Критическое}).
+    Раздел 7 в MD = «Финансы» (verdict ∈ {Здоров, Требует внимания, Болен}).
+    «Критическое» приравнивается к «Болен» (финансы) для сводного вердикта.
+    """
+    statuses = []
+    for n in (3, 4, 5, 6, 7):
+        sec = extract_section(report_md, n)
+        # Ищем **Вердикт раздела:** (run_all.py) ИЛИ **Статус раздела:** (старый формат)
+        m = re.search(r"\*\*(?:Вердикт|Статус) раздела:\*\*\s*(.+)", sec)
+        if m:
+            statuses.append(m.group(1).strip())
+
+    if any(("Болен" in s or "БОЛЕН" in s or "Критическ" in s) for s in statuses):
+        return ("Проект болен", "sick", "")
+    if any(("Требует внимания" in s or "Существенн" in s) for s in statuses):
+        return ("Требует внимания", "attention", "")
+    if any("Здоров" in s for s in statuses):
+        return ("Здоров", "healthy", "")
+    if any("Норма" in s for s in statuses):
+        return ("Здоров", "healthy", "")
+    return ("Нет данных", "unknown", "")
+
+
+# ============ Загрузка шаблона и CSS ============
+def load_template(skill_dir: Path) -> tuple[str, str]:
+    """Загружает templates/report.html и templates/report.css. Возвращает (html, css)."""
+    html_path = skill_dir / "templates" / "report.html"
+    css_path = skill_dir / "templates" / "report.css"
+    if not html_path.exists():
+        raise FileNotFoundError(f"Шаблон не найден: {html_path}")
+    if not css_path.exists():
+        raise FileNotFoundError(f"CSS не найден: {css_path}")
+    html = html_path.read_text(encoding="utf-8")
+    css = css_path.read_text(encoding="utf-8")
+    return html, css
+
+
+# ============ Главная функция ============
+def build_html(report_md: str, project_data: dict, template_html: str = None,
+               template_css: str = None, snapshot_timestamp: str = "") -> str:
+    """Собирает финальный HTML.
+
+    Args:
+        report_md: содержимое /tmp/project_<code>_report.md
+        project_data: dict с ключами Code, Name, ProjectId
+        template_html: путь к templates/report.html (auto-detect если None)
+        template_css: путь к templates/report.css (auto-detect если None)
+        snapshot_timestamp: таймстамп из метаданных слепка (если отчёт
+            строится по MD-слепку). По умолчанию "" — онлайн-отчёт,
+            в шапке будет только "MCP: ..." без "Слепок от: ...".
+
+    Returns:
+        Полный HTML как строка.
+    """
+    project_code = project_data.get("Code", "???")
+    project_name = (project_data.get("Name") or "").strip()
+    project_id = project_data.get("ProjectId", 0)
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # Извлекаем snapshot_timestamp (v1.0.18): приоритет — YAML-front-matter,
+    # fallback — устаревший HTML-комментарий в начале MD.
+    if not snapshot_timestamp:
+        fm = parse_front_matter(report_md)
+        if fm.get("snapshot_timestamp"):
+            snapshot_timestamp = fm["snapshot_timestamp"].strip()
+        else:
+            m_ts = re.search(r"<!--\s*snapshot_timestamp:\s*([0-9\-: ]+?)\s*-->", report_md)
+            if m_ts:
+                snapshot_timestamp = m_ts.group(1).strip()
+
+    # Render tables (v1.0.18 — нумерация разделов совпадает с MD):
+    #   content_6 = Показатели проекта (MD-раздел 6, через JSON привязку)
+    #   content_7 = Финансы (MD-раздел 7)
+    #   content_8 = Тех. данные (MD-раздел 8)
+    content_3 = render_tbl1_kt(report_md)
+    content_4 = render_tbl2_completeness(report_md)
+    content_5 = render_tbl3_overdue(report_md)
+    content_6 = render_tbl6_indicators(report_md)  # 16 показателей (NEW v1.0.0)
+    content_7 = render_tbl4_finance(report_md)      # Финансы = раздел 7
+    content_8 = render_tbl5_tech(report_md)         # Тех. данные = раздел 8
+
+    # Preview-строки (v1.0.18 — после перенумерации разделов):
+    #   - 3: Замечания по срокам
+    #   - 4: Полнота заполнения
+    #   - 5: Актуальность прогнозов
+    #   - 6: Показатели проекта (16) — preview берётся из MD
+    #   - 7: Финансовый статус — preview из MD
+    #   - 8: Технические данные
+    preview_3 = _extract_preview(extract_section(report_md, 3))
+    preview_4 = _extract_preview(extract_section(report_md, 4))
+    preview_5 = _extract_preview(extract_section(report_md, 5))
+    preview_6 = _extract_preview_section_6_indicators(report_md)
+    preview_7 = _extract_preview(extract_section(report_md, 7))
+    preview_8 = "ℹ️ Нейтральный — справочная информация"
+
+    # Сводный вердикт
+    verdict_text, verdict_status, _ = compute_verdict(report_md)
+
+    # Load templates
+    skill_dir = Path(__file__).parent.parent
+    if template_html is None or template_css is None:
+        html_tpl, css_tpl = load_template(skill_dir)
+        if template_html is None:
+            template_html = html_tpl
+        if template_css is None:
+            template_css = css_tpl
+
+    # Делим HTML на «до content» и «после body», чтобы подставить CSS без экранирования
+    # (CSS содержит { }, ломает f-string — используем replace)
+    css_block = f"<style>\n{template_css}\n</style>"
+    # Вставка CSS в <head>
+    html_full = template_html.replace("</head>", css_block + "\n</head>")
+
+    # Подстановка значений
+    return html_full \
+        .replace("{{ project_code }}", str(project_code)) \
+        .replace("{{ project_name }}", project_name) \
+        .replace("{{ project_id }}", str(project_id)) \
+        .replace("{{ now }}", now) \
+        .replace("{{ snapshot_timestamp }}", f"  <b>Слепок от:</b> {snapshot_timestamp}" if snapshot_timestamp else "") \
+        .replace("{{ section_3_preview }}", preview_3) \
+        .replace("{{ section_4_preview }}", preview_4) \
+        .replace("{{ section_5_preview }}", preview_5) \
+        .replace("{{ section_6_preview }}", preview_6) \
+        .replace("{{ section_7_preview }}", preview_7) \
+        .replace("{{ section_8_preview }}", preview_8) \
+        .replace("{{ section_3_content }}", content_3) \
+        .replace("{{ section_4_content }}", content_4) \
+        .replace("{{ section_5_content }}", content_5) \
+        .replace("{{ section_6_content }}", content_6) \
+        .replace("{{ section_7_content }}", content_7) \
+        .replace("{{ section_8_content }}", content_8) \
+        .replace("{{ verdict_status }}", verdict_status) \
+        .replace("{{ verdict_text }}", verdict_text)
+
+
+# ============ Поиск проектов в /tmp ============
+def list_available_projects() -> list[str]:
+    """Возвращает список кодов проектов, для которых есть MD-отчёт."""
+    codes = set()
+    for md in Path("/tmp").glob("project_*_report.md"):
+        m = re.search(r"project_([\w-]+)_report\.md", md.name)
+        if m:
+            codes.add(m.group(1))
+    return sorted(codes)
+
+
+def find_project_files(code: str) -> tuple[Path, Path]:
+    """Находит пути к MD и JSON для кода. Бросает FileNotFoundError если нет."""
+    md_path = Path(f"/tmp/project_{code}_report.md")
+    json_path = Path(f"/tmp/proj_{code}.json")
+    if not md_path.exists():
+        available = list_available_projects()
+        ctx = f"Доступные: {', '.join(available)}" if available else "В /tmp/ нет ни одного /tmp/project_*_report.md"
+        raise FileNotFoundError(f"MD-отчёт не найден: {md_path}\n{ctx}")
+    if not json_path.exists():
+        raise FileNotFoundError(f"JSON-данные не найдены: {json_path}")
+    return md_path, json_path
+
+
+def build_html_from_md_file(md_path: Path, output: Path | None = None) -> Path:
+    """CLI-friendly: рендерит HTML из MD-файла БЕЗ обращения к MCP/JSON.
+
+    Используется для рендера из MD-снапшота (когда /tmp/proj_<code>.json
+    уже не существует). Метаданные проекта извлекаются из самого MD.
+
+    Возвращает путь к записанному HTML.
+    """
+    if not md_path.exists():
+        raise FileNotFoundError(f"MD не найден: {md_path}")
+    report_md = md_path.read_text(encoding="utf-8")
+    project_data = parse_project_metadata_from_md(report_md)
+    html = build_html(report_md, project_data)
+    if output is None:
+        code = project_data.get("Code", "???")
+        output = Path(f"/tmp/project_{code}_report.html")
+    output.write_text(html, encoding="utf-8")
+    print(f"✅ HTML из MD-снапшота собран: {output} ({len(html)} байт)")
+    print(f"   Проект: {project_data.get('Name')} ({project_data.get('Code')}, "
+          f"ProjectId={project_data.get('ProjectId')})")
+    return output
+
+
+# ============ CLI ============
+def main() -> Path:
+    """CLI-обёртка: собирает /tmp/project_<code>_report.html.
+
+    Использование:
+        python3 scripts/build_html_report.py --code 504-595
+        python3 scripts/build_html_report.py --ls  # список доступных
+        python3 scripts/build_html_report.py --md /path/to/snapshot.MD
+                            # рендер из MD-снапшота без /tmp/proj_<code>.json
+    """
+    parser = argparse.ArgumentParser(
+        description="Генератор HTML-отчёта для проекта fst-project-health."
+    )
+    parser.add_argument("--code", type=str, help="Код проекта (например, 504-595)")
+    parser.add_argument("--output", type=str, help="Путь к выходному HTML (default: /tmp/project_<code>_report.html)")
+    parser.add_argument("--ls", action="store_true", help="Список доступных проектов")
+    parser.add_argument("--md", type=str, help="Путь к MD-снапшоту (полностью self-contained)")
+    args = parser.parse_args()
+
+    if args.ls:
+        codes = list_available_projects()
+        if codes:
+            print("Доступные проекты (есть /tmp/project_*_report.md):")
+            for c in codes:
+                print(f"  • {c}")
+        else:
+            print("В /tmp/ нет ни одного /tmp/project_*_report.md")
+        return None
+
+    # Рендер из MD-снапшота (полностью автономно, без /tmp/proj_*.json)
+    if args.md:
+        output = Path(args.output) if args.output else None
+        return build_html_from_md_file(Path(args.md), output=output)
+
+    if not args.code:
+        parser.print_help()
+        sys.exit(1)
+
+    md_path, json_path = find_project_files(args.code)
+    report_md = md_path.read_text(encoding="utf-8")
+    project_data = json.loads(json_path.read_text(encoding="utf-8"))
+
+    html = build_html(report_md, project_data)
+
+    output = Path(args.output) if args.output else Path(f"/tmp/project_{args.code}_report.html")
+    output.write_text(html, encoding="utf-8")
+
+    # Сводка
+    n_critical = html.count("status-critical")
+    n_warning = html.count("status-warning")
+    n_info = html.count("status-info")
+    print(f"✅ HTML-отчёт собран: {output} ({len(html)} байт)")
+    print(f"   status-critical: {n_critical}")
+    print(f"   status-warning:  {n_warning}")
+    print(f"   status-info:     {n_info}")
+    return output
+
+
+if __name__ == "__main__":
+    main()

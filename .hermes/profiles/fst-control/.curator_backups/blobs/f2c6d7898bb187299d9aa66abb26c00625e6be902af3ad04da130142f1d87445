@@ -1,0 +1,89 @@
+"""
+cross_activity_overload_thresholds.py — пороги для интерпретации индикатора 6.7
+«Есть исполнители у которых план в сумме с др.активностями > 100%».
+
+Используется в project_indicators.py::check_cross_activity_overload().
+
+Логика (по уточнениям пользователя, 2026-09-02):
+- Суммируем plan_hours исполнителя по всем доступным проектам за каждый месяц.
+- Только планы с planning_date >= today (прошлое не учитываем).
+- Норма = 8ч × рабочие_дни_в_месяце.
+- Процент = (Σ plan / норма) × 100.
+
+Severity (по проценту превышения):
+- >100% до 110% → informational
+- >110% до 150% → substantial
+- >150% → critical
+
+ВАЖНО: ВАЖНО: данные по проектам, недоступным на чтение пользователю,
+под аккаунтом которого строится отчёт, НЕ учитываются.
+"""
+from typing import Callable, Any, Dict
+
+
+# ============================================================================
+# Пороги для 6.7 — Перегрузка исполнителей по всем активностям
+# ============================================================================
+
+INDICATOR_THRESHOLDS = {
+    "6.7_cross_activity_overload": {
+        "critical_when": lambda r: r.get("has_critical", False),
+        "substantial_when": lambda r: (
+            not r.get("has_critical", False)
+            and r.get("has_substantial", False)
+        ),
+        "informational_when": lambda r: (
+            not r.get("has_critical", False)
+            and not r.get("has_substantial", False)
+            and r.get("has_informational", False)
+        ),
+        "default_verdict": "Норма",
+
+        "hours_per_day": 8,
+        "informational_max": 110,
+        "substantial_max": 150,
+    },
+}
+
+
+def interpret_indicator(indicator_key: str, result_value: str, detail: str = "") -> str:
+    """Вычислить вердикт индикатора."""
+    cfg = INDICATOR_THRESHOLDS.get(indicator_key, {})
+    default = cfg.get("default_verdict", "Норма")
+
+    crit_when = cfg.get("critical_when")
+    if crit_when:
+        try:
+            if crit_when({"result": result_value, "detail": detail}):
+                return "Критическое"
+        except Exception:
+            pass
+
+    subst_when = cfg.get("substantial_when")
+    if subst_when:
+        try:
+            if subst_when({"result": result_value, "detail": detail}):
+                return "Существенное"
+        except Exception:
+            pass
+
+    info_when = cfg.get("informational_when")
+    if info_when:
+        try:
+            if info_when({"result": result_value, "detail": detail}):
+                return "Информационное"
+        except Exception:
+            pass
+
+    return default
+
+
+def classify_overload_percent(percent: float, cfg: dict) -> str:
+    """Классифицирует процент превышения по severity."""
+    if percent > cfg["substantial_max"]:
+        return "critical"
+    if percent > cfg["informational_max"]:
+        return "substantial"
+    if percent > 100:
+        return "informational"
+    return "normal"

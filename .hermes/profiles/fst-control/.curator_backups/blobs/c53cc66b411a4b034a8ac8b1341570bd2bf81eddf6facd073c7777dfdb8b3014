@@ -1,0 +1,736 @@
+"""
+build_html_report.py — generic генератор HTML-отчёта для любого проекта.
+
+Использование:
+    python3 scripts/build_html_report.py --code 504-595
+    python3 scripts/build_html_report.py --code 503-152 --output /tmp/custom.html
+    python3 scripts/build_html_report.py --ls  # список доступных проектов
+
+Ожидаемая структура в /tmp/:
+    /tmp/project_<code>_report.md   # MD-отчёт (собирается scripts/rebuild_report.py)
+    /tmp/proj_<code>.json           # метаданные проекта (собирается run_<code>_section_1.py)
+
+Выход:
+    /tmp/project_<code>_report.html — HTML-отчёт с:
+      - цветным индикатором (radial-gradient, 4 статуса)
+      - 5 таблицами-открывашками (KT, Полнота, Прогнозы, Финансы, Тех. данные)
+      - подкраской строк по статусу (critical/warning/info)
+      - preview-строками = «Статус раздела:» + « — Итог»
+
+Импорт программный:
+    from build_html_report import build_html
+    html = build_html(report_md, project_data)
+"""
+import argparse
+import json
+import re
+import sys
+from datetime import datetime
+from pathlib import Path
+from typing import NamedTuple
+
+
+# ============ Парсер MD-таблиц ============
+def parse_md_table(text: str) -> tuple[list[str], list[list[str]]]:
+    """Ищет первую pipe-table в тексте, возвращает (headers, rows)."""
+    table_lines = []
+    in_table = False
+    for line in text.split("\n"):
+        if line.startswith("|"):
+            table_lines.append(line)
+            in_table = True
+        elif in_table and line.strip():
+            break
+    if not table_lines:
+        return [], []
+    headers = [c.strip() for c in table_lines[0].split("|")[1:-1]]
+    body_rows = []
+    for line in table_lines[2:]:  # пропускаем header + разделитель
+        if not line.strip():
+            continue
+        cells = [c.strip() for c in line.split("|")[1:-1]]
+        body_rows.append(cells)
+    return headers, body_rows
+
+
+def extract_section(text: str, section_num: int) -> str:
+    """Извлекает раздел section_num (3..7) из MD-отчёта."""
+    pattern = rf"## {section_num}\. .*?(?=## \d|## Сводка)"
+    match = re.search(pattern, text, re.DOTALL)
+    return match.group(0) if match else ""
+
+
+# ============ Preview-строки ============
+def _extract_preview(section_md: str) -> str:
+    """Извлекает «Вердикт раздела:» и «Итог:» из MD-раздела для preview-bar.
+
+    Формат: «Вердикт раздела» + (если есть) « — Итог».
+    Если «Итог» нет в MD — вычисляем автоматически.
+    """
+    status = ""
+    summary = ""
+
+    # В MD используется "Вердикт раздела: ..." (например, "Болен", "Требует внимания", "Здоров")
+    m = re.search(r"\*\*(?:Вердикт раздела|Статус раздела):\*\*\s*(.+)", section_md)
+    if m:
+        status = m.group(1).strip()
+
+    m = re.search(r"\*\*(?:Итог по замечаниям|Итог):\*\*\s*(.+)", section_md)
+    if m:
+        summary = m.group(1).strip()
+
+    if not summary:
+        summary = _auto_summary(section_md)
+
+    if status and summary:
+        return f"{status} — {summary}"
+    elif status:
+        return status
+    elif summary:
+        return summary
+    return "Нет данных"
+
+
+def _auto_summary(section_md: str) -> str:
+    """Вычисляет итог по замечаниям из таблицы (если «Итог» в MD нет)."""
+    n_critical = 0
+    n_uncertain = 0
+    for line in section_md.split("\n"):
+        if "|" not in line:
+            continue
+        cells = [c.strip() for c in line.split("|")[1:-1]]
+        if len(cells) < 3:
+            continue
+        if cells[2] == "Да":
+            n_critical += 1
+        elif cells[2] == "Неопределено":
+            n_uncertain += 1
+    parts = []
+    if n_critical:
+        parts.append(f"{n_critical} показателей = «Да»")
+    if n_uncertain:
+        parts.append(f"{n_uncertain} «Неопределено»")
+    if not parts:
+        return "без замечаний"
+    return ", ".join(parts)
+
+
+# ============ Статус → CSS-класс ============
+def status_class(status_text: str) -> str:
+    """Определяет CSS-класс подсветки строки по текстовому маркеру.
+
+    Поддерживает:
+    - критическое: "критическ", "красн", "🔴"
+    - существенное: "существен", "жёлт", "желт" (ё и е), "🟡"
+    - информационное: "информацион", "синий", "⚪", "норма"
+    """
+    s = status_text.lower()
+    if "критическ" in s or "красн" in s or "🔴" in status_text:
+        return "status-critical"
+    # "жёлт" (ё) и "желт" (е) — оба варианта встречаются в MD
+    if ("существен" in s or "жёлт" in s or "желт" in s or "🟡" in status_text):
+        return "status-warning"
+    if "информацион" in s or "синий" in s or "⚪" in status_text or "норма" in s:
+        return "status-info"
+    return ""
+
+
+# ============ Генерация таблиц ============
+def render_tbl1_kt(report_md: str) -> str:
+    """tbl1: замечания по срокам (5 колонок). MD-таблица раздела 3.
+    Колонки MD: [#, Цвет, Статус, Код, Наименование, План, Прогноз, Факт, Исполнитель]
+    Колонки FIGMA: [#, Код, Наименование, План, Прогноз]
+    """
+    headers, rows = parse_md_table(extract_section(report_md, 3))
+    out = ["<table class='tbl tbl-kt'>"]
+    out.append("<thead><tr><th>#</th><th>Код</th><th>Наименование</th><th>План</th><th>Прогноз</th></tr></thead><tbody>")
+    for r in rows:
+        color_text = r[1] if len(r) > 1 else ""
+        cls = status_class(color_text)
+        out.append(f"<tr class='{cls}'>")
+        out.append(f"<td>{r[0] if len(r) > 0 else ''}</td>")
+        out.append(f"<td>{r[3] if len(r) > 3 else ''}</td>")
+        out.append(f"<td>{r[4] if len(r) > 4 else ''}</td>")
+        out.append(f"<td>{r[5] if len(r) > 5 else ''}</td>")
+        out.append(f"<td>{r[6] if len(r) > 6 else ''}</td>")
+        out.append("</tr>")
+    out.append("</tbody></table>")
+    return "\n".join(out)
+
+
+def render_tbl2_completeness(report_md: str) -> str:
+    """tbl2: полнота заполнения (5 показателей). Заполняется на ЛЮБОЙ стадии ЖЦ."""
+    sec4_text = extract_section(report_md, 4)
+    rows_data = []
+    for line in sec4_text.split("\n"):
+        m = re.match(r"\|\s*(\d+)\s*\|\s*([^|]+)\s*\|\s*([^|]+)\s*\|\s*([^|]+)\s*\|\s*([^|]+)\s*\|", line)
+        if m and m.group(1).isdigit():
+            rows_data.append((int(m.group(1)), m.group(2).strip(),
+                            m.group(3).strip(), m.group(4).strip(), m.group(5).strip()))
+    out = ["<table class='tbl tbl-completeness'>"]
+    out.append("<thead><tr><th>#</th><th>Показатель</th><th>Результат</th></tr></thead><tbody>")
+    if not rows_data:
+        for n, name in [(1, "Куратор назначен"), (2, "РП назначен"),
+                        (3, "Паспорт готов на стадии Инициирование"),
+                        (4, "Актуальность данных проекта по трудозатратам"),
+                        (5, "Корректность заполнения графика платежей проекта")]:
+            out.append(f"<tr><td class='col-num'>{n}</td>")
+            out.append(f"<td class='col-name'>{name}</td>")
+            out.append(f"<td class='col-result'>— нет данных —</td></tr>")
+    for n, name, result, detail, status in rows_data:
+        cls = ""
+        if "Критическ" in status or "Нет" in result:
+            cls = "status-critical"
+        elif "Существен" in status or "Неопределено" in result:
+            cls = "status-warning"
+        full_result = f"{result} — {detail}" if detail else result
+        out.append(f"<tr class='{cls}'>" if cls else "<tr>")
+        out.append(f"<td class='col-num'>{n}</td>")
+        out.append(f"<td class='col-name'>{name}</td>")
+        out.append(f"<td class='col-result'>{full_result}</td>")
+        out.append("</tr>")
+    out.append("</tbody></table>")
+    return "\n".join(out)
+
+
+def render_tbl3_overdue(report_md: str) -> str:
+    """tbl3: актуальность прогнозов (6 колонок). MD-таблица раздела 5.
+
+    Колонки MD (run_all.py): [# | Цвет | Статус | Код КТ | Название | План | Прогноз | Дней]
+    Индексы:                    r[0]  r[1]   r[2]    r[3]     r[4]      r[5]   r[6]     r[7]
+
+    ВАЖНО (fix 2026-08-21):
+    - r[3] = Код КТ (НЕ r[2]!)
+    - r[4] = Название (НЕ r[3]!)
+    - r[7] = колонка "Дней" — это уже overdue_days = today - forecast_date
+      (пересчитанный в run_all.py, НЕ forecast - plan).
+    """
+    from datetime import date
+    headers, rows = parse_md_table(extract_section(report_md, 5))
+    out = ["<table class='tbl tbl-overdue'>"]
+    out.append("<thead><tr><th>#</th><th>Код</th><th>Название</th><th>План</th><th>Прогноз</th><th>Просрочка, дн</th></tr></thead><tbody>")
+    today = date.today()
+    for r in rows:
+        color_text = r[1] if len(r) > 1 else ""
+        cls = status_class(color_text)
+        out.append(f"<tr class='{cls}'>")
+        # r[0]=#, r[3]=Код КТ, r[4]=Название, r[5]=План, r[6]=Прогноз
+        out.append(f"<td>{r[0] if len(r) > 0 else ''}</td>")
+        out.append(f"<td>{r[3] if len(r) > 3 else ''}</td>")
+        out.append(f"<td>{r[4] if len(r) > 4 else ''}</td>")
+        out.append(f"<td>{r[5] if len(r) > 5 else ''}</td>")
+        out.append(f"<td>{r[6] if len(r) > 6 else ''}</td>")
+        # Просрочка: r[7] уже содержит overdue_days (today - forecast_date).
+        # На случай если в MD старое значение — пересчитываем от ForecastDate.
+        overdue_text = ""
+        forecast_str = r[6] if len(r) > 6 else ""
+        try:
+            if forecast_str and forecast_str.strip() and forecast_str != "—":
+                fd = date.fromisoformat(forecast_str.strip())
+                if fd < today:
+                    overdue_text = f"{(today - fd).days}"
+                else:
+                    overdue_text = "0"
+            else:
+                overdue_text = r[7] if len(r) > 7 else "—"
+        except Exception:
+            overdue_text = r[7] if len(r) > 7 else "—"
+        out.append(f"<td>{overdue_text}</td>")
+        out.append("</tr>")
+    out.append("</tbody></table>")
+    return "\n".join(out)
+
+
+def render_tbl4_finance(report_md: str) -> str:
+    """tbl4: финансы (3 показателя × 70px строки).
+
+    Формат (по эталону 26, 2026-08-07):
+    # | Показатель | Результат (с детализацией через '→ критическое/существенное')
+    Подсветка: r[2] содержит 'критическ' → status-critical.
+
+    Берём колонку «Детализация» (r[3]) и объединяем с «Результат» (r[2]) в одну ячейку.
+    """
+    headers, rows = parse_md_table(extract_section(report_md, 6))
+    out = ["<table class='tbl tbl-finance'>"]
+    out.append("<thead><tr><th>#</th><th>Показатель</th><th>Результат</th></tr></thead><tbody>")
+    for r in rows:
+        result = r[2] if len(r) >= 3 else ""  # «Да»
+        detail = r[3] if len(r) >= 4 else ""  # «Прогноз фин.результата: -222,493.00 ₽ — критическое замечание (убыток)»
+        # Объединяем как в эталоне: «Да — Прогноз фин.результата: -222,493.00 ₽ → критическое»
+        if detail and result == "Да":
+            # Если detail уже содержит «критическое замечание», заменяем на «→ критическое»
+            cell = f"{result} — {detail}"
+        else:
+            cell = f"{result} — {detail}" if detail else result
+        cls = status_class(cell)  # ищет «критическ» в тексте
+        out.append(f"<tr class='{cls}'>")
+        out.append(f"<td class='col-num'>{r[0]}</td>")
+        out.append(f"<td class='col-name'>{r[1]}</td>")
+        out.append(f"<td class='col-result'>{cell}</td>")
+        out.append("</tr>")
+    out.append("</tbody></table>")
+    return "\n".join(out)
+
+
+def _extract_preview_section_6_indicators(report_md: str) -> str:
+    """Извлекает краткий preview для секции 6 (16 индикаторов)."""
+    import json
+    data_file = "/tmp/section_6_indicators_data.json"
+    try:
+        with open(data_file, encoding="utf-8") as f:
+            data = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return "Нет данных"
+
+    counts = data.get("section_counts", {"critical": 0, "substantial": 0, "informational": 0, "normal": 0})
+    verdict = data.get("section_verdict", "Норма")
+
+    # Маппинг "Критическое" → "Критическое замечание" для preview
+    label_map = {
+        "Критическое": "Критическое замечание",
+        "Существенное": "Существенное замечание",
+        "Информационное": "Информационное замечание",
+        "Норма": "Норма",
+    }
+    verdict_label = label_map.get(verdict, verdict)
+
+    parts = []
+    if counts.get("critical", 0) > 0:
+        parts.append(f"{counts['critical']} крит.")
+    if counts.get("substantial", 0) > 0:
+        parts.append(f"{counts['substantial']} сущ.")
+    if counts.get("informational", 0) > 0:
+        parts.append(f"{counts['informational']} инф.")
+
+    if parts:
+        return f"{verdict_label}: {', '.join(parts)}"
+    return f"{verdict_label} (нет замечаний)"
+
+
+def render_tbl6_indicators(report_md: str) -> str:
+    """tbl6: 16 показателей проекта. v1.0.0.
+
+    Структура главной таблицы:
+    - 4 колонки: #, Показатель, Результат, Детали
+    - Подкраска строк по severity
+    - Вложенные таблицы через CSS-only details/summary (без JS)
+
+    Кликабельность: <details> оборачивает ОБЕ строки (основная + вложенная).
+    <summary> невидимый. Чтобы кликнуть на самой строке — кликаешь на "Детали"
+    (там видно ▼), или на всю строку через label-overlay.
+
+    Данные читаются из JSON /tmp/section_6_indicators_data.json (создаётся
+    в run_all.py::build_section_6_indicators).
+    """
+    import json
+
+    data_file = "/tmp/section_6_indicators_data.json"
+    try:
+        with open(data_file, encoding="utf-8") as f:
+            data = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return "<p><em>Нет данных по разделу 6 (Показатели проекта).</em></p>"
+
+    indicators = data.get("indicators", [])
+    section_verdict = data.get("section_verdict", "")
+
+    out = []
+
+    # Колонтитул секции был в <summary> родительского <details>, больше не нужен
+    # (Вердикт уже показан в preview)
+
+    # ==== v1.0.3: <details> оборачивает input + label + panel ====
+    # Каждый индикатор = один <details>.
+    #   - <summary> содержит мини-таблицу (одна строка индикатора) + маркер ▼
+    #   - После </summary> — <div class='indicator-details-panel'> с вложенной таблицей
+    # Плюс <input> не нужен — нативный <details> раскрывается по клику на <summary>.
+
+    # 1) Заголовок общей таблицы
+    out.append("<table class='tbl tbl-indicators tbl-indicators-header'>")
+    out.append("<colgroup>")
+    out.append("<col class='col-num'><col class='col-name'>"
+               "<col class='col-result'><col class='col-details'>")
+    out.append("</colgroup>")
+    out.append("<thead><tr>")
+    out.append("<th>#</th><th>Показатель</th><th>Результат</th><th>Детали</th>")
+    out.append("</tr></thead>")
+    out.append("</table>")
+
+    # 2) Каждый индикатор — <details> с <summary> (мини-таблица) и panel
+    for idx, ind in enumerate(indicators):
+        num = ind.get("number", "")
+        name = ind.get("name", "")
+        result = ind.get("result", "")
+        verdict = ind.get("verdict", "normal")
+        table = ind.get("table") or []
+        table_title = ind.get("table_title", "")
+
+        # Status для подкраски строки
+        status_attr = ""
+        if verdict == "Критическое":
+            status_attr = ' data-status="critical"'
+        elif verdict == "Существенное":
+            status_attr = ' data-status="substantial"'
+        elif verdict == "Информационное":
+            status_attr = ' data-status="informational"'
+        else:
+            status_attr = ' data-status="normal"'
+
+        has_details = bool(table)
+        has_data = has_details and len(table) > 0  # есть реальные строки
+        details_class = "indicator-details" + (" has-details" if has_data else "")
+
+        # Список подпунктов, у которых МОГУТ быть вложенные таблицы.
+        # У остальных — вложенных таблиц не бывает, ▼ НЕ показываем.
+        allowed_numbers = {2, 3, 4, 5, 6, 7, 8, 15, 16}
+        can_have_details = int(num) in allowed_numbers
+
+        # Если подпункт не может иметь вложенную таблицу —
+        # рисуем строку БЕЗ ▼ вообще.
+        if not can_have_details:
+            out.append("<table class='tbl tbl-indicators'>")
+            out.append("<colgroup>")
+            out.append("<col class='col-num'><col class='col-name'>"
+                       "<col class='col-result'><col class='col-details'>")
+            out.append("</colgroup>")
+            out.append("<tbody>")
+            out.append(f"<tr{status_attr}>")
+            out.append(f"<td>6.{num}</td>")
+            out.append(f"<td>{name}</td>")
+            out.append(f"<td>{result}</td>")
+            # Пустая ячейка "Детали" — без ▼ вообще
+            out.append("<td class='col-details'></td>")
+            out.append("</tr>")
+            out.append("</tbody>")
+            out.append("</table>")
+            continue
+
+        # Если у допустимого подпункта НЕТ данных для вложенной таблицы —
+        # НЕ создаём <details>, только мини-таблицу-строку с серым неактивным ▼.
+        if not has_data:
+            out.append("<table class='tbl tbl-indicators'>")
+            out.append("<colgroup>")
+            out.append("<col class='col-num'><col class='col-name'>"
+                       "<col class='col-result'><col class='col-details'>")
+            out.append("</colgroup>")
+            out.append("<tbody>")
+            out.append(f"<tr{status_attr}>")
+            out.append(f"<td>6.{num}</td>")
+            out.append(f"<td>{name}</td>")
+            out.append(f"<td>{result}</td>")
+            # Серый неактивный ▼ — для подпункта без данных
+            out.append("<td class='col-details'>"
+                       "<span class='col-details-marker-disabled'>▼</span></td>")
+            out.append("</tr>")
+            out.append("</tbody>")
+            out.append("</table>")
+            continue
+
+        # Есть данные — оборачиваем в <details> с <summary> и panel
+        out.append(f"<details class='{details_class}' data-status='{verdict.lower() if verdict != 'Норма' else 'normal'}'>")
+        out.append("<summary>")
+
+        # Мини-таблица-строка внутри <summary>
+        out.append("<table class='tbl tbl-indicators'>")
+        out.append("<colgroup>")
+        out.append("<col class='col-num'><col class='col-name'>"
+                   "<col class='col-result'><col class='col-details'>")
+        out.append("</colgroup>")
+        out.append("<tbody>")
+        out.append(f"<tr{status_attr}>")
+        out.append(f"<td>6.{num}</td>")
+        out.append(f"<td>{name}</td>")
+        out.append(f"<td>{result}</td>")
+        out.append("<td class='col-details'>"
+                   "<span class='col-details-marker'>▼</span></td>")
+        out.append("</tr>")
+        out.append("</tbody>")
+        out.append("</table>")
+
+        out.append("</summary>")
+
+        # Panel с вложенной таблицей
+        out.append("<div class='indicator-details-panel'>")
+        if table_title:
+            out.append(f"<div class='tbl-nested-title'>{table_title}</div>")
+
+        first_row = table[0]
+        cols = [k for k in first_row.keys() if k != "severity"]
+        if "n" in first_row:
+            cols = ["n"] + [c for c in cols if c != "n"]
+        col_names_ru = {
+            "n": "#", "code": "Код", "type": "Тип", "name": "Наименование",
+            # plan переопределяется в 6.7: «Прогноз по активн.»
+            "plan": "План", "forecast": "Прогноз", "diff": "Δ дн.",
+            "period": "Период", "remark": "Примечание",
+            "user": "ФИО", "year": "Год",
+            "available": "Доступно", "overload": "Превышение",
+            "percent": "%", "resource": "Ресурс",
+            "unfilled_forecast": "Нереализ. прогноз",
+        }
+        headers = [col_names_ru.get(c.lower(), c) for c in cols]
+
+        out.append("<table class='tbl tbl-nested'>")
+        out.append("<thead><tr>")
+        for h in headers:
+            # 6.7 — колонки: "plan" → "Прогноз по активн.", "overload" → "Превышение сумм.", "percent" → "%Превышения"
+            # num приходит как строка из ind.get("number"), сравниваем со строкой
+            if str(num) == "7":
+                if h == "План":
+                    h = "Прогноз по активн."
+                elif h == "Превышение":
+                    h = "Превышение сумм."
+                elif h == "%":
+                    h = "%Превышения"
+            out.append(f"<th>{h}</th>")
+        out.append("</tr></thead><tbody>")
+        for row in table:
+            sev = row.get("severity", "normal")
+            sev_attr = ""
+            if sev == "critical":
+                sev_attr = ' data-status="critical"'
+            elif sev == "substantial":
+                sev_attr = ' data-status="substantial"'
+            elif sev == "informational":
+                sev_attr = ' data-status="informational"'
+            out.append(f"<tr{sev_attr}>")
+            for c in cols:
+                v = row.get(c, "")
+                v_str = str(v) if v is not None else ""
+                out.append(f"<td>{v_str}</td>")
+            out.append("</tr>")
+        out.append("</tbody></table>")
+        out.append("</div>")  # .indicator-details-panel
+
+        out.append("</details>")
+
+    return "\n".join(out)
+
+
+def render_tbl5_tech(report_md: str) -> str:
+    """tbl5: тех. данные (6 показателей). Заполняется на ЛЮБОЙ стадии ЖЦ.
+
+    Структура таблицы (по эталону 26, 2026-08-07):
+    1. Пользователь
+    2. Титул системы
+    3. URL MCP-сервера
+    4. Версия скилла
+    5. Версия MCP
+    6. Версия Core (ПМ «Форсайт»)
+    """
+    sec7_text = extract_section(report_md, 7)
+    rows_data = []
+    for line in sec7_text.split("\n"):
+        m = re.match(r"\|\s*(\d+)\s*\|\s*([^|]+)\s*\|\s*([^|]+)\s*\|", line)
+        if m and m.group(1).isdigit():
+            rows_data.append((int(m.group(1)), m.group(2).strip(), m.group(3).strip()))
+    out = ["<table class='tbl tbl-tech'>"]
+    out.append("<thead><tr><th>#</th><th>Показатель</th><th>Значение</th></tr></thead><tbody>")
+    if not rows_data:
+        for n, name in [(1, "Пользователь"), (2, "Титул системы"),
+                        (3, "URL MCP-сервера"), (4, "Версия скилла"),
+                        (5, "Версия MCP"), (6, "Версия Core (ПМ «Форсайт»)")]:
+            out.append(f"<tr><td class='col-num'>{n}</td>")
+            out.append(f"<td class='col-name'>{name}</td>")
+            out.append(f"<td class='col-value'>— нет данных —</td></tr>")
+    for n, name, value in rows_data:
+        out.append("<tr>")
+        out.append(f"<td class='col-num'>{n}</td>")
+        out.append(f"<td class='col-name'>{name}</td>")
+        out.append(f"<td class='col-value'>{value}</td>")
+        out.append("</tr>")
+    out.append("</tbody></table>")
+    return "\n".join(out)
+
+
+# ============ Сводный вердикт ============
+def compute_verdict(report_md: str) -> tuple[str, str, str]:
+    """Возвращает (text, status_class, emoji_unused) для индикатора.
+
+    Логика:
+      - Если ЛЮБОЙ из разделов 3/4/5/6 = Болен → status_class='sick', text='Проект болен'
+      - Иначе если ЛЮБОЙ = Требует внимания → 'attention', 'Требует внимания'
+      - Иначе → 'healthy', 'Здоров'
+    """
+    statuses = []
+    for n in (3, 4, 5, 6):
+        sec = extract_section(report_md, n)
+        # Ищем **Вердикт раздела:** (run_all.py) ИЛИ **Статус раздела:** (старый формат)
+        m = re.search(r"\*\*(?:Вердикт|Статус) раздела:\*\*\s*(.+)", sec)
+        if m:
+            statuses.append(m.group(1).strip())
+
+    if any("Болен" in s or "БОЛЕН" in s for s in statuses):
+        return ("Проект болен", "sick", "")
+    if any("Требует внимания" in s for s in statuses):
+        return ("Требует внимания", "attention", "")
+    if any("Здоров" in s for s in statuses):
+        return ("Здоров", "healthy", "")
+    return ("Нет данных", "unknown", "")
+
+
+# ============ Загрузка шаблона и CSS ============
+def load_template(skill_dir: Path) -> tuple[str, str]:
+    """Загружает templates/report.html и templates/report.css. Возвращает (html, css)."""
+    html_path = skill_dir / "templates" / "report.html"
+    css_path = skill_dir / "templates" / "report.css"
+    if not html_path.exists():
+        raise FileNotFoundError(f"Шаблон не найден: {html_path}")
+    if not css_path.exists():
+        raise FileNotFoundError(f"CSS не найден: {css_path}")
+    html = html_path.read_text(encoding="utf-8")
+    css = css_path.read_text(encoding="utf-8")
+    return html, css
+
+
+# ============ Главная функция ============
+def build_html(report_md: str, project_data: dict, template_html: str = None,
+               template_css: str = None) -> str:
+    """Собирает финальный HTML.
+
+    Args:
+        report_md: содержимое /tmp/project_<code>_report.md
+        project_data: dict с ключами Code, Name, ProjectId
+        template_html: путь к templates/report.html (auto-detect если None)
+        template_css: путь к templates/report.css (auto-detect если None)
+
+    Returns:
+        Полный HTML как строка.
+    """
+    project_code = project_data.get("Code", "???")
+    project_name = (project_data.get("Name") or "").strip()
+    project_id = project_data.get("ProjectId", 0)
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # Render tables
+    content_3 = render_tbl1_kt(report_md)
+    content_4 = render_tbl2_completeness(report_md)
+    content_5 = render_tbl3_overdue(report_md)
+    content_6 = render_tbl4_finance(report_md)  # Финансы (старая)
+    content_7 = render_tbl5_tech(report_md)
+    content_8 = render_tbl6_indicators(report_md)  # 16 показателей (NEW v1.0.0)
+
+    # Preview-строки
+    preview_3 = _extract_preview(extract_section(report_md, 3))
+    preview_4 = _extract_preview(extract_section(report_md, 4))
+    preview_5 = _extract_preview(extract_section(report_md, 5))
+    preview_6 = _extract_preview(extract_section(report_md, 6))
+    preview_7 = "ℹ️ Нейтральный — справочная информация"
+    preview_8 = _extract_preview_section_6_indicators(report_md)
+
+    # Сводный вердикт
+    verdict_text, verdict_status, _ = compute_verdict(report_md)
+
+    # Load templates
+    skill_dir = Path(__file__).parent.parent
+    if template_html is None or template_css is None:
+        html_tpl, css_tpl = load_template(skill_dir)
+        if template_html is None:
+            template_html = html_tpl
+        if template_css is None:
+            template_css = css_tpl
+
+    # Делим HTML на «до content» и «после body», чтобы подставить CSS без экранирования
+    # (CSS содержит { }, ломает f-string — используем replace)
+    css_block = f"<style>\n{template_css}\n</style>"
+    # Вставка CSS в <head>
+    html_full = template_html.replace("</head>", css_block + "\n</head>")
+
+    # Подстановка значений
+    return html_full \
+        .replace("{{ project_code }}", str(project_code)) \
+        .replace("{{ project_name }}", project_name) \
+        .replace("{{ project_id }}", str(project_id)) \
+        .replace("{{ now }}", now) \
+        .replace("{{ section_3_preview }}", preview_3) \
+        .replace("{{ section_4_preview }}", preview_4) \
+        .replace("{{ section_5_preview }}", preview_5) \
+        .replace("{{ section_6_preview }}", preview_6) \
+        .replace("{{ section_7_preview }}", preview_7) \
+        .replace("{{ section_8_preview }}", preview_8) \
+        .replace("{{ section_3_content }}", content_3) \
+        .replace("{{ section_4_content }}", content_4) \
+        .replace("{{ section_5_content }}", content_5) \
+        .replace("{{ section_6_content }}", content_6) \
+        .replace("{{ section_7_content }}", content_7) \
+        .replace("{{ section_8_content }}", content_8) \
+        .replace("{{ verdict_status }}", verdict_status) \
+        .replace("{{ verdict_text }}", verdict_text)
+
+
+# ============ Поиск проектов в /tmp ============
+def list_available_projects() -> list[str]:
+    """Возвращает список кодов проектов, для которых есть MD-отчёт."""
+    codes = set()
+    for md in Path("/tmp").glob("project_*_report.md"):
+        m = re.search(r"project_([\w-]+)_report\.md", md.name)
+        if m:
+            codes.add(m.group(1))
+    return sorted(codes)
+
+
+def find_project_files(code: str) -> tuple[Path, Path]:
+    """Находит пути к MD и JSON для кода. Бросает FileNotFoundError если нет."""
+    md_path = Path(f"/tmp/project_{code}_report.md")
+    json_path = Path(f"/tmp/proj_{code}.json")
+    if not md_path.exists():
+        available = list_available_projects()
+        ctx = f"Доступные: {', '.join(available)}" if available else "В /tmp/ нет ни одного /tmp/project_*_report.md"
+        raise FileNotFoundError(f"MD-отчёт не найден: {md_path}\n{ctx}")
+    if not json_path.exists():
+        raise FileNotFoundError(f"JSON-данные не найдены: {json_path}")
+    return md_path, json_path
+
+
+# ============ CLI ============
+def main() -> Path:
+    """CLI-обёртка: собирает /tmp/project_<code>_report.html.
+
+    Использование:
+        python3 scripts/build_html_report.py --code 504-595
+        python3 scripts/build_html_report.py --ls  # список доступных
+    """
+    parser = argparse.ArgumentParser(
+        description="Генератор HTML-отчёта для проекта fst-project-health."
+    )
+    parser.add_argument("--code", type=str, help="Код проекта (например, 504-595)")
+    parser.add_argument("--output", type=str, help="Путь к выходному HTML (default: /tmp/project_<code>_report.html)")
+    parser.add_argument("--ls", action="store_true", help="Список доступных проектов")
+    args = parser.parse_args()
+
+    if args.ls:
+        codes = list_available_projects()
+        if codes:
+            print("Доступные проекты (есть /tmp/project_*_report.md):")
+            for c in codes:
+                print(f"  • {c}")
+        else:
+            print("В /tmp/ нет ни одного /tmp/project_*_report.md")
+        return None
+
+    if not args.code:
+        parser.print_help()
+        sys.exit(1)
+
+    md_path, json_path = find_project_files(args.code)
+    report_md = md_path.read_text(encoding="utf-8")
+    project_data = json.loads(json_path.read_text(encoding="utf-8"))
+
+    html = build_html(report_md, project_data)
+
+    output = Path(args.output) if args.output else Path(f"/tmp/project_{args.code}_report.html")
+    output.write_text(html, encoding="utf-8")
+
+    # Сводка
+    n_critical = html.count("status-critical")
+    n_warning = html.count("status-warning")
+    n_info = html.count("status-info")
+    print(f"✅ HTML-отчёт собран: {output} ({len(html)} байт)")
+    print(f"   status-critical: {n_critical}")
+    print(f"   status-warning:  {n_warning}")
+    print(f"   status-info:     {n_info}")
+    return output
+
+
+if __name__ == "__main__":
+    main()

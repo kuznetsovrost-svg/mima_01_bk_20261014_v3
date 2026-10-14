@@ -1,0 +1,79 @@
+"""
+unfilled_roles_thresholds.py — пороги для интерпретации индикатора 6.6
+«Есть нереализованные прогнозы по ролевым ресурсам (в прошлом)».
+
+Используется в project_indicators.py::check_unfilled_roles().
+
+Логика (по уточнениям пользователя, 2026-09-02):
+- Роль = username == specialization (одно слово, совпадает со специализацией).
+- Если есть запись где username == specialization AND planning_date < today
+  → это "нереализованный прогноз роли в прошлом" → замечание.
+- Severity всегда informational (нейтральный).
+"""
+from typing import Callable, Any, Dict
+
+
+# ============================================================================
+# Пороги для 6.6 — Нереализованные прогнозы по ролевым ресурсам
+# ============================================================================
+
+INDICATOR_THRESHOLDS = {
+    "6.6_unfilled_roles": {
+        # Если есть нереализованные роли — замечание
+        "critical_when": lambda r: False,  # никогда не критическое
+
+        # Существенное: замечание есть
+        "substantial_when": lambda r: r.get("has_unfilled", False),
+
+        # Информационное: замечание есть (но не существенное)
+        "informational_when": lambda r: r.get("has_unfilled", False),
+
+        # По умолчанию — норма
+        "default_verdict": "Норма",
+
+        # Параметры определения роли
+        "role_match": "username == specialization",
+    },
+}
+
+
+def interpret_indicator(indicator_key: str, result_value: str, detail: str = "") -> str:
+    """Вычислить вердикт индикатора."""
+    cfg = INDICATOR_THRESHOLDS.get(indicator_key, {})
+    default = cfg.get("default_verdict", "Норма")
+
+    crit_when = cfg.get("critical_when")
+    if crit_when:
+        try:
+            if crit_when({"result": result_value, "detail": detail}):
+                return "Критическое"
+        except Exception:
+            pass
+
+    subst_when = cfg.get("substantial_when")
+    if subst_when:
+        try:
+            if subst_when({"result": result_value, "detail": detail}):
+                return "Существенное"
+        except Exception:
+            pass
+
+    info_when = cfg.get("informational_when")
+    if info_when:
+        try:
+            if info_when({"result": result_value, "detail": detail}):
+                return "Информационное"
+        except Exception:
+            pass
+
+    return default
+
+
+def is_role_resource(username: str, specialization: str) -> bool:
+    """Определяет, является ли ресурс ролевым (не конкретным сотрудником).
+
+    Признак роли: username == specialization (одно слово, совпадает со специализацией).
+    """
+    if not username or not specialization:
+        return False
+    return username.strip() == specialization.strip()

@@ -1,0 +1,261 @@
+{
+  "updated_at": "2026-07-02T21:06:54.879321",
+  "platforms": {
+    "telegram": [
+      {
+        "id": "505586502",
+        "name": "Rost",
+        "type": "dm",
+        "thread_id": null
+      }
+    ],
+    "discord": [],
+    "whatsapp": [],
+    "slack": [],
+    "signal": [],
+    "mattermost": [],
+    "matrix": [
+      {
+        "id": "!OwBtrzzKTGFSNSmvQU:msg.lab.aidemo.adaptivepm.ru:$G8SVCz9ReZ4VpeaJHr611oQFWSLV0oLI6oTPHgnH4Bg",
+        "name": "rostislav_k / topic $G8SVCz9ReZ4VpeaJHr611oQFWSLV0oLI6oTPHgnH4Bg",
+        "type": "group",
+        "thread_id": "$G8SVCz9ReZ4VpeaJHr611oQFWSLV0oLI6oTPHgnH4Bg"
+      },
+      {
+        "id": "!OwBtrzzKTGFSNSmvQU:msg.lab.aidemo.adaptivepm.ru:$p1na7GckoThMUFhvI7rfzhbn5l3wX9BpADdcHE-9ZWU",
+        "name": "rostislav_k / topic $p1na7GckoThMUFhvI7rfzhbn5l3wX9BpADdcHE-9ZWU",
+        "type": "group",
+        "thread_id": "$p1na7GckoThMUFhvI7rfzhbn5l3wX9BpADdcHE-9ZWU"
+      },
+      {
+        "id": "!OwBtrzzKTGFSNSmvQU:msg.lab.aidemo.adaptivepm.ru:$D59R8ZFh9W2EvUpfuYzPR2xSn38ywcTWm5S8T3CUYlc",
+        "name": "rostislav_k / topic $D59R8ZFh9W2EvUpfuYzPR2xSn38ywcTWm5S8T3CUYlc",
+        "type": "group",
+        "thread_id": "$D59R8ZFh9W2EvUpfuYzPR2xSn38ywcTWm5S8T3CUYlc"
+      },
+      {
+        "id": "!OwBtrzzKTGFSNSmvQU:msg.lab.aidemo.adaptivepm.ru:$eOM15msvMS_tLpy7O3qV_SZVgVYUV6ea_cHenRjTeWo",
+        "name": "rostislav_k / topic $eOM15msvMS_tLpy7O3qV_SZVgVYUV6ea_cHenRjTeWo",
+        "type": "group",
+        "thread_id": "$eOM15msvMS_tLpy7O3qV_SZVgVYUV6ea_cHenRjTeWo"
+      },
+      {
+        "id": "!OwBtrzzKTGFSNSmvQU:msg.lab.aidemo.adaptivepm.ru:$sO19iNM2mdcjN-ZtEDRzKGSNnP_Vs5wcjIxyp5GIAkE",
+        "name": "rostislav_k / topic $sO19iNM2mdcjN-ZtEDRzKGSNnP_Vs5wcjIxyp5GIAkE",
+        "type": "group",
+        "thread_id": "$sO19iNM2mdcjN-ZtEDRzKGSNnP_Vs5wcjIxyp5GIAkE"
+      },
+      {
+        "id": "!OwBtrzzKTGFSNSmvQU:msg.lab.aidemo.adaptivepm.ru:$hMIBxrCrMRiTbHm7FamqKbpQ1WOLPlOcTYmKDPvge5w",
+        "name": "rostislav_k / topic $hMIBxrCrMRiTbHm7FamqKbpQ1WOLPlOcTYmKDPvge5w",
+        "type": "group",
+        "thread_id": "$hMIBxrCrMRiTbHm7FamqKbpQ1WOLPlOcTYmKDPvge5w"
+      },
+      {
+        "id": "!OwBtrzzKTGFSNSmvQU:msg.lab.aidemo.adaptivepm.ru:$a1IZLf55OIc5O4-hTSbF_xtwPXkswO5o3a1rT1oNeNI",
+        "name": "rostislav_k / topic $a1IZLf55OIc5O4-hTSbF_xtwPXkswO5o3a1rT1oNeNI",
+        "type": "group",
+        "thread_id": "$a1IZLf55OIc5O4-hTSbF_xtwPXkswO5o3a1rT1oNeNI"
+      },
+      {
+        "id": "!OwBtrzzKTGFSNSmvQU:msg.lab.aidemo.adaptivepm.ru:$8Za81NVxBUF4vzc9BEj-pofk358XRx8x5iqvzgHiVZk",
+        "name": "rostislav_k / topic $8Za81NVxBUF4vzc9BEj-pofk358XRx8x5iqvzgHiVZk",
+        "type": "group",
+        "thread_id": "$8Za81NVxBUF4vzc9BEj-pofk358XRx8x5iqvzgHiVZk"
+      },
+      {
+        "id": "!OwBtrzzKTGFSNSmvQU:msg.lab.aidemo.adaptivepm.ru:$MbD5Lo9Kfuxa600Wt_We6fEd_IoAWCac0SnmaPc6qA4",
+        "name": "rostislav_k / topic $MbD5Lo9Kfuxa600Wt_We6fEd_IoAWCac0SnmaPc6qA4",
+        "type": "group",
+        "thread_id": "$MbD5Lo9Kfuxa600Wt_We6fEd_IoAWCac0SnmaPc6qA4"
+      },
+      {
+        "id": "!OwBtrzzKTGFSNSmvQU:msg.lab.aidemo.adaptivepm.ru:$nRdSfKbIjL0abysZzfUFVesv6RBHW1CKYj5heSRFvSg",
+        "name": "rostislav_k / topic $nRdSfKbIjL0abysZzfUFVesv6RBHW1CKYj5heSRFvSg",
+        "type": "group",
+        "thread_id": "$nRdSfKbIjL0abysZzfUFVesv6RBHW1CKYj5heSRFvSg"
+      },
+      {
+        "id": "!OwBtrzzKTGFSNSmvQU:msg.lab.aidemo.adaptivepm.ru:$J9z4fX0ScF36KY9ZMtGg78r9zzIPCIsfejSDnE_9W4s",
+        "name": "rostislav_k / topic $J9z4fX0ScF36KY9ZMtGg78r9zzIPCIsfejSDnE_9W4s",
+        "type": "group",
+        "thread_id": "$J9z4fX0ScF36KY9ZMtGg78r9zzIPCIsfejSDnE_9W4s"
+      },
+      {
+        "id": "!OwBtrzzKTGFSNSmvQU:msg.lab.aidemo.adaptivepm.ru:$61wWPvbghXoKcctGAKWCam1lPTXbMX4yYdqGusXZMo0",
+        "name": "rostislav_k / topic $61wWPvbghXoKcctGAKWCam1lPTXbMX4yYdqGusXZMo0",
+        "type": "group",
+        "thread_id": "$61wWPvbghXoKcctGAKWCam1lPTXbMX4yYdqGusXZMo0"
+      },
+      {
+        "id": "!OwBtrzzKTGFSNSmvQU:msg.lab.aidemo.adaptivepm.ru:$WMzbAZEXG-027LHfHzuVOu1ITvOP0LkOlj6o3DKoSoo",
+        "name": "rostislav_k / topic $WMzbAZEXG-027LHfHzuVOu1ITvOP0LkOlj6o3DKoSoo",
+        "type": "group",
+        "thread_id": "$WMzbAZEXG-027LHfHzuVOu1ITvOP0LkOlj6o3DKoSoo"
+      },
+      {
+        "id": "!OwBtrzzKTGFSNSmvQU:msg.lab.aidemo.adaptivepm.ru:$MbysHK8NIdTLyALjDtm5Fwo89JbRXz138mDpfzE0KKE",
+        "name": "rostislav_k / topic $MbysHK8NIdTLyALjDtm5Fwo89JbRXz138mDpfzE0KKE",
+        "type": "group",
+        "thread_id": "$MbysHK8NIdTLyALjDtm5Fwo89JbRXz138mDpfzE0KKE"
+      },
+      {
+        "id": "!OwBtrzzKTGFSNSmvQU:msg.lab.aidemo.adaptivepm.ru:$xqvnCH2WjE_qUmAvnTix2I_y51NzWLzQ5hWwPuqCfgM",
+        "name": "rostislav_k / topic $xqvnCH2WjE_qUmAvnTix2I_y51NzWLzQ5hWwPuqCfgM",
+        "type": "group",
+        "thread_id": "$xqvnCH2WjE_qUmAvnTix2I_y51NzWLzQ5hWwPuqCfgM"
+      },
+      {
+        "id": "!OwBtrzzKTGFSNSmvQU:msg.lab.aidemo.adaptivepm.ru:$LkqC3TFzun_FDo7alXL6pbU7DT5U59Cjm4r4PoIF5gI",
+        "name": "rostislav_k / topic $LkqC3TFzun_FDo7alXL6pbU7DT5U59Cjm4r4PoIF5gI",
+        "type": "group",
+        "thread_id": "$LkqC3TFzun_FDo7alXL6pbU7DT5U59Cjm4r4PoIF5gI"
+      },
+      {
+        "id": "!OwBtrzzKTGFSNSmvQU:msg.lab.aidemo.adaptivepm.ru:$leL304qd_dYeGgDT2IkJOXbb1igKNnVpjToryUI9obI",
+        "name": "rostislav_k / topic $leL304qd_dYeGgDT2IkJOXbb1igKNnVpjToryUI9obI",
+        "type": "group",
+        "thread_id": "$leL304qd_dYeGgDT2IkJOXbb1igKNnVpjToryUI9obI"
+      },
+      {
+        "id": "!OwBtrzzKTGFSNSmvQU:msg.lab.aidemo.adaptivepm.ru:$ZGEPCzOoEt06CihYZrUIWd1hITrosyNmArA1GJXbrWA",
+        "name": "rostislav_k / topic $ZGEPCzOoEt06CihYZrUIWd1hITrosyNmArA1GJXbrWA",
+        "type": "group",
+        "thread_id": "$ZGEPCzOoEt06CihYZrUIWd1hITrosyNmArA1GJXbrWA"
+      },
+      {
+        "id": "!OwBtrzzKTGFSNSmvQU:msg.lab.aidemo.adaptivepm.ru:$7WstJ9JXCDoK44XcHftAkJtuDxfHjuCx1j5lEujEJGk",
+        "name": "rostislav_k / topic $7WstJ9JXCDoK44XcHftAkJtuDxfHjuCx1j5lEujEJGk",
+        "type": "group",
+        "thread_id": "$7WstJ9JXCDoK44XcHftAkJtuDxfHjuCx1j5lEujEJGk"
+      },
+      {
+        "id": "!OwBtrzzKTGFSNSmvQU:msg.lab.aidemo.adaptivepm.ru:$rSjvig-LCs9lh0u98L_u0gKC9NAxPzatlVRdpxdRWn0",
+        "name": "rostislav_k / topic $rSjvig-LCs9lh0u98L_u0gKC9NAxPzatlVRdpxdRWn0",
+        "type": "group",
+        "thread_id": "$rSjvig-LCs9lh0u98L_u0gKC9NAxPzatlVRdpxdRWn0"
+      },
+      {
+        "id": "!OwBtrzzKTGFSNSmvQU:msg.lab.aidemo.adaptivepm.ru:$WUjDBPf0dvz49JFpflTz6jAukD23HJOx4qLu3VQnjT4",
+        "name": "rostislav_k / topic $WUjDBPf0dvz49JFpflTz6jAukD23HJOx4qLu3VQnjT4",
+        "type": "group",
+        "thread_id": "$WUjDBPf0dvz49JFpflTz6jAukD23HJOx4qLu3VQnjT4"
+      },
+      {
+        "id": "!OwBtrzzKTGFSNSmvQU:msg.lab.aidemo.adaptivepm.ru:$hlLqQ46Vm3yUNe3D6nSJ-FoAugbDEt_ULB2Njl0YLbQ",
+        "name": "rostislav_k / topic $hlLqQ46Vm3yUNe3D6nSJ-FoAugbDEt_ULB2Njl0YLbQ",
+        "type": "group",
+        "thread_id": "$hlLqQ46Vm3yUNe3D6nSJ-FoAugbDEt_ULB2Njl0YLbQ"
+      },
+      {
+        "id": "!OwBtrzzKTGFSNSmvQU:msg.lab.aidemo.adaptivepm.ru:$yO5znOGCDK5-42ltDpaIZuL8i2Vq0zp7_loSyYIm5IE",
+        "name": "rostislav_k / topic $yO5znOGCDK5-42ltDpaIZuL8i2Vq0zp7_loSyYIm5IE",
+        "type": "group",
+        "thread_id": "$yO5znOGCDK5-42ltDpaIZuL8i2Vq0zp7_loSyYIm5IE"
+      },
+      {
+        "id": "!OwBtrzzKTGFSNSmvQU:msg.lab.aidemo.adaptivepm.ru:$fah6tO2Zn67HEtaP2DG9MTI4xRP-JYwSkGt2Y41GpcA",
+        "name": "rostislav_k / topic $fah6tO2Zn67HEtaP2DG9MTI4xRP-JYwSkGt2Y41GpcA",
+        "type": "group",
+        "thread_id": "$fah6tO2Zn67HEtaP2DG9MTI4xRP-JYwSkGt2Y41GpcA"
+      },
+      {
+        "id": "!OwBtrzzKTGFSNSmvQU:msg.lab.aidemo.adaptivepm.ru:$JVoZ-kI29-VrZUMbXv0hqxiX8Vt1xHIxygdhUsRsJK8",
+        "name": "rostislav_k / topic $JVoZ-kI29-VrZUMbXv0hqxiX8Vt1xHIxygdhUsRsJK8",
+        "type": "group",
+        "thread_id": "$JVoZ-kI29-VrZUMbXv0hqxiX8Vt1xHIxygdhUsRsJK8"
+      },
+      {
+        "id": "!OwBtrzzKTGFSNSmvQU:msg.lab.aidemo.adaptivepm.ru:$GDP-wiFi-j95xkqjL9wpo1EjyK1Q16wSPEaa6mKLWI0",
+        "name": "rostislav_k / topic $GDP-wiFi-j95xkqjL9wpo1EjyK1Q16wSPEaa6mKLWI0",
+        "type": "group",
+        "thread_id": "$GDP-wiFi-j95xkqjL9wpo1EjyK1Q16wSPEaa6mKLWI0"
+      },
+      {
+        "id": "!OwBtrzzKTGFSNSmvQU:msg.lab.aidemo.adaptivepm.ru:$qvenQODK7Lp5ayciH9mQd6IvMdm0_TyaFovs2AVpLcs",
+        "name": "rostislav_k / topic $qvenQODK7Lp5ayciH9mQd6IvMdm0_TyaFovs2AVpLcs",
+        "type": "group",
+        "thread_id": "$qvenQODK7Lp5ayciH9mQd6IvMdm0_TyaFovs2AVpLcs"
+      },
+      {
+        "id": "!OwBtrzzKTGFSNSmvQU:msg.lab.aidemo.adaptivepm.ru:$xG7G_YSzoJHme_Beu-1PCPbb3aFlUhqWJePNeGeYl5w",
+        "name": "rostislav_k / topic $xG7G_YSzoJHme_Beu-1PCPbb3aFlUhqWJePNeGeYl5w",
+        "type": "group",
+        "thread_id": "$xG7G_YSzoJHme_Beu-1PCPbb3aFlUhqWJePNeGeYl5w"
+      },
+      {
+        "id": "!OwBtrzzKTGFSNSmvQU:msg.lab.aidemo.adaptivepm.ru:$l-dyr5MtCi6HEjiGDTxEvKcfFOf6caPVInASapuW96g",
+        "name": "rostislav_k / topic $l-dyr5MtCi6HEjiGDTxEvKcfFOf6caPVInASapuW96g",
+        "type": "group",
+        "thread_id": "$l-dyr5MtCi6HEjiGDTxEvKcfFOf6caPVInASapuW96g"
+      },
+      {
+        "id": "!OwBtrzzKTGFSNSmvQU:msg.lab.aidemo.adaptivepm.ru:$oJsJy3M61NOqllLIIvSDeWKT8pNdLlW_VwrZ_ytOv6Q",
+        "name": "rostislav_k / topic $oJsJy3M61NOqllLIIvSDeWKT8pNdLlW_VwrZ_ytOv6Q",
+        "type": "group",
+        "thread_id": "$oJsJy3M61NOqllLIIvSDeWKT8pNdLlW_VwrZ_ytOv6Q"
+      },
+      {
+        "id": "!OwBtrzzKTGFSNSmvQU:msg.lab.aidemo.adaptivepm.ru:$8Dn_CLVNSdjU8ZJVmPnaoPv-qkjFwHsJcdmxXQ8mDsA",
+        "name": "rostislav_k / topic $8Dn_CLVNSdjU8ZJVmPnaoPv-qkjFwHsJcdmxXQ8mDsA",
+        "type": "group",
+        "thread_id": "$8Dn_CLVNSdjU8ZJVmPnaoPv-qkjFwHsJcdmxXQ8mDsA"
+      },
+      {
+        "id": "!OwBtrzzKTGFSNSmvQU:msg.lab.aidemo.adaptivepm.ru:$KMwIg3YfEOyCE2-P7EXeuZqFJDC1cnK2LsMYeN4MRAM",
+        "name": "rostislav_k / topic $KMwIg3YfEOyCE2-P7EXeuZqFJDC1cnK2LsMYeN4MRAM",
+        "type": "group",
+        "thread_id": "$KMwIg3YfEOyCE2-P7EXeuZqFJDC1cnK2LsMYeN4MRAM"
+      },
+      {
+        "id": "!OwBtrzzKTGFSNSmvQU:msg.lab.aidemo.adaptivepm.ru:$sFzsZl6MdTvGMq9QkzYGdDsXJlMFXL-51oltOrmOzKA",
+        "name": "rostislav_k / topic $sFzsZl6MdTvGMq9QkzYGdDsXJlMFXL-51oltOrmOzKA",
+        "type": "group",
+        "thread_id": "$sFzsZl6MdTvGMq9QkzYGdDsXJlMFXL-51oltOrmOzKA"
+      },
+      {
+        "id": "!OwBtrzzKTGFSNSmvQU:msg.lab.aidemo.adaptivepm.ru:$SQuMkKv9KZnIQZclMVbyzkJ6pZv0mnVBrR539Fm2W9k",
+        "name": "rostislav_k / topic $SQuMkKv9KZnIQZclMVbyzkJ6pZv0mnVBrR539Fm2W9k",
+        "type": "group",
+        "thread_id": "$SQuMkKv9KZnIQZclMVbyzkJ6pZv0mnVBrR539Fm2W9k"
+      },
+      {
+        "id": "!OwBtrzzKTGFSNSmvQU:msg.lab.aidemo.adaptivepm.ru:$_wlt8EzAxaRSLG_CsV8t0G6vx57ty4RipovpsamNmWs",
+        "name": "rostislav_k / topic $_wlt8EzAxaRSLG_CsV8t0G6vx57ty4RipovpsamNmWs",
+        "type": "group",
+        "thread_id": "$_wlt8EzAxaRSLG_CsV8t0G6vx57ty4RipovpsamNmWs"
+      },
+      {
+        "id": "!OwBtrzzKTGFSNSmvQU:msg.lab.aidemo.adaptivepm.ru:$YZwGSMV6lerL82TLJN6h0zqV8irmdTNI1cKR6UPTCu4",
+        "name": "rostislav_k / topic $YZwGSMV6lerL82TLJN6h0zqV8irmdTNI1cKR6UPTCu4",
+        "type": "group",
+        "thread_id": "$YZwGSMV6lerL82TLJN6h0zqV8irmdTNI1cKR6UPTCu4"
+      },
+      {
+        "id": "!OwBtrzzKTGFSNSmvQU:msg.lab.aidemo.adaptivepm.ru:$JrZizgH7Lyxpc1JXJMGP-0ZDgxjezndPmafLXk2H8sw",
+        "name": "rostislav_k / topic $JrZizgH7Lyxpc1JXJMGP-0ZDgxjezndPmafLXk2H8sw",
+        "type": "group",
+        "thread_id": "$JrZizgH7Lyxpc1JXJMGP-0ZDgxjezndPmafLXk2H8sw"
+      }
+    ],
+    "homeassistant": [],
+    "email": [],
+    "sms": [],
+    "dingtalk": [],
+    "msgraph_webhook": [],
+    "feishu": [],
+    "wecom": [],
+    "wecom_callback": [],
+    "weixin": [],
+    "bluebubbles": [],
+    "qqbot": [],
+    "yuanbao": [],
+    "google_chat": [],
+    "irc": [],
+    "line": [],
+    "ntfy": [],
+    "photon": [],
+    "simplex": [],
+    "teams": []
+  }
+}

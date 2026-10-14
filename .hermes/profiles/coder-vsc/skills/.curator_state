@@ -1,0 +1,9 @@
+{
+  "last_report_path": "/root/.hermes/profiles/coder-vsc/logs/curator/20261012-150419",
+  "last_run_at": "2026-10-12T15:04:19.373922+00:00",
+  "last_run_duration_seconds": 0.242488,
+  "last_run_summary": "auto: no changes; llm: skipped (consolidation off)",
+  "last_run_summary_shown_at": null,
+  "paused": false,
+  "run_count": 9
+}

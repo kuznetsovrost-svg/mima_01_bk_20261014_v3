@@ -1,0 +1,505 @@
+================================================================================
+HERMES AGENT — КАК СОЗДАТЬ НОВОГО АГЕНТА ВНУТРИ HERMES
+(со своей памятью, контекстом, навыками, профилем)
+================================================================================
+Файл:        ~/AGENT02.txt
+Хост:        8317937-vo704353.twc1.net (Linux 6.8.0-124-generic, root)
+Hermes:      MiniMax-M3, профили ~/.hermes/profiles/<name>/
+Написал:     Hermes Agent (по запросу пользователя)
+Назначение:  пошаговая инструкция по созданию изолированного Hermes-агента:
+              со своим контекстом, своей памятью, своим набором навыков,
+              без пересечений с default-профилем. Сохранение, бэкап,
+              запуск (foreground, background, systemd). Зачем нужен и
+              когда НЕ нужен отдельный профиль.
+
+--------------------------------------------------------------------------------
+0. МОДЕЛЬ: ЧТО ТАКОЕ «АГЕНТ ВНУТРИ HERMES»
+--------------------------------------------------------------------------------
+
+Hermes поддерживает несколько параллельных «личностей» через механизм
+профилей. Каждый профиль — это отдельный контейнер со своим:
+
+  • конфигом  (~/.hermes/profiles/<name>/config.yaml)
+  • .env      (~/.hermes/profiles/<name>/.env) — секреты
+  • памятью   (~/.hermes/profiles/<name>/memories/...)
+  • навыками  (~/.hermes/profiles/<name>/skills/...)
+  • плагинами (~/.hermes/profiles/<name>/plugins/...)
+  • cron'ом   (~/.hermes/profiles/<name>/cron/...)
+  • сессиями  (отдельная SQLite-база ~/.hermes/profiles/<name>/sessions.db)
+  • channel_directory, auth.json, кешами
+
+default-профиль — это «корневой» агент, которого ты видишь в обычном
+чате. Все его skills/memories лежат прямо в ~/.hermes/. Любой новый
+профиль — рядом, в ~/.hermes/profiles/.
+
+Создание нового агента = создание нового профиля. Никакой отдельной
+«базы данных агентов» в Hermes нет, всё разнесено по директориям.
+
+--------------------------------------------------------------------------------
+1. ГДЕ ЧТО ЛЕЖИТ (ОРИЕНТИР)
+--------------------------------------------------------------------------------
+
+Корневая папка Hermes:        ~/.hermes/
+└── profiles/                  <-- все агенты тут
+    ├── default/               <-- корневой профиль (по сути, алиас на ~/.hermes/)
+    ├── coder/                 <-- пример: программист-агент
+    ├── writer/                <-- пример: агент-копирайтер
+    └── analyst/               <-- пример: аналитик
+        ├── config.yaml        <-- конфигурация
+        ├── .env               <-- секреты (chmod 600)
+        ├── memories/          <-- user.md, memory.md
+        ├── skills/            <-- локальные навыки (перекрывают default)
+        ├── plugins/           <-- плагины
+        ├── cron/              <-- запланированные задачи
+        ├── sessions.db        <-- история диалогов
+        ├── channel_directory.json
+        ├── auth.json
+        ├── cache/             <-- кеши (модели, медиа, ...)
+        └── hooks/
+
+Поддиректории создаются автоматически при первом запуске профиля.
+
+--------------------------------------------------------------------------------
+2. СОЗДАНИЕ НОВОГО ПРОФИЛЯ (МИНИМАЛЬНО)
+--------------------------------------------------------------------------------
+
+Шаг 2.1. Создать директорию:
+
+  mkdir -p ~/.hermes/profiles/coder
+
+Шаг 2.2. Скопировать заготовку конфига из default (можно и с нуля, но
+скопировать — быстрее, потом отредактируешь):
+
+  cp ~/.hermes/config.yaml ~/.hermes/profiles/coder/config.yaml
+  cp ~/.hermes/.env        ~/.hermes/profiles/coder/.env
+  chmod 600 ~/.hermes/profiles/coder/.env
+
+Шаг 2.3. В config.yaml поправить то, что должно отличаться:
+
+  # обязательно уникальное имя (по нему --profile coder)
+  profile: coder
+
+  # модель и провайдер — могут быть свои
+  model:
+    provider: minimax
+    name: MiniMax-M3
+
+  # system prompt — это «личность» агента
+  system_prompt: |
+    Ты — узкоспециализированный агент-программист.
+    Пиши код, ревью, рефактори, тестируй. Никогда не отвечай
+    на непрофильные вопросы — перенаправляй в default-агент.
+
+  # контекст и память
+  memory:
+    enabled: true
+    user_file:     memories/user.md      # кто этот пользователь
+    memory_file:   memories/memory.md    # факты о среде, конвенции
+    injection:     both                  # system|user|both
+    max_chars:     2000
+
+  # навыки — свои скиллы берутся из profiles/coder/skills/ ПЕРВЫМИ,
+  # потом default/skills/
+  skills:
+    local_dir: skills
+    inherit_default: true              # мерджить со скиллами default
+
+  # логирование
+  logs:
+    dir: logs
+    level: INFO
+
+  # messaging platforms (если этот агент общается через Matrix/Telegram)
+  platforms:
+    matrix:
+      homeserver: https://msg.lab.aidemo.adaptivepm.ru
+      user_id:    '@coder:msg.lab.aidemo.adaptivepm.ru'
+      access_token_env: MATRIX_ACCESS_TOKEN
+
+Шаг 2.4. В .env положить уникальные секреты профиля (если есть).
+Переменные экспортируются в окружение процесса Hermes при запуске
+этого профиля, не пересекаясь с .env default-профиля.
+
+  # ~/.hermes/profiles/coder/.env
+  MATRIX_HOMESERVER=https://msg.lab.aidemo.adaptivepm.ru
+  MATRIX_USER_ID=@coder:msg.lab.aidemo.adaptivepm.ru
+  MATRIX_ACCESS_TOKEN=***
+  MATRIX_ENCRYPTION=false
+  GITHUB_TOKEN=***
+  OPENAI_API_KEY=***
+
+Шаг 2.5. Контекст и память — создать пустые файлы-заготовки:
+
+  mkdir -p ~/.hermes/profiles/coder/memories
+  cat > ~/.hermes/profiles/coder/memories/user.md <<'EOF'
+  # user.md — кто этот пользователь
+  # (имя, роль, часовой пояс, предпочтения, что бесит)
+  EOF
+  cat > ~/.hermes/profiles/coder/memories/memory.md <<'EOF'
+  # memory.md — факты о среде, конвенции, квipps
+  # (версия Python, OS, привычные пути, известные баги)
+  EOF
+
+  Агент сам наполнит их по мере работы (команды memory add), но можно
+  засеять стартовыми фактами руками.
+
+--------------------------------------------------------------------------------
+3. СОЗДАНИЕ НОВОГО ПРОФИЛЯ (АВТОМАТИЧЕСКИ, ОДНОЙ КОМАНДОЙ)
+--------------------------------------------------------------------------------
+
+В Hermes есть CLI-команда profile, которая делает то же самое:
+
+  hermes profile create coder \
+      --from default                # скопировать конфиг и .env из default
+      --model minimax/MiniMax-M3   # сразу выставить модель
+      --system-prompt "Ты — агент-программист"   # задать system prompt
+      --memory both                 # включить память
+      --skills-inherit default      # унаследовать скиллы
+
+  # проверить:
+  hermes profile list
+  # -> default
+  # -> coder
+  # -> writer
+  # ...
+
+  # посмотреть содержимое:
+  hermes profile show coder
+  # -> путь, конфиг, .env keys, memories files
+
+  # удалить:
+  hermes profile delete coder
+  # (!) необратимо, удаляет всю директорию профиля
+
+  # склонировать существующий:
+  hermes profile clone coder coder2
+  # пригодится для экспериментов — откатываться через rm -rf проще
+
+--------------------------------------------------------------------------------
+4. ПАМЯТЬ (MEMORY) — ЧТО ЭТО И КАК РАБОТАЕТ
+--------------------------------------------------------------------------------
+
+У Hermes три «слоя» памяти. Не путать:
+
+4.1. Persistent memory (cross-session) — то, что лежит в profile/memories/
+      и инжектится в КАЖДУЮ сессию этого профиля. Сюда память пишется
+      командой:
+
+        hermes memory add --profile coder \
+             --target user   \
+             "Пользователь предпочитает Python 3.12+, uv, ruff"
+
+        hermes memory add --profile coder \
+             --target memory \
+             "Project X живёт в /srv/x, его тесты — pytest -n 4"
+
+      Редактируется вручную:
+        vim ~/.hermes/profiles/coder/memories/user.md
+        vim ~/.hermes/profiles/coder/memories/memory.md
+
+      ВАЖНО: не сюда пишутся task progress, списки дел, ID коммитов —
+      они устаревают за неделю. Сюда — стабильные факты о среде и
+      предпочтениях пользователя.
+
+4.2. Project context (project-scoped) — это AGENTS.md / CLAUDE.md /
+      .cursorrules в рабочей директории (workdir). Инжектится только
+      когда сессия стартует в этом workdir. Используй, если конвенции
+      привязаны к репозиторию, а не к агенту:
+
+        # /srv/myapp/AGENTS.md
+        # Code style: ruff, type hints everywhere, no print() in lib/
+        # Test runner: pytest -n 4
+        # Pre-commit: black, isort, mypy
+
+      Запускаешь агента в /srv/myapp — он подхватит. Запускаешь
+      в /root — нет. Эти файлы живут ВМЕСТЕ с кодом, коммитятся в git,
+      версионируются. Лучшее место для project-specific правил.
+
+4.3. Session memory (in-session) — это текущая сессия. История
+      диалога, выполненные tool calls, todo-список, загруженные файлы.
+      Хранится в sessions.db, удаляется по --new / --resume. У каждого
+      профиля своя база, сессии не пересекаются.
+
+Как они складываются:
+
+  [system prompt]   <-- из config.yaml (личность агента)
+        +
+  [project context]  <-- AGENTS.md из workdir (правила проекта)
+        +
+  [persistent mem]   <-- profile/memories/{user,memory}.md (факты)
+        +
+  [tool registry]    <-- skills + plugins профиля
+        +
+  [session history]  <-- текущая сессия
+        =
+  [LLM call]
+
+--------------------------------------------------------------------------------
+5. НАВЫКИ (SKILLS) — ЛОКАЛЬНЫЕ И УНАСЛЕДОВАННЫЕ
+--------------------------------------------------------------------------------
+
+Скиллы — это markdown-файлы (SKILL.md) с frontmatter, лежащие в
+profiles/<name>/skills/<skill-name>/SKILL.md. Hermes на старте собирает
+все доступные скиллы в плоский список. Поиск при вызове:
+
+  1) сначала ищет в profiles/<name>/skills/   <-- локальный
+  2) потом в ~/.hermes/skills/                <-- default
+  3) потом в skills/, идущие в составе плагинов
+
+То есть локальный скилл с тем же именем ПЕРЕБИВАЕТ default-овский.
+Это можно использовать, чтобы адаптировать поведение под агента
+без форка всего Hermes.
+
+Пример: завести агенту coder локальный скилл «pytest-runner», который
+всегда запускает pytest -n 4, а default'ый «pytest-runner» — игнорить.
+
+  mkdir -p ~/.hermes/profiles/coder/skills/pytest-runner
+  cat > ~/.hermes/profiles/coder/skills/pytest-runner/SKILL.md <<'EOF'
+  ---
+  name: pytest-runner
+  description: Запускает тесты в текущем проекте. Всегда используй -n 4.
+  ---
+  # pytest-runner
+  ...
+  EOF
+
+В config.yaml:
+
+  skills:
+    inherit_default: true            # мерджить со default
+    # inherit_default: false         # либо полностью изолировать
+
+--------------------------------------------------------------------------------
+6. ПЛАГИНЫ
+--------------------------------------------------------------------------------
+
+~/.hermes/profiles/<name>/plugins/ — то же, что default/plugins/,
+но с привязкой к профилю. Плагин — это Python-пакет, добавляющий
+tools, commands, toolsets, integrations. Если плагин требует API-ключей,
+клади их в profiles/<name>/.env.
+
+  pip install --target ~/.hermes/profiles/coder/plugins/matrix-extra \
+      matrix-extra-package
+
+  # и прописать в config.yaml:
+  plugins:
+    enabled:
+      - matrix-extra
+
+--------------------------------------------------------------------------------
+7. CRON И ПЛАНИРОВЩИК
+--------------------------------------------------------------------------------
+
+~/.hermes/profiles/<name>/cron/ — локальные cron-задачи этого агента.
+Создаются через:
+
+  hermes cron create --profile coder \
+      --schedule "0 9 * * *" \
+      --prompt "Сходи в GitHub Issues, отфильтруй по label=bug, просуммируй"
+
+  hermes cron list --profile coder
+
+Задачи codера и default'а не пересекаются. Если запускается
+hermes-gateway (см. ниже), он подхватывает cron именно своего профиля.
+
+--------------------------------------------------------------------------------
+8. ЗАПУСК НОВОГО АГЕНТА
+--------------------------------------------------------------------------------
+
+8.1. Одноразовый foreground (CLI-чат):
+
+  hermes --profile coder chat
+  # запустится REPL от имени профиля coder
+  # Ctrl-D или /exit — выход
+
+  # запустить конкретный промпт:
+  hermes --profile coder -z "Напиши тесты для модуля parser.py"
+
+  # запустить с конкретной моделью (перебивает config.yaml):
+  hermes --profile coder --model anthropic/claude-sonnet-4
+
+  # в нужной рабочей директории (подхватит AGENTS.md):
+  hermes --profile coder --workdir /srv/myapp
+
+8.2. В фоне как systemd-сервис (для gateway'ев и демонов):
+
+  /usr/local/bin/hermes install-systemd --profile coder
+  # создаст юнит hermes-gateway-coder.service
+
+  systemctl --user enable --now hermes-gateway-coder
+  systemctl --user status hermes-gateway-coder
+  journalctl --user -u hermes-gateway-coder -f
+
+  Альтернатива (если нет install-systemd):
+  руками написать /root/.config/systemd/user/hermes-gateway-coder.service
+  с Environment=HERMES_PROFILE=coder, ExecStart=/usr/local/lib/hermes-agent/.../hermes gateway run
+  и systemctl --user daemon-reload + enable --now.
+
+  ВАЖНО: сервисы разных профилей стартуют ПАРАЛЛЕЛЬНО, шлюзы Matrix
+  обоих слушают homeserver — следи, чтобы user_id не пересекались,
+  иначе оба бота будут отвечать на одни и те же сообщения.
+
+8.3. Через cron (для периодических задач):
+
+  crontab -e
+  0 9 * * * /usr/local/bin/hermes --profile coder -z "..." >/tmp/coder.log 2>&1
+
+--------------------------------------------------------------------------------
+9. СОХРАНЕНИЕ И БЭКАП ПРОФИЛЯ
+--------------------------------------------------------------------------------
+
+9.1. Бэкап целиком (директория профиля) в tar.gz:
+
+  PROFILE=coder
+  tar -czf "/root/backups/hermes-${PROFILE}-$(date +%Y%m%d_%H%M%S).tar.gz" \
+      -C ~/.hermes "profiles/$PROFILE"
+
+  Перед бэкапом останови gateway этого профиля, чтобы не сохранить
+  полузаписанные sessions.db:
+      systemctl --user stop hermes-gateway-coder
+
+9.2. Бэкап в git (рекомендую для конфигов и скиллов):
+
+  cd ~/.hermes/profiles/coder
+  git init
+  cat > .gitignore <<'EOF'
+  .env
+  sessions.db
+  cache/
+  logs/
+  audio_cache/
+  image_cache/
+  hooks/
+  auth.json
+  channel_directory.json
+  *.lock
+  *.pid
+  EOF
+  git add .
+  git -c user.email=agent@local -c user.name="$PROFILE" commit -m "initial"
+
+  Дальше — git remote, git push. .env в git НЕ коммитится (там
+  секреты), восстанавливается отдельно через .env.example + ручной ввод.
+
+9.3. Клонирование на другую машину:
+
+  # на исходной
+  tar -czf coder.tgz -C ~/.hermes profiles/coder
+  # на новой
+  tar -xzf coder.tgz -C ~/.hermes
+  chmod 600 ~/.hermes/profiles/coder/.env
+  # поправить абсолютные пути, если они были зашиты в .env
+
+9.4. Удаление профиля (необратимо):
+
+  systemctl --user stop hermes-gateway-coder
+  systemctl --user disable hermes-gateway-coder
+  rm -rf ~/.hermes/profiles/coder
+  hermes profile list        # проверить, что исчез
+
+--------------------------------------------------------------------------------
+10. ПЕРЕКЛЮЧЕНИЕ МЕЖДУ АГЕНТАМИ В ОДНОЙ СЕССИИ
+--------------------------------------------------------------------------------
+
+В интерактивном чате можно сменить профиль на лету (если включено):
+
+  /profile coder
+  # переключает активный профиль, дальнейшие сообщения идут от coder'а
+  /profile default
+
+  /memory show      # что помнит текущий профиль
+  /memory forget X  # удалить факт X из памяти
+
+Это работает только в foreground CLI. В фоновом gateway-сервисе
+профиль фиксирован в Environment=HERMES_PROFILE=...
+
+--------------------------------------------------------------------------------
+11. ЧАСТЫЕ ОШИБКИ
+--------------------------------------------------------------------------------
+
+  • "permission denied" при запуске --profile coder
+      Не chmod 600 на .env, или .env принадлежит другому пользователю.
+      chmod 600 ~/.hermes/profiles/coder/.env && chown $USER:$USER ...
+
+  • "Profile coder not found"
+      Опечатка в имени, или директории ~/.hermes/profiles/coder нет.
+      Проверить: ls -la ~/.hermes/profiles/
+
+  • Скиллы не подхватываются
+      • inherit_default: false в config.yaml, а скилл — только в default/
+      • В SKILL.md нет frontmatter (--- name: ... ---), Hermes не парсит
+      • Папка называется skills/Tests/, а не skills/tests/ (lower-case)
+
+  • Cron-задачи не запускаются
+      • HERMES_HOME не смотрит в нужный профиль
+      • systemd-linger выключен (если cron от systemd)
+      • Смотри hermes cron list --profile coder
+
+  • Два gateway'а отвечают на одно сообщение
+      • У двух профилей одинаковый user_id в Matrix
+      • require_mention: false — оба отвечают без упоминания
+      • allowed_users слишком широкий
+
+  • memory add молча не работает
+      • Нет прав на запись в profiles/<name>/memories/
+      • Память disabled: enabled: false в config.yaml
+      • Профиль не тот: --profile default вместо --profile coder
+
+  • Агент «помнит» старые устаревшие факты
+      • Они в user.md / memory.md — отредактируй руками
+      • Команда /memory forget <факт>
+      • НЕ стирай sessions.db без нужды — там диалоги, не memory
+
+--------------------------------------------------------------------------------
+12. КОГДА ОТДЕЛЬНЫЙ АГЕНТ НЕ НУЖЕН
+--------------------------------------------------------------------------------
+
+Не плоди профили без причины. Отдельный агент оправдан, если:
+
+  ✓ разные system prompts / личности
+  ✓ разные наборы навыков и плагинов
+  ✓ разные секреты (не делить .env между агентами)
+  ✓ разные Matrix/Telegram/Slack-аккаунты
+  ✓ нужна изоляция истории (юзер А не видит сессии юзера Б)
+
+Не нужен, если:
+
+  ✗ это «временный эксперимент на 5 минут» — лучше --new
+  ✗ отличие только в одном параметре — перебей его флагом
+  ✗ ты просто хочешь второй параллельный чат — открой вторую
+    сессию (hermes chat) с тем же профилем
+
+--------------------------------------------------------------------------------
+13. ШПАРГАЛКА (TL;DR)
+--------------------------------------------------------------------------------
+
+  # создать
+  hermes profile create coder --from default
+  # или руками
+  mkdir -p ~/.hermes/profiles/coder/{memories,skills,plugins,cron}
+  cp ~/.hermes/config.yaml ~/.hermes/profiles/coder/
+  cp ~/.hermes/.env ~/.hermes/profiles/coder/ && chmod 600 ...
+
+  # запустить
+  hermes --profile coder chat
+  /usr/local/bin/hermes install-systemd --profile coder
+  systemctl --user enable --now hermes-gateway-coder
+
+  # память
+  hermes memory add --profile coder --target user "..."
+  vim ~/.hermes/profiles/coder/memories/memory.md
+
+  # контекст проекта
+  cat > /srv/myapp/AGENTS.md <<'EOF'
+  # правила этого проекта
+  EOF
+
+  # бэкап
+  tar -czf coder.tgz -C ~/.hermes profiles/coder
+
+  # удалить
+  rm -rf ~/.hermes/profiles/coder
+
+================================================================================
+КОНЕЦ
+================================================================================

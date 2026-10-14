@@ -1,0 +1,19 @@
+{
+  "task_id": "TASK-2026-07-04-sample-stats",
+  "state": "draft",
+  "profile": "mi_mg_01",
+  "created": "2026-07-04T13:36:00+03:00",
+  "updated": "2026-07-04T13:36:00+03:00",
+  "author": "Rost",
+  "priority": "normal",
+  "steps": [
+    {
+      "ts": "2026-07-04T13:36:00+03:00",
+      "status": "pending",
+      "title": "task создан"
+    }
+  ],
+  "errors": [],
+  "outputs": [],
+  "decisions": []
+}

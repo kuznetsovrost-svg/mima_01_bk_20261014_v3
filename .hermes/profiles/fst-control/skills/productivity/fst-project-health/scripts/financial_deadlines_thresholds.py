@@ -1,0 +1,104 @@
+__version__ = "1.0.19"
+"""
+financial_deadlines_thresholds.py — пороги для интерпретации индикатора 6.8
+«Соблюдение сроков финансовых КТ (сроки актов и оплат)».
+
+Используется в project_indicators.py::check_financial_deadlines().
+
+Логика (по уточнениям пользователя, 2026-09-02):
+- Проверка только для проектов с ProjectTypeName == "Коммерческий"
+  (для остальных — прочерк, без проверки).
+- Финансовые КТ = акты и оплаты (из InContractBudgetBusiness).
+- Проверяем только КТ без факта (ActFactDate == None / PayFactDate == None).
+- Просрочка = ForecastDate < today.
+
+Severity (как в пункте 1 "Замечания по срокам" раздела 5):
+- diff_days >= 10 → Критическое
+- diff_days >= 2  → Существенное
+- diff_days >= 1  → Информационное
+- diff = 0 не попадает
+- diff < 0 не попадает
+
+Пороги вынесены в отдельный скрипт.
+"""
+from typing import Callable, Any, Dict
+
+
+# ============================================================================
+# Пороги для 6.8 — Соблюдение сроков финансовых КТ
+# ============================================================================
+
+INDICATOR_THRESHOLDS = {
+    "6.8_financial_deadlines": {
+        "critical_when": lambda r: r.get("has_critical", False),
+        "substantial_when": lambda r: (
+            not r.get("has_critical", False)
+            and r.get("has_substantial", False)
+        ),
+        "informational_when": lambda r: (
+            not r.get("has_critical", False)
+            and not r.get("has_substantial", False)
+            and r.get("has_informational", False)
+        ),
+        "default_verdict": "Норма",
+
+        # Пороги (как в пункте 1)
+        "critical_min_days": 10,
+        "substantial_min_days": 2,
+        "informational_min_days": 1,
+
+        # Тип проекта (для "Коммерческий")
+        "commercial_type_name": "Коммерческий",
+    },
+}
+
+
+def interpret_indicator(indicator_key: str, result_value: str, detail: str = "") -> str:
+    """Вычислить вердикт индикатора."""
+    cfg = INDICATOR_THRESHOLDS.get(indicator_key, {})
+    default = cfg.get("default_verdict", "Норма")
+
+    crit_when = cfg.get("critical_when")
+    if crit_when:
+        try:
+            if crit_when({"result": result_value, "detail": detail}):
+                return "Критическое"
+        except Exception:
+            pass
+
+    subst_when = cfg.get("substantial_when")
+    if subst_when:
+        try:
+            if subst_when({"result": result_value, "detail": detail}):
+                return "Существенное"
+        except Exception:
+            pass
+
+    info_when = cfg.get("informational_when")
+    if info_when:
+        try:
+            if info_when({"result": result_value, "detail": detail}):
+                return "Информационное"
+        except Exception:
+            pass
+
+    return default
+
+
+def classify_financial_delay(diff_days: int, cfg: dict) -> str:
+    """Классифицирует задержку финансовой КТ по severity.
+
+    Args:
+        diff_days: количество дней просрочки (today - ForecastDate)
+        cfg: конфиг порогов
+
+    Returns:
+        "informational" / "substantial" / "critical" / "normal"
+    """
+    if diff_days < cfg["informational_min_days"]:
+        return "normal"
+    if diff_days >= cfg["critical_min_days"]:
+        return "critical"
+    if diff_days >= cfg["substantial_min_days"]:
+        return "substantial"
+    return "informational"

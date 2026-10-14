@@ -1,0 +1,109 @@
+---
+name: office-integration-diagnostics
+description: Diagnose Office/COM/.NET Windows integration before fixing.
+---
+
+# Office Integration Diagnostics on Windows
+
+## When to use
+Writing a PowerShell script to fix an integration issue: spell-checker (ORFO, LanguageTool), Outlook add-in, Visual Studio extension, IDE plugin, COM component, or any third-party tool that hooks into Office/Windows.
+
+## Why this skill exists
+**2026-09-28 lesson (ORFO case):** First script "restored proofing provider" via COM Word API + registry. Useless — ORFO at the user's PC works as **native COM Add-In** (`OrfoAddin2012.dll` + `ORFOSpellingProvider.dll` registered via `regsvr32`), NOT as a proofing provider. Wasted 4 iterations before discovering real architecture.
+
+## Diagnostic ladder — run BEFORE writing fix
+
+Always run these 3-5 commands FIRST. Results tell you the architecture:
+
+```powershell
+# 1. Where is the product installed?
+Get-ChildItem "C:\Program Files\*" -Recurse -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -like "*<ProductName>*" } |
+    Select-Object FullName, Length, LastWriteTime | Format-Table
+
+# 2. Is there an Add-In registered?
+Get-ChildItem "HKLM:\Software\Microsoft\Office\Word\Addins" -ErrorAction SilentlyContinue |
+    ForEach-Object {
+        $props = Get-ItemProperty $_.PSPath
+        Write-Host "$($_.PSChildName): LoadBehavior=$($props.LoadBehavior), Manifest=$($props.Manifest)"
+    }
+
+# 3. Is there a Proofing Tool registered?
+$pt = @("HKLM:\SOFTWARE\Microsoft\Office\16.0\Word\ProofingTools",
+        "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Office\16.0\Word\ProofingTools",
+        "HKCU:\SOFTWARE\Microsoft\Office\16.0\Word\ProofingTools")
+foreach ($p in $pt) {
+    if (Test-Path $p) { Get-ChildItem $p | ForEach-Object { Write-Host "$($_.PSChildName): ProviderName=$((Get-ItemProperty $_.PSPath).ProviderName)" } }
+}
+
+# 4. What's the architecture of the main DLL? (NET or native?)
+$bytes = [System.IO.File]::ReadAllBytes("path\to\main.dll")
+$peOffset = [BitConverter]::ToInt32($bytes, 0x3C)
+$machine = [BitConverter]::ToUInt16($bytes, $peOffset + 4)
+Write-Host "Machine: 0x$($machine.ToString('X4'))"   # 0x14c=x86, 0x8664=x64
+
+# 5. Is it a .NET assembly? (look for mscoree.dll dependency or COM descriptor)
+# If .NET -> needs RegAsm.exe
+# If native COM -> needs regsvr32
+# If plain service/exe -> just config file
+
+# 6. Check what version of Office
+Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Office\ClickToRun\Configuration" |
+    Select-Object Platform, VersionToReport
+
+# 7. Check architecture match (32-bit Office needs 32-bit add-in)
+[Environment]::Is64BitProcess   # PowerShell arch
+```
+
+## Architecture → fix matrix
+
+| What you find | Fix to apply |
+|---|---|
+| Add-In with `LoadBehavior=0` | Set `LoadBehavior=3` via registry |
+| Add-In with `Manifest=*.vsto` | .NET VSTO — regsvr32 won't work, check VSTO runtime |
+| ProofingTools\<lcid>\ProviderName exists but broken path | Fix path in registry |
+| `*.dll` is native COM (`regsvr32` succeeds) | Done |
+| `*.dll` is .NET (RegAsm succeeds) | Done |
+| `regsvr32` fails with 0x80070016 | Check dependencies via Dependencies.exe or dumpbin |
+| `RegAsm` fails with RA0000 "not a valid .NET assembly" | Not .NET — try `regsvr32` instead |
+| DLL works as COM but Word doesn't see it | May need manual registry entries in `ProofingTools\<lcid>\` |
+
+## PowerShell + Telegram gotcha (2026-09-28)
+
+`.ps1` files sent via Telegram arrive with broken encoding on Windows → `Unexpected token` on cyrillic lines. **Always write scripts in pure ASCII** when shipping via Telegram:
+
+- All variable names, regex patterns, file paths: ASCII
+- Cyrillic only in comments or in `@'...'@` base64 blobs
+- If you need cyrillic in messages: pass via `$variable` set from base64
+
+Windows PowerShell default ExecutionPolicy = `Restricted`. Always launch with:
+```
+powershell -NoProfile -ExecutionPolicy Bypass -File path.ps1
+```
+Or set once: `Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy Bypass`.
+
+To repair an already-broken file from PowerShell:
+```powershell
+$bytes = [System.Text.Encoding]::UTF8.GetPreamble() + [System.Text.Encoding]::UTF8.GetBytes($content)
+[System.IO.File]::WriteAllBytes($path, $bytes)
+```
+
+## Common Office product locations to check
+
+| Product | Typical install path |
+|---|---|
+| ОРФО 2016 | `C:\Program Files\Informatic\ORFO 2016\` |
+| LanguageTool | `C:\Program Files\LanguageTool\` or browser extension |
+| Abbyy FineReader | `C:\Program Files\ABBYY FineReader *\` |
+| SolidWorks | `C:\Program Files\SOLIDWORKS Corp\` |
+| 1Password | `C:\Users\<u>\AppData\Local\1Password\` |
+
+## When you STILL can't fix it
+
+If `regsvr32`, `RegAsm`, manual registry, and setup re-run all fail:
+1. Check DLL dependencies with `Dependencies.exe` (https://github.com/lucasg/Dependencies)
+2. Check for missing runtime (VC++ Redistributable, .NET Framework version)
+3. Check Windows Event Viewer → Application log for module load errors
+4. Try `procmon` from Sysinternals to watch what registry/files the loader touches
+
+Don't write a 4th iteration of "registry fixes" — escalate to dependency analysis.

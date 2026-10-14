@@ -1,0 +1,138 @@
+__version__ = "1.0.19"
+# ⚠️ Пороги 100k / 1m хранятся в scripts/Financial-deviation-threshold.py
+#    как PAYMENT_DEVIATION_THRESHOLDS. Ниже пример использует это имя
+#    (импорт опущен — скрипт является самодостаточной выдержкой кода
+#    для SKILL.md, а не исполняемым модулем).
+
+def effective_sum(point_props):
+    """Берём FactSum если > 0, иначе ForecastSum."""
+    fact = float(point_props.get("FactSum", {}).get("value") or 0)
+    forecast = float(point_props.get("ForecastSum", {}).get("value") or 0)
+    if fact > 0:
+        return fact
+    if forecast > 0:
+        return forecast
+    return 0
+
+
+def contract_belongs_to_project(contract_row, project_code):
+    """
+    Проверяет привязку контракта к проекту через ParentFullName.
+
+    ⚠️ ВАЖНО: в view InContractMyProject / OutcomeContractMyProject поля
+    InContractActivity (MultiSelectField) НЕТ — оно доступно только через
+    get_entity_data на каждый контракт (N+1 запросов). Для массовой
+    фильтрации используется строковое поле ParentFullName формата
+    "<project_code>. <project_name>".
+    """
+    parent_full = (contract_row.get("ParentFullName") or "").strip()
+    if not parent_full:
+        return False
+    return parent_full.startswith(f"{project_code}.")
+
+
+# 1. Код проекта
+PROJECT_CODE = "504-595"
+
+# 2. Найти все контракты, привязанные к проекту (по ParentFullName)
+contracts = []
+
+# 2a. InContract (доходные)
+ic_view = mcp__fst_pmpractice__get_view(
+    entityName="InContract", viewName="InContractMyProject"
+)
+for c in ic_view["data"]:
+    if contract_belongs_to_project(c, PROJECT_CODE):
+        contracts.append({
+            "type": "InContract",
+            "id": c.get("InContractId") or c.get("id"),
+            "code": c.get("Code"),
+            "name": (c.get("Name") or "").strip(),
+            "real_sum": c.get("RealSum"),
+            "contractor": c.get("ContractorName"),
+        })
+
+# 2b. OutcomeContract (расходные)
+oc_view = mcp__fst_pmpractice__get_view(
+    entityName="OutcomeContract", viewName="OutcomeContractMyProject"
+)
+for c in oc_view["data"]:
+    if contract_belongs_to_project(c, PROJECT_CODE):
+        contracts.append({
+            "type": "OutcomeContract",
+            "id": c.get("OutcomeContractId") or c.get("id"),
+            "code": c.get("Code"),
+            "name": (c.get("Name") or "").strip(),
+            "real_sum": c.get("RealSum"),
+            "contractor": c.get("ContractorName"),
+        })
+
+# 3. Загрузить все КТ
+points_view = mcp__fst_pmpractice__get_view(
+    entityName="Point", viewName="AllMyPoint", limit=3000
+)
+
+# 4. Посчитать Δ для каждого контракта, сложить
+total_delta = 0
+contract_results = []
+
+for contract in contracts:
+    code = contract["code"]
+    contract_points = [
+        p for p in points_view["data"]
+        if str(p.get("ParentCode", "")).strip() == code
+    ]
+
+    # Получить детали каждой КТ (для имени и сумм).
+    # ⚠️ N+1 запросов к MCP — медленный подход. Для больших проектов
+    #    нужен batch-режим, который пока не реализован в MCP.
+    act_sum = 0
+    pay_sum = 0
+    acts_count = 0
+    pays_count = 0
+    for p in contract_points:
+        detail = mcp__fst_pmpractice__get_entity_data(
+            entityName="Point", data_id=str(p["PointId"])
+        )
+        name = (detail["properties"].get("Name", {}).get("value") or "").lower()
+        es = effective_sum(detail["properties"])
+        if "акт" in name:
+            act_sum += es
+            acts_count += 1
+        elif "оплат" in name or "платеж" in name or "платёж" in name:
+            pay_sum += es
+            pays_count += 1
+
+    delta_c = abs(act_sum - pay_sum)
+    total_delta += delta_c
+    contract_results.append({
+        "code": code,
+        "name": contract["name"],
+        "type": contract["type"],
+        "real_sum": contract["real_sum"],
+        "contractor": contract["contractor"],
+        "acts_count": acts_count,
+        "pays_count": pays_count,
+        "acts": act_sum,
+        "pays": pay_sum,
+        "delta": delta_c,
+    })
+
+# 5. Вердикт
+if total_delta == 0:
+    result = "Да"
+    detail = f"Δ = 0 ₽ по {len(contracts)} контрактам"
+elif total_delta < PAYMENT_DEVIATION_THRESHOLDS["informational"]:
+    result = "Нет/Информационное замечание"
+    detail = f"Δ = {total_delta:,.2f} ₽ (< 100 тыс.)"
+elif total_delta < PAYMENT_DEVIATION_THRESHOLDS["substantial"]:
+    result = "Нет/Существенное замечание"
+    detail = f"Δ = {total_delta:,.2f} ₽ (100 тыс.–1 млн)"
+else:
+    result = "Нет/Критическое замечание"
+    detail = f"Δ = {total_delta:,.2f} ₽ (> 1 млн)"
+
+# Подробный отчёт по контрактам (опционально)
+for cr in contract_results:
+    print(f"{cr['code']} | {cr['name'][:50]} | Σ актов ({cr['acts_count']} шт) = {cr['acts']:,.2f}, "
+          f"Σ оплат ({cr['pays_count']} шт) = {cr['pays']:,.2f}, Δ = {cr['delta']:,.2f}")

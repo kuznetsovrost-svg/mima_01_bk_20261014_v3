@@ -1,0 +1,84 @@
+"""
+rebuild_report.py — склейка финального отчёта из section_*_result.md файлов.
+
+Использование:
+    python3 scripts/rebuild_report.py <project_code> <project_name> <project_id> [section_glob]
+
+Пример:
+    python3 scripts/rebuild_report.py 504-595 "Космодром Жуковский" 4595
+    python3 scripts/rebuild_report.py 503-152 "ФРП - Минпромторг-Развитие 2026" 3152
+
+Что делает:
+1. Читает /tmp/section_*_result.md файлы (по умолчанию section_3..8_result.md,
+   или section_3..8_<code>_result.md если передан section_glob).
+2. Склеивает их с заголовком через разделитель "---".
+3. Записывает /tmp/project_<code>_report.md.
+4. Печатает размер и количество строк.
+
+Этот скрипт — **типовая утилита**, не часть скилла. Каждый раздел должен
+быть записан в /tmp/section_N_result.md отдельным скриптом (pitfall #10:
+write section result to file immediately, not as inline chat output).
+"""
+import sys
+from pathlib import Path
+from datetime import datetime
+
+
+def main(project_code: str, project_name: str, project_id: int, section_suffix: str = "") -> int:
+    """
+    project_code:    e.g. "504-595"
+    project_name:    e.g. "Космодром Жуковский внедрение ИСУП"
+    project_id:      e.g. 4595
+    section_suffix:  "" for default, or "_503-152" if you want project-specific files
+    """
+    if not project_code or not project_name:
+        print("Usage: rebuild_report.py <project_code> <project_name> <project_id> [section_suffix]")
+        return 1
+
+    section_files = [
+        f"section_3{section_suffix}_result.md",
+        f"section_4{section_suffix}_result.md",
+        f"section_5{section_suffix}_result.md",
+        f"section_6{section_suffix}_result.md",
+        f"section_7{section_suffix}_result.md",
+        f"section_8{section_suffix}_result.md",
+    ]
+
+    sections = []
+    for fname in section_files:
+        fpath = Path(f"/tmp/{fname}")
+        if fpath.exists():
+            sections.append(fpath.read_text(encoding="utf-8"))
+        else:
+            sections.append(f"\n## [{fname} — не выполнено]\n\n")
+
+    header = f"""# Отчёт о здоровье проекта «{project_name}»
+
+**Target:** {project_code} (ProjectId={project_id})
+**Дата формирования:** {datetime.now().strftime("%Y-%m-%d %H:%M:%S")} (локальное время)
+**MCP:** PMForesight MCP v3.2.4
+**Scope:** полный отчёт по проекту (все 4 содержательных раздела + технические данные)
+
+---
+
+"""
+
+    report_path = Path(f"/tmp/project_{project_code}_report.md")
+    report_path.write_text(header + "\n---\n".join(sections) + "\n", encoding="utf-8")
+
+    line_count = sum(1 for _ in report_path.open(encoding="utf-8"))
+    print(f"✅ Отчёт собран: {report_path}")
+    print(f"   Размер: {report_path.stat().st_size} байт, {line_count} строк")
+    print(f"   Отправка: MEDIA:{report_path}")
+    return 0
+
+
+if __name__ == "__main__":
+    if len(sys.argv) < 4:
+        print("Usage: rebuild_report.py <project_code> <project_name> <project_id> [section_suffix]")
+        sys.exit(1)
+    code = sys.argv[1]
+    name = sys.argv[2]
+    pid = int(sys.argv[3])
+    suffix = sys.argv[4] if len(sys.argv) > 4 else ""
+    sys.exit(main(code, name, pid, suffix))

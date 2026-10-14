@@ -1,0 +1,165 @@
+==============================================================================
+HERMES — структура каталогов, профилей, проектов и файлов
+==============================================================================
+Дата генерации: 2026-07-16
+База: /root/.hermes
+Профилей: 2
+
+/root/.hermes/
+│
+├── profiles/
+│   │
+│   ├── analyst_training/
+│   │   │
+│   │   ├── projects.db  (projects SQLite)
+│   │   │
+│   │   ├── projects/
+│   │   │   └── academic-course-anl-01/  (id: p_ceebe9b3)
+│   │   │   │   ├── README.md
+│   │   │   │   ├── progress.json
+│   │   │   │   │
+│   │   │   │   ├── Inputs/  (5 файлов)
+│   │   │   │   │   ├── Интеллектуальные_системы_управления_и_обработки_информации.md
+│   │   │   │   │   ├── Искусственный_интеллект_и_машинное_обучение.md
+│   │   │   │   │   ├── Математическое_моделирование_и_вычислительная_математика.md
+│   │   │   │   │   ├── Разработка_программных_продуктов.md
+│   │   │   │   │   └── Системная_и_программная_инженерия.md
+│   │   │   │   │
+│   │   │   │   ├── Outputs/
+│   │   │   │   │   └── results/
+│   │   │   │   │       └── TASK-2026-07-15-SPA/  (5 отчётов)
+│   │   │   │   │           ├── SANL_Интеллектуальные_системы_управления_и_обработки_информации.md
+│   │   │   │   │           ├── SANL_Искусственный_интеллект_и_машинное_обучение.md
+│   │   │   │   │           ├── SANL_Математическое_моделирование_и_вычислительная_математика.md
+│   │   │   │   │           ├── SANL_Разработка_программных_продуктов.md
+│   │   │   │   │           └── SANL_Системная_и_программная_инженерия.md  (со сводной таблицей)
+│   │   │   │   │
+│   │   │   │   └── tasks/
+│   │   │   │       └── TASK-2026-07-15-SPA.md
+│   │   │   │
+│   │   ├── skills/  (18 категорий)
+│   │   │   ├── apple/
+│   │   │   ├── apply-checklist-edits/
+│   │   │   ├── autonomous-ai-agents/
+│   │   │   ├── computer-use/
+│   │   │   ├── creative/
+│   │   │   ├── data-science/
+│   │   │   ├── dogfood/
+│   │   │   ├── email/
+│   │   │   ├── github/
+│   │   │   ├── media/
+│   │   │   ├── mlops/
+│   │   │   ├── note-taking/
+│   │   │   ├── productivity/
+│   │   │   ├── research/
+│   │   │   ├── smart-home/
+│   │   │   ├── social-media/
+│   │   │   ├── software-development/
+│   │   │   └── yuanbao/
+│   │   │
+│   │   ├── [прочие каталоги профиля]
+│   │   │   ├── audio_cache/
+│   │   │   ├── bin/
+│   │   │   ├── cache/
+│   │   │   ├── cron/
+│   │   │   ├── home/
+│   │   │   ├── hooks/
+│   │   │   ├── image_cache/
+│   │   │   ├── logs/
+│   │   │   └── ...(9 ещё)
+│   │   │
+│   │   ├── [файлы профиля]
+│   │   │   ├── SKILL-VUZ-PROF-AI-ANL-02.md  
+│   │   │   ├── SKILL-VUZ-PROF-AI-ANL-rep01.txt  
+│   │   │   ├── SOUL.md  ← активный SOUL
+│   │   │   ├── SOUL.old  ← старый SOUL
+│   │   │   ├── TASK-2026-07-15-SPA-02.md  
+│   │   │   ├── TASK-2026-07-15-SPA-куз-01.md  
+│   │
+│   └── mi_mg_01/
+│       │
+│       ├── projects.db  (projects SQLite)
+│       │
+│       ├── projects/  (пусто)
+│       │
+│       ├── skills/  (24 категорий)
+│       │   ├── .archive/
+│       │   ├── .curator_backups/
+│       │   ├── .hub/
+│       │   ├── apple/
+│       │   ├── autonomous-ai-agents/
+│       │   ├── computer-use/
+│       │   ├── creative/
+│       │   ├── data-science/
+│       │   ├── devops/
+│       │   ├── dogfood/
+│       │   ├── email/
+│       │   ├── github/
+│       │   ├── hermes-agent-vcs-portability/
+│       │   ├── hermes-internals-inspection/
+│       │   ├── media/
+│       │   ├── mlops/
+│       │   ├── note-taking/
+│       │   ├── productivity/
+│       │   ├── red-teaming/
+│       │   ├── research/
+│       │   ├── smart-home/
+│       │   ├── social-media/
+│       │   ├── software-development/
+│       │   └── yuanbao/
+│       │
+│       ├── [прочие каталоги профиля]
+│       │   ├── audio_cache/
+│       │   ├── cron/
+│       │   ├── home/
+│       │   ├── hooks/
+│       │   ├── image_cache/
+│       │   ├── logs/
+│       │   ├── memories/
+│       │   ├── pairing/
+│       │   └── ...(4 ещё)
+│       │
+│       ├── [файлы профиля]
+│       │   ├── SOUL.md  ← активный SOUL
+│       │   ├── config.yaml  
+│       │   ├── profile.yaml  
+│
+├── skills/  (глобальные, общие для всех профилей)
+│   ├── .archive/
+│   ├── .curator_backups/
+│   ├── .hub/
+│   ├── apple/
+│   ├── autonomous-ai-agents/
+│   ├── computer-use/
+│   ├── creative/
+│   ├── data-science/
+│   ├── devops/
+│   ├── dogfood/
+│   ├── email/
+│   ├── failsafe-rules/
+│   ├── github/
+│   ├── hermes-agent-vcs-portability/
+│   ├── hermes-internals-inspection/
+│   ├── media/
+│   ├── memory-hygiene/
+│   ├── mlops/
+│   ├── note-taking/
+│   ├── productivity/
+│   ├── red-teaming/
+│   ├── research/
+│   ├── smart-home/
+│   ├── social-media/
+│   ├── software-development/
+│   └── yuanbao/
+│
+├── [глобальные конфиги]
+│   ├── config.yaml  (общий)
+│   ├── gateway.state.json
+│   ├── gateway.pid
+│   └── ... (прочие служебные файлы)
+│
+└── ... (прочие компоненты Hermes)
+
+==============================================================================
+Конец дерева
+==============================================================================

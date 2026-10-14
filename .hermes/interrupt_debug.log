@@ -1,0 +1,8 @@
+18:24:46 interrupt fired: msg='3', children=0, parent._interrupt=True
+18:24:46 ENTER: queued interrupt msg='3', agent_running=True
+13:10:58 interrupt fired: msg='Текст сообщения: Проверка соединения 2', children=0, parent._interrupt=True
+13:10:58 ENTER: queued interrupt msg='Текст сообщения: Проверка соединения 2', agent_running=True
+17:24:38 interrupt fired: msg='2', children=0, parent._interrupt=True
+17:24:38 ENTER: queued interrupt msg='2', agent_running=True
+17:28:43 ENTER: queued interrupt msg='2', agent_running=True
+17:28:43 interrupt fired: msg='2', children=0, parent._interrupt=True

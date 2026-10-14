@@ -1,0 +1,80 @@
+__version__ = "1.0.19"
+"""
+kp_labels_thresholds.py — пороги для интерпретации индикатора 6.16
+«Проставлены метки для отнесения КТ к проекту или пресейлу».
+
+Используется в project_indicators.py::check_kp_labels().
+
+Логика (по уточнению пользователя, 2026-09-02):
+- Проверяем наличие меток isprojectbudget/ispresalebudget
+  в ProjectBudgetCompleteBusiness.
+- Если хотя бы у одного элемента КП метка не проставлена →
+  существенное замечание.
+
+Severity:
+- Если все метки проставлены → Норма (нет замечаний).
+- Если хоть одна без метки → Существенное.
+
+Пороги:
+- isprojectbudget и ispresalebudget — взаимоисключающие (по логике системы).
+- Проверяется случай когда ОБА False (нет метки).
+"""
+from typing import Callable, Any, Dict
+
+
+# ============================================================================
+# Пороги для 6.16 — Метки КП (проект/пресейл)
+# ============================================================================
+
+INDICATOR_THRESHOLDS = {
+    "6.16_kp_labels": {
+        "critical_when": lambda r: False,  # никогда не критическое
+        "substantial_when": lambda r: r.get("has_missing", False),
+        "informational_when": lambda r: False,
+        "default_verdict": "Норма",
+
+        # Лодные имена меток
+        "project_label": "Проект",
+        "presale_label": "Пресейл",
+    },
+}
+
+
+def interpret_indicator(indicator_key: str, result_value: str, detail: str = "") -> str:
+    """Вычислить вердикт индикатора."""
+    cfg = INDICATOR_THRESHOLDS.get(indicator_key, {})
+    default = cfg.get("default_verdict", "Норма")
+
+    crit_when = cfg.get("critical_when")
+    if crit_when:
+        try:
+            if crit_when({"result": result_value, "detail": detail}):
+                return "Критическое"
+        except Exception:
+            pass
+
+    subst_when = cfg.get("substantial_when")
+    if subst_when:
+        try:
+            if subst_when({"result": result_value, "detail": detail}):
+                return "Существенное"
+        except Exception:
+            pass
+
+    info_when = cfg.get("informational_when")
+    if info_when:
+        try:
+            if info_when({"result": result_value, "detail": detail}):
+                return "Информационное"
+        except Exception:
+            pass
+
+    return default
+
+
+def has_label(row: dict) -> bool:
+    """Проверяет что у строки бюджета проставлена метка (isprojectbudget XOR ispresalebudget)."""
+    is_project = row.get("isprojectbudget")
+    is_presale = row.get("ispresalebudget")
+    # Метка проставлена если ровно одно из двух True
+    return (bool(is_project) and not bool(is_presale)) or (not bool(is_project) and bool(is_presale))

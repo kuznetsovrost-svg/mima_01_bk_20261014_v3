@@ -1,0 +1,19 @@
+# .env.example для скилла fst-project-health
+#
+# Это ШАБЛОН — без реальных секретов.
+# При переносе скилла на другой сервер / в другой профиль:
+#   1. Скопируйте этот файл в `.env` (рядом с .env.example)
+#   2. Заполните реальные значения
+#   3. Скилл автоматически найдёт токен:
+#      - сначала в os.environ["PMP_TOKEN"]
+#      - затем в этом .env-файле (каталог скилла)
+#      - затем в ~/.hermes/profiles/<profile>/.env (Hermes-профиль)
+
+# === Токен PMForesight MCP (ОБЯЗАТЕЛЬНО) ===
+# Получите токен в PMForesight → Настройки → API → Создать токен
+PMP_TOKEN=your_pmforeisght_mcp_token_here
+
+# === URL MCP-сервера (опционально, default указан в mcp_config.py) ===
+# По умолчанию: https://ppreplica.hera.pmpractice.ru/mcp
+# Переопределите, если используете другой инстанс:
+# PMP_MCP_URL=https://your-mcp-instance.example.com/mcp

@@ -1,0 +1,79 @@
+Лекция по BPMN (Business Process Model and Notation).
+
+Терминология: BPMN, BPMN 2.0, OMG, нотация, диаграмма, бизнес-процесс,
+процесс, подпроцесс, subprocess, call activity, вызываемая активность,
+задача, task, user task, service task, script task, send task, receive task,
+manual task, business rule task, шлюз, gateway, exclusive gateway, exclusive
+event-based gateway, parallel gateway, inclusive gateway, complex gateway,
+event-based gateway, событие, event, start event, end event, intermediate
+event, message event, timer event, error event, signal event, escalation
+event, conditional event, link event, compensation event, terminate event,
+cancel event, multiple event, parallel multiple, пул, pool, дорожка, lane,
+поток управления, sequence flow, поток сообщений, message flow, поток
+ассоциации, association, data association, артефакт, artifact, text
+annotation, group, data object, data store, data input, data output,
+событие-входящее, событие-исходящее, маркер, токен, token, начало процесса,
+конец процесса, цикл, итерация, instance, экземпляр, activity instance,
+multi-instance, последовательность, параллелизм, branch, ветка, condition,
+condition expression, condition event, conditional flow, default flow,
+default sequence flow, condition marker, шлюз эксклюзивный, шлюз
+параллельный, шлюз включающий, шлюз событийный, шлюз сложный, эксклюзивный
+шлюз на основе событий, таймер, timer, intermediate timer, boundary timer,
+escalation, ошибка, error, signal, сигнал, message, сообщение, link, ссылка,
+throw, catch, бросающее событие, перехватывающее событие, throwing,
+catching, throw event, catch event, throwing intermediate, catching
+intermediate, throwing end, throwing start, catching start, boundary event,
+событие на границе, прерывающее, непрерывающее, interrupting, non-interrupting,
+compensation, компенсация, compensation handler, обработчик компенсации,
+compensation throw, compensation catch, cancel, отмена, transaction,
+транзакция, transaction subprocess, ad hoc, ad-hoc subprocess, embedded
+subprocess, развёрнутый подпроцесс, reusable, reusable subprocess, повторно
+используемый, call activity, вызов активности, participant, участник,
+black box pool, white box pool, multi-pool, choreography, хореография,
+collaboration, сотрудничество, message exchange, обмен сообщениями,
+initiating message, response message, request, response, инициирующее
+сообщение, ответное сообщение, типизация, типизированное событие, type,
+conformance, conformance class, descriptive, analytic, common executable,
+process executable, диаграмма процесса, process diagram, BPMN diagram, нотация
+BPMN, modeling, моделирование, IDEF0, IDEF3, EPC, ARIS, value chain, value
+chain analysis, анализ цепочки создания стоимости, портфель процессов,
+process landscape, process architecture, архитектура процессов, процессное
+управление, BPM, business process management, управление бизнес-процессами,
+BPM система, BPMS, business process management system, jBPM, Camunda,
+Activiti, Bonita, Bizagi, Signavio, Pega, Appian, Oracle BPM, IBM BPM,
+OutSystems, webMethods, Oracle, SAP, ERP, workflow, document workflow,
+human workflow, system workflow, service orchestration, сервис-оркестровка,
+process engine, process execution, execution engine, движок процессов,
+engine, runtime, process runtime, persistence, база данных, history,
+process history, history service, task service, identity service, repository
+service, management service, REST API, SOAP API, process variable,
+переменные процесса, process instance state, состояние экземпляра процесса,
+active, completed, suspended, terminated, suspended state, suspended,
+terminated state, escalated, error state, incident, инцидент, signal,
+signal event, throw signal, catch signal, event listener, listener,
+subprocess event, escalation event, error end event, end event error,
+escalation end event, cancel end event, message end event, signal end
+event, terminate end event, multiple end event, parallel multiple end event,
+compensation end event, end event, start event, message start event, timer
+start event, signal start event, conditional start event, error start event,
+escalation start event, compensation start event, multiple start event,
+parallel multiple start event, message intermediate event, timer intermediate
+event, signal intermediate event, error intermediate event, escalation
+intermediate event, cancel intermediate event, compensation intermediate
+event, conditional intermediate event, link intermediate event, multiple
+intermediate event, parallel multiple intermediate event, process modeling,
+нотация моделирования, ARIS, ARIS architecture, ARIS connect, ARIS design,
+ARIS align, ARIS publish, ARIS analyze, event-driven, событийно-управляемый,
+service, service contract, контракт сервиса, choreography, choreographed
+process, executable process, исполняемый процесс, monitoring, мониторинг
+процессов, BAM, business activity monitoring, business activity, активность,
+process analytics, процессная аналитика, process mining, интеллектуальный
+анализ процессов, event log, журнал событий, conformance checking, проверка
+соответствия, model discovery, discovery, анализ журналов, process
+enhancement, улучшение процесса, process simulation, симуляция процесса,
+bottleneck analysis, анализ узких мест, KPI, ключевые показатели, метрики
+процесса, cycle time, lead time, throughput, processing time, waiting time,
+время ожидания, время обработки, пропускная способность, performance,
+производительность, SLA, service level agreement, соглашение об уровне
+сервиса, exception, исключение, fault, сбой, retry, повтор, retry policy,
+compensation policy, таймаут, timeout, deadline, крайний срок.

@@ -1,0 +1,305 @@
+================================================================================
+HERMES AGENT — КАК СОЗДАТЬ НОВОГО АГЕНТА (бота) И ЗАПИСАТЬ В MATRIX
+================================================================================
+Файл:        ~/AGENT01.txt
+Хост:        8317937-vo704353.twc1.net (Linux 6.8.0-124-generic, root)
+Homeserver:  https://msg.lab.aidemo.adaptivepm.ru (Synapse)
+Стек:        Hermes Agent (default profile) + прямые вызовы Matrix Client-Server API
+Написал:     Hermes Agent (по запросу пользователя)
+Назначение:  пошаговая инструкция — от регистрации MXID до рабочей отправки
+              сообщения в комнату от имени нового агента. Без E2EE.
+
+--------------------------------------------------------------------------------
+0. МОДЕЛЬ
+--------------------------------------------------------------------------------
+Агент = связка из двух вещей:
+
+  (а) Matrix-аккаунт на homeserver (MXID вида @agent_name:server).
+      Это «руки» — через него уходят/приходят сообщения.
+  (б) Конфиг Hermes на этой машине (~/.hermes/config.yaml + .env).
+      Это «мозги» — он подписывается на homeserver через gateway и
+      гоняет диалоги с LLM.
+
+Здесь описываю оба слоя. Минимум для «слать сообщения в Matrix» — только (а)
+через прямые HTTP-вызовы. Полноценный диалоговый бот = (а)+(б).
+
+--------------------------------------------------------------------------------
+1. РЕГИСТРАЦИЯ АККАУНТА НА HOMESERVER
+--------------------------------------------------------------------------------
+
+Самый прямой путь — POST /_matrix/client/v3/register. На homeserver'е
+msg.lab.aidemo.adaptivepm.ru регистрация может быть открыта или закрыта
+(нужно проверить). Если закрыта — попросить админа homeserver'а выдать
+MXID и пароль руками.
+
+  ENDPOINT=https://msg.lab.aidemo.adaptivepm.ru
+
+Шаг 1.1. Проверить, открыта ли регистрация:
+
+  curl -sS "$ENDPOINT/_matrix/client/v3/register/available?username=agent01"
+  # -> {"available": true}  — можно создавать
+  # -> {"errcode":"M_USER_IN_USE"} — имя занято
+  # -> {"errcode":"M_UNKNOWN"} / 403 — регистрация закрыта
+
+Шаг 1.2. Один GET на /_matrix/client/v3/register/init — чтобы получить session
+и auth-flow. homeserver вернёт JSON со списком стадий (m.login.password,
+m.login.registration_token, captcha, ...). На нашем HS, как правило, нужна
+только m.login.password.
+
+  curl -sS "$ENDPOINT/_matrix/client/v3/register/init"
+  # -> {"auth_token": "...", "session": "...", "flows": [...]}
+
+Шаг 1.3. Завершить регистрацию, отдав auth-объект с типом m.login.password
+и хешем пароля по PBKDF2 (или m.login.dummy, если HS принимает его после
+init). Проще всего через Python с модулем `synapse-registration` или
+`matrix_register` — он сам делает нужный хеш:
+
+  pip install matrix_register      # или воспользоваться уже стоящим mautrix
+  matrix_register --hs "$ENDPOINT" \
+                  --user agent01 \
+                  --password 'SomeStrongPass!2026' \
+                  --server-name msg.lab.aidemo.adaptivepm.ru
+
+  На выходе — access_token и user_id. Сохрани.
+
+Шаг 1.4. Альтернатива: вход под существующим аккаунтом (если уже есть
+логин/пароль) и получение нового токена:
+
+  curl -sS -X POST -H 'Content-Type: application/json' \
+       -d '{"type":"m.login.password",
+            "identifier":{"type":"m.id.user","user":"agent01"},
+            "password":"SomeStrongPass!2026"}' \
+       "$ENDPOINT/_matrix/client/v3/login"
+  # -> {"user_id":"@agent01:msg.lab.aidemo.adaptivepm.ru",
+  #     "access_token":"syt_XXXX",
+  #     "device_id":"..."}
+
+Сохрани user_id, access_token, device_id. Это и есть «ключ» агента.
+
+--------------------------------------------------------------------------------
+2. ПРОВЕРКА ТОКЕНА
+--------------------------------------------------------------------------------
+
+  TOK=syt_XXXX
+
+  curl -sS -H "Authorization: Bearer *** "$ENDPOINT/_matrix/client/v3/account/whoami"
+  # ожидаем:
+  #   {"user_id":"@agent01:msg.lab.aidemo.adaptivepm.ru","is_guest":false}
+
+  curl -sS -H "Authorization: Bearer *** "$ENDPOINT/_matrix/client/v3/devices"
+  # покажет список устройств. В идеале мы зашли со своего (например, AGENT01)
+
+--------------------------------------------------------------------------------
+3. КУДА СЛАТЬ СООБЩЕНИЯ
+--------------------------------------------------------------------------------
+
+3.1. Свой инбокс. У каждого MXID есть комната 1-на-1 с собой, в которой
+видны все его сообщения. Чтобы найти room_id:
+
+  curl -sS -H "Authorization: Bearer *** "$ENDPOINT/_matrix/client/v3/joined_rooms"
+  # -> {"joined_rooms": ["!qtymGlxhfChwRcTygM:msg.lab.aidemo.adaptivepm.ru"]}
+
+  Если у нового агента комнат нет (только что создан), пустых 0 и нужно
+  либо создать новую (createRoom), либо пригласить бота в существующую:
+
+  curl -sS -X POST -H "Authorization: Bearer *** -H 'Content-Type: application/json' \
+       -d '{"preset":"trusted_private_chat","invite":["@other:..."]}' \
+       "$ENDPOINT/_matrix/client/v3/createRoom"
+
+  Или просто зайти в комнату как @agent01 и написать себе — homeserver
+  создаст инбокс автоматически.
+
+3.2. Конкретный пользователь. Чтобы отправить DM в @user:server, нужен
+room_id, где оба участника. Способ — POST /createRoom с invite:
+
+  curl -sS -X POST -H "Authorization: Bearer *** -H 'Content-Type: application/json' \
+       -d '{"preset":"trusted_private_chat","invite":["@oc_hermes:msg.lab.aidemo.adaptivepm.ru"]}' \
+       "$ENDPOINT/_matrix/client/v3/createRoom"
+
+  homeserver вернёт {"room_id":"!abc:server"}.
+
+3.3. Обычная комната. Получить room_id можно из URL клиента или из
+sync-ответа авторизованного участника.
+
+--------------------------------------------------------------------------------
+4. ОТПРАВКА СООБЩЕНИЯ
+--------------------------------------------------------------------------------
+
+4.1. Текст:
+
+  ROOM=!qtymGlxhfChwRcTygM:msg.lab.aidemo.adaptivepm.ru
+  TXN=agent01-$(date +%s%N)              # уникальный transaction id
+
+  curl -sS -X PUT \
+       -H "Authorization: Bearer *** -H 'Content-Type: application/json' \
+       -d '{"msgtype":"m.text","body":"Привет от agent01"}' \
+       "$ENDPOINT/_matrix/client/v3/rooms/$ROOM/send/m.room.message/$TXN"
+
+  homeserver вернёт {"event_id":"$...","...":...}. HTTP 200 — ок.
+
+4.2. Файл (двухшаговая процедура):
+
+  # a) upload bytes в media-repo
+  curl -sS -X POST \
+       -H "Authorization: Bearer *** -H "Content-Type: text/plain" \
+       --data-binary @/path/to/file.txt \
+       "$ENDPOINT/_matrix/media/v3/upload?filename=file.txt"
+  # -> {"content_uri":"mxc://server/AbCd..."}
+
+  # b) отправить m.room.message с msgtype=m.file
+  curl -sS -X PUT \
+       -H "Authorization: Bearer *** -H 'Content-Type: application/json' \
+       -d '{"msgtype":"m.file",
+            "body":"file.txt",
+            "filename":"file.txt",
+            "mimetype":"text/plain",
+            "size":1234,
+            "url":"mxc://server/AbCd..."}' \
+       "$ENDPOINT/_matrix/client/v3/rooms/$ROOM/send/m.room.message/$TXN"
+
+4.3. Изображение, видео, аудио — то же самое, msgtype=m.image / m.video /
+m.audio. Клиент (Element) отрисует превью автоматически.
+
+--------------------------------------------------------------------------------
+5. БЕЗОПАСНОСТЬ ТОКЕНА
+--------------------------------------------------------------------------------
+
+  - access_token — это пароль от аккаунта. Не светить в логи, не класть
+    в git, не отдавать клиентам, которым не доверяешь.
+  - В bash-командной строке не вставляй токен как литерал — лучше всегда
+    через переменную $TOK или файл:
+        curl -H "Authorization: Bearer *** $TOK"
+        curl -H @<(echo "Authorization: Bearer *** $TOK")
+  - Если токен утёк — POST /_matrix/client/v3/logout/all, выпустить новый
+    через /login.
+
+--------------------------------------------------------------------------------
+6. ПОДКЛЮЧЕНИЕ К HERMES (ПОЛНЫЙ СЦЕНАРИЙ, ШЛЮЗ + LLM)
+--------------------------------------------------------------------------------
+
+Это уже не «агент-одноразка», а постоянный диалоговый бот.
+
+Шаг 6.1. Включить платформу в конфиге:
+
+  # ~/.hermes/config.yaml
+  platforms:
+    matrix:
+      homeserver: https://msg.lab.aidemo.adaptivepm.ru
+      user_id:    '@agent01:msg.lab.aidemo.adaptivepm.ru'
+      access_token_env: MATRIX_ACCESS_TOKEN    # имя env-переменной
+      require_mention: true
+      free_response_rooms: ''                  # пустая строка = никто не free
+      encryption: false                         # см. раздел 7
+
+Шаг 6.2. Положить токен в .env (chmod 600, не светить в репо):
+
+  # ~/.hermes/.env
+  MATRIX_HOMESERVER=https://msg.lab.aidemo.adaptivepm.ru
+  MATRIX_USER_ID=@agent01:msg.lab.aidemo.adaptivepm.ru
+  MATRIX_ACCESS_TOKEN=syt_XXXX
+  MATRIX_ENCRYPTION=false
+  MATRIX_ALLOWED_USERS=@user1:msg.lab.aidemo.adaptivepm.ru,@user2:...
+
+Шаг 6.3. Перезапустить gateway:
+
+  systemctl --user restart hermes-gateway.service
+  journalctl --user -u hermes-gateway.service -f
+
+  В логах должно появиться "matrix connected as @agent01:..." и подписка
+  на нужные комнаты.
+
+Шаг 6.4. Проверить: написать в комнату с упоминанием бота —
+@agent01:msg.lab.aidemo.adaptivepm.ru. Hermes ответит.
+
+--------------------------------------------------------------------------------
+7. E2EE — ВАЖНАЯ ОГОВОРКА
+--------------------------------------------------------------------------------
+
+На homeserver msg.lab.aidemo.adaptivepm.ru текущая версия mautrix падает
+с ошибкой:
+    MBadJSON: 'device_keys' values must be a list of strings
+
+Это баг совместимости на стороне HS, не наш. Чтобы шлюз работал прямо
+сейчас — выключить E2EE:
+
+    MATRIX_ENCRYPTION=false
+    encryption: false
+
+Включить обратно можно, когда HS починят. С plaintext всё работает:
+  - m.text, m.file, m.image, m.video, m.audio,
+  - edits, replies, reactions, redacts — всё через тот же C-S API.
+
+--------------------------------------------------------------------------------
+8. МИНИМАЛЬНЫЙ PYTHON-ОБЁРТОК (если лень curl-ить)
+--------------------------------------------------------------------------------
+
+  import os, json, subprocess
+
+  class MatrixClient:
+      def __init__(self, hs, token):
+          self.hs = hs.rstrip("/")
+          self.hdr = f"Authorization: Bearer *** token}\n".encode()
+      def _curl(self, method, path, data=None, raw=False, content_type=None):
+          cmd = ["curl","-sS","-w","\nHTTP:%{http_code}","-X",method,
+                 "-H",f"@{self.hdr_path}"]
+          if content_type: cmd += ["-H", f"Content-Type: {content_type}"]
+          if data is not None:
+              if raw: cmd += ["--data-binary", f"@{data}"]
+              else:   cmd += ["-d", json.dumps(data)]
+          cmd += [f"{self.hs}{path}"]
+          r = subprocess.run(cmd, capture_output=True, text=True)
+          return r.stdout
+      def whoami(self): return self._curl("GET","/_matrix/client/v3/account/whoami")
+      def joined_rooms(self): return self._curl("GET","/_matrix/client/v3/joined_rooms")
+      def send_text(self, room, text, txn):
+          return self._curl("PUT",
+              f"/_matrix/client/v3/rooms/{room}/send/m.room.message/{txn}",
+              {"msgtype":"m.text","body":text}, content_type="application/json")
+      def upload(self, path, filename=None):
+          filename = filename or os.path.basename(path)
+          return self._curl("POST", f"/_matrix/media/v3/upload?filename={filename}",
+                            data=path, raw=True,
+                            content_type="application/octet-stream")
+      def send_file(self, room, mxc, filename, size, mimetype, txn):
+          return self._curl("PUT",
+              f"/_matrix/client/v3/rooms/{room}/send/m.room.message/{txn}",
+              {"msgtype":"m.file","body":filename,
+               "filename":filename,"mimetype":mimetype,"size":size,"url":mxc},
+              content_type="application/json")
+
+  Использование:
+      mx = MatrixClient("https://msg.lab.aidemo.adaptivepm.ru", "syt_XXXX")
+      print(mx.whoami())
+      print(mx.send_text("!qtymGlxhfChwRcTygM:msg.lab.aidemo.adaptivepm.ru",
+                          "hello", "agent01-1"))
+
+--------------------------------------------------------------------------------
+9. ЧАСТЫЕ ОШИБКИ
+--------------------------------------------------------------------------------
+
+  401 M_MISSING_TOKEN
+      Заголовок авторизации ушёл битый. Не вставляй токен через bash
+      heredoc с ***, лучше через файл или переменную.
+
+  401 M_UNKNOWN_TOKEN
+      Токен отозван (logout/all) или это вообще неправильный homeserver.
+
+  403 M_FORBIDDEN
+      Бот не в комнате, либо rate-limit. Добавить через invite+join.
+
+  M_BAD_JSON: 'device_keys' values must be a list of strings
+      Серверная ошибка совместимости mautrix с HS. Выключить E2EE
+      (MATRIX_ENCRYPTION=false) — и работать через plaintext API.
+
+  sync возвращает 500
+      На нашем HS встречается при пустом filter. Убери параметр filter
+      из /sync — всё работает.
+
+  msg не приходит клиенту
+      - sender не в allowed_users
+      - require_mention=true, а в сообщении нет @agent01:...
+      - комната encrypted, а бот не подписан на ключи (см. раздел 7).
+
+================================================================================
+КОНЕЦ
+================================================================================

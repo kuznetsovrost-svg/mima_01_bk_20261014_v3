@@ -1,0 +1,511 @@
+# Playbook: методы MCP, используемые в скилле `fst-project-health`
+
+**Версия:** 1.0.0 — 2026-09-06
+**Назначение:** единый справочник по всем инструментам MCP-сервера
+`ppreplica.hera.pmpractice.ru`, которые скилл `fst-project-health` вызывает
+при построении отчёта «Здоровье проекта». По каждому методу указано: что
+это, в какой секции/показателе применяется, с какими параметрами, и в каких
+скриптах он встречается.
+
+---
+
+## Часть 1. Общий обзор транспорта и сессии
+
+### 1.1. Протокол: MCP (Model Context Protocol) через SSE/HTTP
+
+Сервер PMForesight MCP (`ppreplica.hera.pmpractice.ru:443`) реализует
+MCP-2024-11-05 поверх `POST https://…/mcp` с `Content-Type: application/json`
+и `Accept: application/json, text/event-stream`. Ответ приходит в формате
+**Server-Sent Events** (SSE): поток строк вида
+
+```
+event: message
+data: {"jsonrpc":"2.0","id":1,"result":{...}}
+
+```
+
+Внутри каждого SSE-сообщения — обычный JSON-RPC 2.0 envelope. Парсер
+отбрасывает префикс `data: ` и скармливает остаток в `json.loads`.
+
+### 1.2. Жизненный цикл сессии
+
+1. **`initialize`** → получить `mcp-session-id` из заголовка ответа.
+2. **`notifications/initialized`** (без ответа) — best-effort, можно не ждать.
+3. **`tools/call`** — все дальнейшие вызовы инструментов с заголовком
+   `mcp-session-id: <sid>`.
+
+Реализация — `scripts/mcp_config.py::mcp_init()` + `mcp_call()`. Каждая
+сессия — одна HTTP-сессия с `requests.Session()`. Переиспользовать сессию
+**обязательно** — это даёт +30 % производительности (Pitfall из
+`references/run-all-pitfalls-2026-08-22.md`).
+
+### 1.3. Двойное кодирование `result.content[0].text`
+
+Сервер возвращает JSON-результат **дважды сериализованным**: `result` —
+это `{content: [{type: "text", text: "<JSON-строка>"}]}`. Чтобы получить
+Python-объект, делаем `json.loads(result["content"][0]["text"])`.
+
+Реализация — `mcp_config.py::mcp_call()`, последняя строка тела функции.
+**Не пытаться** парсить `result` напрямую — там будет строка.
+
+### 1.4. Таймауты
+
+| Параметр | Константа | Где | Значение |
+|---|---|---|---|
+| HTTP read для `initialize` | `TIMEOUT_INITIALIZE` | `mcp_config.py:154` | 30 с |
+| HTTP read для `tools/call` | `TIMEOUT_TOOLS_CALL` | `mcp_config.py:155` | 60 с |
+| `notifications/initialized` | литерал `10` | `mcp_config.py:415` | 10 с |
+
+При сетевых таймаутах (`ReadTimeoutError`) в сессии 2026-09-06 помог
+запуск с `PMP_TIMEOUT=180` в env (`scripts/run_all.py` использует
+`os.environ.get("PMP_TIMEOUT")` если он задан — фактически нет, перебить
+через прямую правку `TIMEOUT_TOOLS_CALL`). Без этого 504-595 ронял
+`get_entity_data` для крупного проекта. Рекомендация: при больших
+проектах увеличивать `TIMEOUT_TOOLS_CALL` до 180.
+
+### 1.5. Авторизация
+
+Заголовок `Authorization: Bearer <PMP_TOKEN>`. Токен — JWT, поля
+payload используются для:
+
+- **Аутентификация** — каждая сессия.
+- **`displayname`** — ФИО текущего пользователя в секции 7 отчёта
+  (Pitfall #213). Парсится через `get_current_user_from_token()`.
+
+Файл `.env` ищется в порядке (Pitfall #225):
+
+1. `<каталог скилла>/.env` (portable-режим).
+2. `~/.hermes/profiles/fst-control/.env` (Hermes-режим).
+3. `os.environ["PMP_TOKEN"]` (если уже выставлен в shell).
+
+---
+
+## Часть 2. Сводная таблица: методы MCP, используемые скиллом
+
+| # | Метод MCP | Сигнатура (как вызываем) | Скрипты, где встречается |
+|---|---|---|---|
+| 1 | `initialize` | `mcp_init()` → `(sid, serverInfo)` | `mcp_config.py` + все скрипты-индикаторы |
+| 2 | `notifications/initialized` | внутри `mcp_init()` после успешного init | `mcp_config.py` |
+| 3 | `tools/call` с инструментом `get_view` | `mcp_call(sid, "get_view", args)` | `run_all.py`, `project_indicators.py`, `build_report_header.py`, `get_effort.py`, `get_project_budget.py`, `find_project_by_code.py`, `mcp_config.py` |
+| 4 | `tools/call` с инструментом `get_entity_data` | `mcp_call(sid, "get_entity_data", args)` | `run_all.py`, `project_indicators.py`, `build_report_header.py`, `get_metamodel.py`, `mcp_config.py` |
+| 5 | `tools/call` с инструментом `find_entity` | `mcp_call(sid, "find_entity", args)` | `build_report_header.py` |
+| 6 | `tools/call` с инструментом `get_user_profile` | **не используется** (Pitfall #213) | — |
+
+`list_views`, `list_entities`, `describe_entity`, `save_entity`,
+`delete_entity`, `upload_entity_file`, `list_prompts`, `get_prompt`,
+`list_resources`, `read_resource` — присутствуют в MCP-сервере, но
+**скиллом не вызываются**. Используются интерактивно через
+`mcp__fst_pmpractice__*` инструменты в режиме отладки.
+
+---
+
+## Часть 3. По методу
+
+### 3.1. `initialize`
+
+**Что это (по спецификации MCP-2024-11-05):** инициализация сессии
+клиента и сервера. Клиент передаёт свою версию протокола и capabilities,
+сервер возвращает свой `serverInfo` (имя, версия) и `mcp-session-id`.
+
+**Где используется в скилле:** первый шаг любого скрипта, который
+ходит в MCP. Без `initialize` сервер не выдаст `session-id` и отклонит
+все `tools/call`.
+
+**Параметры вызова:**
+
+```python
+mcp_init()  # в mcp_config.py:373-420
+# читает токен из env, отправляет:
+{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "initialize",
+    "params": {
+        "protocolVersion": "2024-11-05",
+        "capabilities": {},
+        "clientInfo": {"name": "fst-project-health", "version": "1.0"},
+    },
+}
+# → возвращает (sid: str, serverInfo: dict)
+```
+
+**Возвращает:**
+
+- `str` — `mcp-session-id` (из заголовка HTTP-ответа).
+- `dict` — `serverInfo` сервера (например, `{"name": "pmp-mcp", "version": "x.y.z"}`).
+  Внимание: это **сервер**, не пользователь. Для ФИО пользователя
+  используется JWT (см. `get_current_user_from_token`, Pitfall #213).
+
+**Скрипты:** `scripts/mcp_config.py` (определение); все остальные
+скрипты (`run_all.py`, `project_indicators.py`, `build_report_header.py`,
+`get_effort.py`, `get_project_budget.py`, `find_project_by_code.py`,
+`get_metamodel.py`) делают `from mcp_config import mcp_init, mcp_call`
+и стартуют через `sid, _ = mcp_init()`.
+
+**Edge cases:**
+
+- Если сервер не вернул `mcp-session-id` → исключение `McpConnectionError`.
+- `notifications/initialized` отправляется **best-effort** (без raise) —
+  сервер не обязан на него отвечать.
+
+---
+
+### 3.2. `notifications/initialized`
+
+**Что это:** уведомление (без `id`, без ожидания), которое клиент
+отправляет серверу после успешного `initialize`. Подтверждает, что
+клиент готов к работе.
+
+**Где используется:** внутри `mcp_init()` сразу после получения
+`mcp-session-id`.
+
+**Скрипты:** `mcp_config.py:411-417`.
+
+**Edge cases:** `requests.RequestException` глотается — уведомление
+не критично для работы.
+
+---
+
+### 3.3. `get_view`
+
+**Что это (по MCP-серверу PMForesight):** загружает данные представления
+(view) для указанной сущности. View — это плоская проекция
+сущности с преднастроенным набором колонок и фильтрами.
+
+**Где используется:** основной метод чтения данных. ~70 % всех вызовов
+MCP в скилле.
+
+**Параметры (как вызываем):**
+
+```python
+mcp_call(sid, "get_view", {
+    "entityName": "<Entity>",      # обязательно
+    "viewName":   "<View>",        # обязательно
+    "filters":    {...},           # опц., см. ниже
+    "limit":      N,           # опц., default 1000
+    "offset":     N,           # опц., default 0
+})
+```
+
+**Поддерживаемые фильтры:** зависят от view. Практически всегда
+поддерживается `ProjectId` (число). Другие фильтры — см.
+`list_views(entityName=...)` интерактивно.
+
+**Что возвращает:** `{"result": [...строки...]}` или
+`{"data": [...]}` — зависит от view. Большинство view возвращает
+список словарей, где ключи — это системные имена колонок (`PlanDate`,
+`ForecastDate`, `FactDate`, `BudgetType`, и т.п.).
+
+**Куда в скилле:**
+
+| Секция отчёта | Показатель / место | Скрипт + функция |
+|---|---|---|
+| Заголовочная карточка проекта | поиск проекта по коду (`504-595`) | `find_project_by_code.py::find_project` |
+| Раздел 1 (заголовок) | список проектов (поиск по `ProjectCode`) | `find_project_by_code.py` |
+| Раздел 3 «Замечания по срокам» | `load_project_points` через `Point/AllMyPoint` | `run_all.py::load_project_points` |
+| Раздел 4 «Полнота заполнения проекта» | `Project/ProjectHealthCostMy` | `run_all.py::build_section_4` |
+| Раздел 5 «Актуальность прогнозов» | `Point/AllMyPoint` | `run_all.py::build_section_5` |
+| **Раздел 6 «Показатели проекта» (16 индикаторов)** | каждый индикатор вызывает свой view | `project_indicators.py::check_*` |
+| Заголовок (МетаМодель проекта) | `Project/MyProject` | `build_report_header.py::build_header` |
+| Заголовок (ресурсный план) | `Project/ProjectResourcePlan` | `build_report_header.py::build_resource_plan` |
+| Заголовок (бюджет) | `Project/ProjectBudgetCompleteBusiness` | `build_report_header.py::build_budget` |
+| Точечные утилиты | `Project/ProjectResourcePlan`, `Project/ProjectBudget` | `get_effort.py`, `get_project_budget.py` |
+
+**Полный список view, вызываемых из `project_indicators.py`** (через
+обёртку `fetch_with_cache(sid, entity, view, filters, project_id)`):
+
+| View | Entity | Назначение | Показатели |
+|---|---|---|---|
+| `_get_entity_data_` (алиас для `get_entity_data`) | Project | карточка проекта (метаданные) | 6.1, 6.2, 6.3, 6.4, 6.5, 6.7, 6.15, 6.16 |
+| `AllMyPoint` | Point | все КТ уровня проекта (`ParentEntityName=Project`) | 6.2, 6.3, 6.4, 6.5, 6.7, 6.13, 6.14, 6.15, 6.16 |
+| `AllFinancePoint` | Point | финансовые КТ (`ParentEntityName=InContract`) | 6.8 (Pitfall #214) |
+| `ProjectResourcePlan` | Project | ресурсный план (план/прогноз по исполнителям и периодам) | 6.3, 6.4, 6.5, 6.6, 6.7, 6.13, 6.14 |
+| `ProjectBudgetCompleteBusiness` | Project | бюджет проекта (план/факт/прогноз по статьям) | 6.10, 6.11, 6.12, 6.13, 6.14, 6.16 |
+| `MyProject` | Project | расширенная карточка проекта | 6.8, 6.9, 6.15 |
+| `InContractBudgetBusiness` | InContract | финансовый поток по контрактам | 6.9 (акты/оплаты) |
+| `ApprovedBudget` | Project | утверждённый бюджет по годам | 6.13 (Pitfall по году) |
+
+**Подробности по показателям:**
+
+#### 6.1 «Юрлицо проекта/пресейла указано»
+
+- Метод: `get_view` НЕ вызывается напрямую; читает
+  `presale_juridicalperson` из карточки проекта
+  (через `get_entity_data`, см. ниже).
+
+#### 6.2 «Актуальность состояния ЖЦ»
+
+- `Point/AllMyPoint` — КТ уровня проекта.
+- `_get_entity_data_` — карточка проекта (стадия ЖЦ).
+
+#### 6.3 «Прогнозы по ресурсам заданы»
+
+- `Project/ProjectResourcePlan` — `forecast_hours` за каждый месяц.
+- `Point/AllMyPoint` — связь КТ с месяцами.
+
+#### 6.4 «Плановые трудозатраты заданы»
+
+- `Project/ProjectResourcePlan` — `plan_hours` за каждый месяц.
+- `Point/AllMyPoint` — связь КТ с месяцами.
+
+#### 6.5 «Прогнозы ресурсов на исполнителя не превышают 100%»
+
+- `Project/ProjectResourcePlan` — нормативы по ролям.
+- `Point/AllMyPoint` — трудозатраты по КТ.
+
+#### 6.6 «Есть нереализованные прогнозы по ролевым ресурсам»
+
+- `Project/ProjectResourcePlan` — `forecast_hours` по ролям без
+  привязки к исполнителю.
+
+#### 6.7 «Есть исполнители у которых прогноз в сумме с др.активностями > 100%»
+
+- `Project/ProjectResourcePlan` — `forecast_hours` с фильтром по
+  `projectid` (lowercase! Pitfall #196) и по всем проектам.
+- `Point/AllMyPoint` — для уточнения «по проекту отчёта».
+
+#### 6.8 «Соблюдение сроков финансовых КТ»
+
+- `Point/AllFinancePoint` — финансовые КТ с
+  `ParentEntityName=InContract` (Pitfall #216).
+- `Project/MyProject` — для дат контрактов.
+
+#### 6.9 «Суммы актов и оплат»
+
+- `Project/MyProject` — карточка проекта.
+- `InContract/InContractBudgetBusiness` — финансовый поток.
+
+#### 6.10 «В бюджете указаны прямые затраты»
+
+- `Project/ProjectBudgetCompleteBusiness` — статьи бюджета с
+  `budgettype="Прямые затраты"`.
+
+#### 6.11 «В затратах указан НДС»
+
+- `Project/ProjectBudgetCompleteBusiness` — статьи с
+  `financesourceid` (НДС).
+
+#### 6.12 «Сумма НДС расчётная»
+
+- `Project/ProjectBudgetCompleteBusiness` — `budgettype="Доходный
+  контракт"` + `budgettype="Расход ручной ввод"` с `fs=128`
+  (статья 611-13).
+
+#### 6.13 «Бюджет проекта/пресейла»
+
+- `Project/ProjectBudgetCompleteBusiness` — лимиты.
+- `Project/ApprovedBudget` — утверждённые суммы по годам.
+
+#### 6.14 «Расход лимита пресейла»
+
+- `Project/ProjectBudgetCompleteBusiness` — фактический расход по
+  пресейлу.
+
+#### 6.15 «У проекта есть утверждённый бюджет»
+
+- `Project/ApprovedBudget` — записи по годам.
+
+#### 6.16 «Проставлены метки для отнесения КТ к проекту или пресейлу»
+
+- `Point/AllMyPoint` — наличие меток `IsPresale` и т.п.
+- `Project/ProjectBudgetCompleteBusiness` — статьи с метками.
+
+**Скрипты:** `run_all.py`, `project_indicators.py`,
+`build_report_header.py`, `get_effort.py`, `get_project_budget.py`,
+`find_project_by_code.py`, `mcp_config.py`.
+
+**Edge cases:**
+
+- При первом запуске (без кэша) `get_view` для крупного проекта
+  (504-595 — несколько тысяч строк `ProjectResourcePlan`) может
+  упасть по таймауту 60 с → увеличить `TIMEOUT_TOOLS_CALL` до 180.
+- Фильтры передаются **как поля верхнего уровня** в JSON-RPC, не
+  как `params.filters`. Сервер сам разбирает, что именно фильтровать.
+- `get_view` без `filters` иногда возвращает **лимит строк** меньше,
+  чем реально в системе (Pitfall из `references/mcp-filters-format.md`).
+  Всегда фильтровать по `ProjectId`/`ActivityId`.
+
+---
+
+### 3.4. `get_entity_data`
+
+**Что это (по MCP-серверу PMForesight):** возвращает полную запись
+сущности по её `dataId` (числовой идентификатор). Используется, когда
+нужны поля, **не выведенные** в view (Pitfall #211 — например,
+`PresaleLimit`, `PresaleBudgetPercentage`, `DirectProjectCostsGrade`,
+`presale_juridicalperson`).
+
+**Где используется:** точечное чтение свойств, которых нет в view.
+~20 % всех вызовов.
+
+**Параметры:**
+
+```python
+mcp_call(sid, "get_entity_data", {
+    "entityName": "<Entity>",   # обязательно
+    "data_id":    "<int_id>",   # обязательно (именно data_id, не id!)
+})
+```
+
+**Возвращает:** словарь всех атрибутов сущности (включая
+системные: `Id`, `Name`, `Code`, `CreatedOn`, `ModifiedOn`, и т.д.).
+
+**Куда в скилле:**
+
+| Секция / показатель | Скрипт + функция |
+|---|---|
+| Заголовок отчёта (метаданные проекта) | `build_report_header.py::build_header` |
+| Раздел 1 «Замечания по срокам» (доп. свойства) | `run_all.py::save_project_json`, `build_section_4` |
+| 6.1 «Юрлицо проекта/пресейла» | `project_indicators.py::check_jurlico` через `_get_project_card_cached` |
+| 6.2 «Актуальность ЖЦ» | `project_indicators.py::check_lifecycle_stage` |
+| 6.3, 6.4 (метаданные для расчёта) | `_get_project_card_cached` |
+| 6.5, 6.7 (метаданные) | `_get_project_card_cached` |
+| 6.15, 6.16 (метаданные) | `_get_project_card_cached` |
+| Поиск `MetaModel` (для подписей полей) | `get_metamodel.py::get_metamodel_entity` |
+
+**Скрипты:** `run_all.py`, `project_indicators.py`,
+`build_report_header.py`, `get_metamodel.py`, `mcp_config.py`
+(обёртки `get_project_property`, `_get_project_card_cached`).
+
+**Edge cases:**
+
+- **Pitfall #159:** `project_id=accountid` — разные сущности, всегда
+  проверять правильность поля. `accountid` — это идентификатор
+  счёта/контракта, `projectid` — проекта.
+- **Pitfall #211:** в `get_project_card` исторически возвращалось
+  поле `name` проекта вместо ФИО пользователя → баг «N/A» в строке 1
+  секции 7. **Не использовать** `project["name"]` как ФИО. Для
+  пользователя — JWT (`get_current_user_from_token`).
+- Для очень крупных сущностей возвращает много полей (несколько сотен),
+  парсинг JSON может занимать 1–2 секунды — допустимо.
+
+---
+
+### 3.5. `find_entity`
+
+**Что это (по MCP-серверу PMForesight):** быстрый поиск сущностей по
+названию. Возвращает первые N совпадений.
+
+**Где используется:** редко. Один раз — для `MetaModel`.
+
+**Параметры:**
+
+```python
+mcp_call(sid, "find_entity", {
+    "entityName": "MetaModel",
+    "query":      "<имя поля или сущности>",
+    "limit":      1,
+})
+```
+
+**Куда в скилле:**
+
+- `build_report_header.py` — поиск записи в `MetaModel` (метаданные
+  полей) для подписей заголовков и единиц измерения.
+
+**Скрипты:** `build_report_header.py`.
+
+**Edge cases:**
+
+- `find_entity` по `MetaModel` возвращает `data_id` записи; затем
+  делается `get_entity_data(data_id)` для полной схемы поля.
+
+---
+
+### 3.6. `get_user_profile` — **НЕ используется** (Pitfall #213)
+
+**Почему:** ранняя версия скилла пыталась получить ФИО текущего
+пользователя через `mcp_get_user_profile`. Метод **возвращает данные
+пользователя-владельца сессии**, но на практике (в PMForesight MCP)
+возвращает email + status, **без ФИО**.
+
+**Правильный способ:** распарсить JWT-токен `PMP_TOKEN` через
+`scripts/mcp_config.py::get_current_user_from_token()` — взять
+`payload["displayname"]` или `payload["http://schemas.xmlsoap.org/
+ws/2005/05/identity/claims/givenname"]`.
+
+Подробности — `references/mcp-token-jwt-extract.md`.
+
+**Скрипты:** упоминается только в `mcp_probe.py` (для отладки);
+в production-пути скилла **не вызывается**.
+
+---
+
+## Часть 4. Обёртки скилла над MCP-методами
+
+Все 4 метода выше обёрнуты в Python-хелперы в `scripts/mcp_config.py`
+для удобства и кеширования.
+
+### 4.1. `mcp_init() -> (sid, serverInfo)`
+
+См. описание `initialize` (Часть 3.1).
+
+### 4.2. `mcp_call(sid, tool_name, arguments, *, token=None, timeout=60) -> dict`
+
+Обёртка над `tools/call`. Распаковывает двойное кодирование,
+обрабатывает `isError`, возвращает dict.
+
+**Файл:** `scripts/mcp_config.py:423-468`.
+
+### 4.3. `fetch_with_cache(sid, entity, view, filters, project_id, limit) -> list`
+
+Обёртка над `get_view` с межзапусковым кешем (5 мин TTL).
+Файлы кеша: `/tmp/.cache_run_all_<project_id>.json`.
+
+**Файл:** `scripts/project_indicators.py:495-540`.
+
+### 4.4. `_get_project_card_cached(sid, project_id) -> dict`
+
+Обёртка над `get_entity_data` для проекта. Кеш в
+`/tmp/.cache_project_card_<project_id>.json`.
+
+**Файл:** `scripts/project_indicators.py:530-540`.
+
+### 4.5. `get_project_property(sid, project_id, property_name)`
+
+Узкая обёртка над `get_entity_data` для одного свойства.
+
+**Файл:** `scripts/mcp_config.py:471-499`.
+
+### 4.6. `get_project_card(sid, project_id)`
+
+Обёртка над `get_entity_data` для всей карточки.
+
+**Файл:** `scripts/mcp_config.py:519-545`.
+
+### 4.7. `get_view_with_filters(sid, entity, view, filters, limit)`
+
+Обёртка над `get_view` без кеша (для разовых вызовов в `mcp_probe.py`
+и `find_project_by_code.py`).
+
+**Файл:** `scripts/mcp_config.py:100-115`.
+
+---
+
+## Часть 5. Как добавить новый метод MCP
+
+1. **Проверить** через `tool_describe` (см. `mcp__fst_pmpractice__*` в
+   доступных инструментах Hermes) — какие параметры поддерживает.
+2. **Probe** через `scripts/mcp_probe.py` — реальный вызов, посмотреть
+   формат ответа (Pitfall #224).
+3. **Добавить обёртку** в `scripts/mcp_config.py` если нужно
+   (по образцу `mcp_call`).
+4. **Использовать** в `project_indicators.py::check_*` через
+   `fetch_with_cache` (для `get_view`) или напрямую через `mcp_call`
+   (для `get_entity_data`/`find_entity`).
+5. **Покрыть тестом** в `tests/test_*.py` (Pitfall #44 из SKILL.md).
+6. **Записать** в этот playbook (новый раздел в Части 3).
+
+---
+
+## Часть 6. Чек-лист перед коммитом изменений по MCP
+
+- [ ] Все новые `get_view` фильтруются по `ProjectId` (Pitfall #193).
+- [ ] `projectid` в `ProjectResourcePlan` — lowercase (Pitfall #196).
+- [ ] Для финансовых КТ — `Point/AllFinancePoint`, не
+      `InContractBudgetBusiness` (Pitfall #214, #217).
+- [ ] Таймаут увеличен, если проект крупный (504-595).
+- [ ] Кеш `__pycache__` удалён после правки `mcp_config.py`
+      (Pitfall #199).
+- [ ] Тесты добавлены в `tests/` (Pitfall #44).
+- [ ] Playbook обновлён (этот файл).

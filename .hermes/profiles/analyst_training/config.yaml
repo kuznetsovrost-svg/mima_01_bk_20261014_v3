@@ -1,0 +1,55 @@
+model:
+  default: MiniMax-M3
+  provider: minimax
+  base_url: https://api.minimax.io/anthropic
+agent:
+  max_turns: 150
+display:
+  tool_progress: all
+onboarding:
+  seen:
+    profile_build_offered: true
+    busy_input_prompt: true
+_config_version: 33
+session_reset:
+  mode: none
+platform_toolsets:
+  cli:
+    - browser
+    - clarify
+    - code_execution
+    - computer_use
+    - cronjob
+    - delegation
+    - file
+    - image_gen
+    - memory
+    - session_search
+    - skills
+    - terminal
+    - todo
+    - tts
+    - vision
+    - web
+  telegram:
+    - browser
+    - clarify
+    - code_execution
+    - computer_use
+    - cronjob
+    - delegation
+    - file
+    - image_gen
+    - memory
+    - session_search
+    - skills
+    - terminal
+    - todo
+    - tts
+    - vision
+    - web
+known_plugin_toolsets:
+  cli:
+    - spotify
+  telegram:
+    - spotify

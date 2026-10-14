@@ -1,0 +1,9 @@
+{
+  "last_report_path": "/root/.hermes/profiles/analyst_training/logs/curator/20261007-214201",
+  "last_run_at": "2026-10-07T21:42:01.011020+00:00",
+  "last_run_duration_seconds": 0.787369,
+  "last_run_summary": "auto: no changes; llm: skipped (consolidation off)",
+  "last_run_summary_shown_at": null,
+  "paused": false,
+  "run_count": 12
+}

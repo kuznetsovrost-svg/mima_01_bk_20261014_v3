@@ -1,0 +1,97 @@
+{
+  "type": "excalidraw",
+  "version": 2,
+  "source": "https://excalidraw.com",
+  "elements": [
+    {
+      "id": "frame-A-0",
+      "type": "frame",
+      "name": "A-0 Контекст",
+      "x": 50, "y": 50,
+      "width": 600, "height": 400,
+      "strokeColor": "#1971c2",
+      "backgroundColor": "transparent"
+    },
+    {
+      "id": "frame-arrow-catalogue-A-0",
+      "type": "frame",
+      "name": "Arrow Catalogue A-0",
+      "x": 700, "y": 50,
+      "width": 300, "height": 200
+    },
+    {
+      "id": "block-A-0-1",
+      "type": "rectangle",
+      "x": 250, "y": 200,
+      "width": 200, "height": 100,
+      "strokeColor": "#1e1e1e",
+      "backgroundColor": "transparent",
+      "fillStyle": "solid",
+      "groupIds": ["group-A-0-1"],
+      "frameId": "frame-A-0"
+    },
+    {
+      "id": "func-A-0-1",
+      "type": "text",
+      "text": "Главная функция",
+      "x": 270, "y": 235,
+      "width": 160, "height": 30,
+      "textAlign": "center",
+      "fontSize": 20,
+      "groupIds": ["group-A-0-1"],
+      "frameId": "frame-A-0"
+    },
+    {
+      "id": "num-A-0-1",
+      "type": "text",
+      "text": "A-0.1",
+      "x": 255, "y": 275,
+      "width": 40, "height": 20,
+      "textAlign": "left",
+      "fontSize": 12,
+      "groupIds": ["group-A-0-1"],
+      "frameId": "frame-A-0"
+    },
+    {
+      "id": "input-1",
+      "type": "arrow",
+      "text": "I1 Входящие данные",
+      "points": [[0, 0], [150, 0]],
+      "x": 100, "y": 230,
+      "strokeColor": "#1e1e1e",
+      "endBinding": {"elementId": "block-A-0-1", "focus": 0, "gap": 1}
+    },
+    {
+      "id": "output-1",
+      "type": "arrow",
+      "text": "O1 Результат",
+      "points": [[0, 0], [150, 0]],
+      "x": 450, "y": 230,
+      "strokeColor": "#1e1e1e",
+      "startBinding": {"elementId": "block-A-0-1", "focus": 0, "gap": 1}
+    },
+    {
+      "id": "control-1",
+      "type": "arrow",
+      "text": "C1 Правила",
+      "points": [[0, 0], [0, 150]],
+      "x": 350, "y": 50,
+      "strokeColor": "#1e1e1e",
+      "endBinding": {"elementId": "block-A-0-1", "focus": 0, "gap": 1}
+    },
+    {
+      "id": "mechanism-1",
+      "type": "arrow",
+      "text": "M1 Исполнитель",
+      "points": [[0, 0], [0, -150]],
+      "x": 350, "y": 450,
+      "strokeColor": "#1e1e1e",
+      "endBinding": {"elementId": "block-A-0-1", "focus": 0, "gap": 1}
+    }
+  ],
+  "appState": {
+    "viewBackgroundColor": "#ffffff",
+    "gridSize": null
+  },
+  "files": {}
+}

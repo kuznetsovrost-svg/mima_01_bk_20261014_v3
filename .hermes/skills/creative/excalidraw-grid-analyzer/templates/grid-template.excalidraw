@@ -1,0 +1,119 @@
+{
+  "type": "excalidraw",
+  "version": 2,
+  "source": "https://github.com/excalidraw/excalidraw",
+  "elements": [
+    {
+      "id": "frame-table",
+      "type": "frame",
+      "name": "Таблица 500x300",
+      "x": 0,
+      "y": 0,
+      "width": 1000,
+      "height": 600
+    },
+    {
+      "id": "r-template-001",
+      "type": "rectangle",
+      "x": 100,
+      "y": 100,
+      "width": 400,
+      "height": 200,
+      "groupIds": [
+        "skill-template-001"
+      ],
+      "frameId": "frame-table"
+    },
+    {
+      "id": "t-template-001",
+      "type": "text",
+      "text": "##001",
+      "x": 130,
+      "y": 130,
+      "width": 60,
+      "height": 30,
+      "groupIds": [
+        "skill-template-001"
+      ],
+      "frameId": "frame-table"
+    },
+    {
+      "id": "n-template-001",
+      "type": "text",
+      "text": "Пример навыка",
+      "x": 200,
+      "y": 180,
+      "width": 250,
+      "height": 30,
+      "groupIds": [
+        "skill-template-001"
+      ],
+      "frameId": "frame-table"
+    },
+    {
+      "id": "frame-desc",
+      "type": "frame",
+      "name": "Описание",
+      "x": 1100,
+      "y": 0,
+      "width": 500,
+      "height": 600
+    },
+    {
+      "id": "r-d-template-001",
+      "type": "rectangle",
+      "x": 1150,
+      "y": 50,
+      "width": 400,
+      "height": 200,
+      "groupIds": [
+        "desc-template-001"
+      ],
+      "frameId": "frame-desc"
+    },
+    {
+      "id": "t-d-template-001",
+      "type": "text",
+      "text": "##001",
+      "x": 1180,
+      "y": 80,
+      "width": 60,
+      "height": 30,
+      "groupIds": [
+        "desc-template-001"
+      ],
+      "frameId": "frame-desc"
+    },
+    {
+      "id": "n-d-template-001",
+      "type": "text",
+      "text": "#Пример навыка",
+      "x": 1250,
+      "y": 80,
+      "width": 250,
+      "height": 30,
+      "groupIds": [
+        "desc-template-001"
+      ],
+      "frameId": "frame-desc"
+    },
+    {
+      "id": "desc-d-template-001",
+      "type": "text",
+      "text": "Здесь описание навыка.\nМожет быть многострочным.",
+      "x": 1180,
+      "y": 130,
+      "width": 360,
+      "height": 100,
+      "groupIds": [
+        "desc-template-001"
+      ],
+      "frameId": "frame-desc"
+    }
+  ],
+  "appState": {
+    "viewBackgroundColor": "#ffffff",
+    "gridSize": null
+  },
+  "files": {}
+}

@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Отчёт о здоровье проекта {{ project_code }}</title>
+</head>
+<body>
+<div class="report-container">
+
+    <!-- ============================================================ -->
+    <!-- HEADER: левая синяя панель + правый круглый индикатор       -->
+    <!-- ============================================================ -->
+    <div class="report-header">
+        <div class="report-header-text">
+            <div class="report-header-prefix">Общая оценка здоровья проекта</div>
+            <div class="report-header-title">{{ project_name }}</div>
+            <div class="report-header-meta"><b>Target:</b> {{ project_code }} (ProjectId={{ project_id }})</div>
+            <div class="report-header-meta"><b>Отчёт создан:</b> {{ now }}</div>
+            <div class="report-header-meta"><b>MCP:</b> PMForesight MCP v3.2.4</div>
+        </div>
+        <div class="report-indicator">
+            <div class="report-indicator-circle" data-status="{{ verdict_status }}">
+                <div class="verdict-text">{{ verdict_text }}</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <!-- 5 ТАБЛИЦ-ОТКРЫВАШЕК: tbl1...tbl5 (разделы 3, 4, 5, 6, 7)   -->
+    <!-- <details> раскрывает контент — НЕ затеняет, а сдвигает       -->
+    <!-- ============================================================ -->
+
+    <!-- tbl1 = раздел 3 (КТ сроки) — открыт по умолчанию -->
+    <details class="variant-tbl" open>
+        <summary>
+            <span class="tbl-name">Замечания по срокам:</span>
+            <span class="tbl-preview">{{ section_3_preview }}</span>
+        </summary>
+        <div class="tbl-content">
+            {{ section_3_content }}
+        </div>
+    </details>
+
+    <!-- tbl2 = раздел 4 (полнота) — свёрнут -->
+    <details class="variant-tbl">
+        <summary>
+            <span class="tbl-name">Полнота заполнения проекта:</span>
+            <span class="tbl-preview">{{ section_4_preview }}</span>
+        </summary>
+        <div class="tbl-content">
+            {{ section_4_content }}
+        </div>
+    </details>
+
+    <!-- tbl3 = раздел 5 (прогнозы) — свёрнут -->
+    <details class="variant-tbl">
+        <summary>
+            <span class="tbl-name">Актуальность прогнозов по проекту:</span>
+            <span class="tbl-preview">{{ section_5_preview }}</span>
+        </summary>
+        <div class="tbl-content">
+            {{ section_5_content }}
+        </div>
+    </details>
+
+    <!-- tbl4 = раздел 6 (финансы) — свёрнут -->
+    <details class="variant-tbl">
+        <summary>
+            <span class="tbl-name">Финансовый статус проекта:</span>
+            <span class="tbl-preview">{{ section_6_preview }}</span>
+        </summary>
+        <div class="tbl-content">
+            {{ section_6_content }}
+        </div>
+    </details>
+
+    <!-- tbl5 = раздел 7 (технические данные) — свёрнут -->
+    <details class="variant-tbl">
+        <summary>
+            <span class="tbl-name">Технические данные отчёта:</span>
+            <span class="tbl-preview">{{ section_7_preview }}</span>
+        </summary>
+        <div class="tbl-content">
+            {{ section_7_content }}
+        </div>
+    </details>
+
+    <!-- ============================================================ -->
+    <!-- FOOTER                                                       -->
+    <!-- ============================================================ -->
+    <div class="report-footer">
+        Сгенерировано скиллом <b>fst-project-health</b> · {{ project_code }}
+        (ProjectId={{ project_id }}) · MCP PMForesight v3.2.4
+    </div>
+
+</div>
+</body>
+</html>

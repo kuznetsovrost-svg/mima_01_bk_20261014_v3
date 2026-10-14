@@ -1,0 +1,11 @@
+**Жёсткое правило + сателлиты:** go обязателен. Checkpoint `tar -czf /tmp/fst-project-health-checkpoint-premod.tar.gz --exclude='__pycache__' --exclude='.env'`. Handoff ≠ руководство. **fst-project-health — user-owned** (skill_manage patch отвергается даже foreground); для правки нужен `hermes curator adopt`. Сателлиты править можно. Сателлит = переиспользует основной без правки.
+§
+**Пользователь не любит костыли обратной совместимости** (реакция «убрать!» на JSON-fallback). Новый путь вытесняет старый, миграция > совместимость. **Критерий приёмки семейства:** эталон `/tmp/504-595_from_mcp_snapshot_v4.html`; diff по 71 tr/29 tables/7 details; единственное отличие = timestamp рендера. **Каждый caller `run_all.py` передаёт `--generator <свой>`** (нельзя хардкодить).
+
+§
+**Never-fail — инвариант массовых операций (v1.0.19).** Каждый проект в `try/except/continue`. Лог `<skill>/logs/<ISO-timestamp>.log`: header (аккаунт из JWT, роль из MCP / n/a, action, args, projects) → body (✓/✗ + type+http_code+message+raw) → trailer в `finally:`. `rotate_logs.py` (400d→archive, 1500d→delete) — отдельный скрипт. Тесты: `fst-project-health-tests` + параллельно `tests/` в каждом скилле; свой `run_all_tests.py` (НЕ pytest); MCP-тесты — отдельная группа, по умолчанию **включены**.
+
+§
+**PMForesight JWT (2026-09-24):** `displayname` (camelCase), `emailaddress` (XML-schema URI), `UserId`, `role: "auth"` (технический, не привилегия). `get_user_profile` → `{Id, Account, FullName, Name, Phone}` **без ролей** — писать честно `n/a (PMForesight profile fields: ...; no role/permissions exposed)`. SSE: `response.json()` ломается на latin-1 mojibake; парсить через `response.content.decode('utf-8', errors='replace')` + ручной split по `data: `.
+§
+**MCP PMForesight жив (проверено 2026-09-24):** http 200 на initialize, server v3.2.4. File round-trip работает (DocumentId=70139 «Документы ИИ»): upload_entity_file → list_files → get_file_info → resources/read file://download-file/{physicalFileId} возвращает байт-в-байт. Шаблон verification recipe в `mcp-server-probing/references/file-roundtrip-pmforesight.md`. Раньше правило «MCP лежит, боевые прогоны запрещены» — **устарело**.

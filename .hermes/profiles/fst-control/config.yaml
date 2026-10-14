@@ -1,0 +1,71 @@
+model:
+  default: MiniMax-M3
+  provider: minimax
+  base_url: https://api.minimax.io/anthropic
+agent:
+  max_turns: 150
+browser:
+  cloud_provider: local
+  use_gateway: false
+display:
+  tool_progress: all
+mcp_servers:
+  fst_pmpractice:
+    url: https://ppreplica.hera.pmpractice.ru/mcp
+    headers:
+      Authorization: Bearer ${PMP_TOKEN}
+      Accept: application/json, text/event-stream
+    timeout: 180
+    connect_timeout: 60
+_config_version: 33
+session_reset:
+  mode: auto
+  threshold: 150000
+  keep_last_n: 30
+platform_toolsets:
+  cli:
+    - browser
+    - clarify
+    - code_execution
+    - computer_use
+    - cronjob
+    - delegation
+    - file
+    - image_gen
+    - memory
+    - session_search
+    - skills
+    - terminal
+    - todo
+    - tts
+    - vision
+    - web
+  telegram:
+    - browser
+    - clarify
+    - code_execution
+    - computer_use
+    - cronjob
+    - delegation
+    - file
+    - image_gen
+    - memory
+    - session_search
+    - skills
+    - terminal
+    - todo
+    - tts
+    - vision
+    - web
+known_plugin_toolsets:
+  cli:
+    - spotify
+  telegram:
+    - spotify
+telegram:
+  allowed_users: 505586502
+  home_channel: 505586502
+onboarding:
+  seen:
+    tool_progress_prompt: true
+    busy_input_prompt: true

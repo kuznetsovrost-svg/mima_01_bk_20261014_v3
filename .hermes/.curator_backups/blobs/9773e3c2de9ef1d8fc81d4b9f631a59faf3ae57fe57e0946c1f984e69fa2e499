@@ -1,0 +1,365 @@
+---
+name: audio-transcription
+description: Transcribe Russian audio lectures to Markdown via faster-whisper large-v3 with JEV validation pipeline.
+version: 2.0.0
+author: Hermes Agent (transcribed by R. Kuznetsov)
+license: MIT
+platforms: [linux, macos, windows]
+metadata:
+  hermes:
+    tags: [audio, transcription, whisper, russian, lecture, jev, validation]
+    related_skills: [transcription-postprocess, jev-decisions]
+---
+
+# Audio Transcription Skill (Russian, with JEV)
+
+Transcribe Russian audio files (lectures, talks, interviews) to Markdown using `faster-whisper` with the `large-v3` model. Includes a **5-stage JEV-validated pipeline** for quality assurance and wiki annotation.
+
+## Pipeline Overview
+
+```
+[0/5] Pre-flight (JEV)              - Check if file is worth processing
+       ↓
+[1/5] Whisper transcription         - faster-whisper large-v3, word_timestamps
+       ↓
+[2/5] Hallucination filter (JEV)    - Remove Whisper artifacts
+       ↓
+[3/5] LLM postprocess               - Punctuation + paragraphs via hermes -z
+       ↓
+[4/5] Quality gate (JEV)            - Accept / redo / manual / discard
+       ↓
+[5/5] Wiki annotation (JEV)         - Topic, type, quality, related lectures
+       ↓
+OUTPUT: <base>.md + 4 other files + JSON metadata
+```
+
+## When to Use
+
+- One or more audio files in Russian need transcription
+- Lectures/talks/interviews (15-60 min each)
+- CPU-only environment (large-v3 int8 fits in ~3 GB RAM)
+- Need wiki-quality output with auto-annotation
+
+**Don't use for**: noisy recordings, music, real-time streaming, non-Russian audio.
+
+## Prerequisites
+
+```bash
+# System
+apt-get install -y ffmpeg
+
+# Python
+pip install faster-whisper
+
+# JEV (optional but recommended)
+# Auto-loaded from /root/.hermes/.env if TYPESAFE_API_KEY is set
+```
+
+Model `large-v3` is downloaded automatically (~1.5 GB cached at `~/.cache/huggingface/`).
+
+## Quick Reference
+
+```bash
+# Single file with full pipeline
+scripts/transcribe.sh INPUT.mp3 --output ./out
+
+# With topic-specific initial prompt (file)
+scripts/transcribe.sh INPUT.mp3 --output ./out \
+  --prompt templates/initial_prompts/business_analysis.txt
+
+# With hotwords (boost specific terms)
+scripts/transcribe.sh INPUT.mp3 --output ./out \
+  --hotwords "BPMN шлюз gateway процесс"
+
+# Two-pass: small model extracts hotwords, large model uses them
+scripts/transcribe.sh INPUT.mp3 --output ./out --two-pass
+
+# Aggressive anti-hallucination
+scripts/transcribe.sh INPUT.mp3 --output ./out --strict
+
+# Fast preview (small model, beam=1)
+scripts/transcribe.sh INPUT.mp3 --output ./out --model small --beam-size 1
+
+# Batch process directory
+scripts/transcribe.sh /path/to/lectures/ --output ./out --batch
+
+# Skip JEV stages (faster, no API costs)
+scripts/transcribe.sh INPUT.mp3 --output ./out --skip-jev
+
+# Run only specific stage
+scripts/transcribe.sh INPUT.mp3 --output ./out --only-stage 1
+
+# Use full_pipeline.py directly (with all Whisper tuning params)
+python3 scripts/full_pipeline.py INPUT.mp3 --output ./out \
+  --initial-prompt templates/initial_prompts/bpmn.txt \
+  --hotwords "BPMN шлюз gateway" \
+  --compression-ratio-threshold 2.0 \
+  --log-prob-threshold -0.5
+
+# Batch with resume
+python3 scripts/batch_transcribe.py /lectures/ --output ./out --resume
+
+# Benchmark different configurations
+python3 scripts/benchmark.py INPUT.mp3 --output ./bench-results
+```
+
+## Output Files
+
+For each input, 4-7 files are produced:
+
+| File | Content |
+|---|---|
+| `<base>.md` | Markdown with timestamps `[HH:MM:SS]` |
+| `<base>_plain.md` | Markdown without timestamps, continuous text |
+| `<base>.json` | Metadata + segments list |
+| `<base>_words.json` | Word-level timestamps (for LLM postprocess) |
+| `<base>_postprocess.md` | Punctuation + paragraphs (Stage 3) |
+| `<base>_quality.json` | JEV quality gate results (Stage 4) |
+| `<base>_annotation.json` | JEV wiki annotation (Stage 5) |
+
+## Stages Detail
+
+### Stage 0: Pre-flight (JEV)
+
+Determines if file is worth transcribing.
+
+**Questions**:
+- `has_speech` (Noul): Is there human speech?
+- `language` (Choice): ru / en / mixed / other / none
+- `audio_quality` (Score): 0 (garbage) → 4 (studio)
+- `action` (Choice): transcribe / skip_silence / skip_wrong_lang / manual
+
+**Skip if**: no speech, wrong language, or quality < 1.
+
+### Stage 1: Whisper transcription
+
+Standard faster-whisper large-v3 with:
+- `word_timestamps=True` (for LLM postprocess)
+- `vad_filter=True` (skip silence, reduce hallucinations)
+- `beam_size=5` (default) or higher for accuracy
+- `initial_prompt` (from `templates/initial_prompts/`)
+- `hotwords` (boost specific terms like "BPMN шлюз")
+- `temperature=[0.0..1.0]` (fallback to higher temp on failure)
+- `compression_ratio_threshold=2.4` (skip repetitive)
+- `log_prob_threshold=-1.0` (skip low-confidence)
+- `no_speech_threshold=0.6` (filter silence)
+
+**Two-pass option**: `--two-pass` runs small model first to extract hotwords automatically.
+
+### Stage 2: Hallucination filter (JEV)
+
+Groups words into 30-sec chunks, JEV identifies:
+- Repetitions (3+ words/phrases in a row)
+- Filler-only (no meaning)
+- Incoherent (garbage)
+
+Skips chunks with any indicator of hallucination.
+
+### Stage 3: LLM postprocess
+
+Calls `hermes -z` with the words + pause markers. Adds:
+- Punctuation (`.`, `,`, `?`, `!`, `:`)
+- Em-dashes for dialogue
+- Capitalization of proper names
+- Paragraph breaks (based on pause durations)
+
+### Stage 4: Quality gate (JEV)
+
+Evaluates postprocessed text:
+- `readability` (Score 0-4)
+- `punctuation_quality` (Score 0-4)
+- `paragraph_quality` (Noul)
+- `action`: accept / polish / redo / manual / discard
+
+### Stage 5: Wiki annotation (JEV)
+
+Auto-tags for wiki integration:
+- `primary_topic` (Choice): bpmn_2 / process_mining / ba_basics / etc.
+- `content_type` (Choice): intro / standard / deep_dive / case_study
+- `quality_score` (Score 1-10)
+- `needs_enrichment` (Noul): for wiki-enrichment-worker
+
+## Initial Prompts
+
+Located in `templates/initial_prompts/`:
+
+| File | Vocabulary | Use for |
+|---|---|---|
+| `business_analysis.txt` | ~700 terms | BA, project mgmt, IT |
+| `bpmn.txt` | ~650 terms | BPMN 2.0 lectures |
+| `it_programming.txt` | ~200 terms | Programming, dev, IT ops |
+| `marketing_sales.txt` | ~460 terms | Marketing, sales |
+| `medicine.txt` | ~460 terms | Medical lectures |
+| `education.txt` | ~490 terms | Pedagogy, edtech |
+| `hermes_agents.txt` | ~700 terms | Hermes, LLM, AI-agent infrastructure |
+| `general_russian.txt` | minimal | Generic Russian speech |
+
+**Why**: Whisper uses initial_prompt to bias toward domain vocabulary. With prompt: BPMN terms recognition improves from ~35% to ~8% WER.
+
+See `references/whisper_tuning.md` for detailed tuning guide.
+
+## Cost & Time Estimate
+
+**Per 15-min lecture (CPU, large-v3 int8)**:
+
+| Stage | Time | Cost |
+|---|---|---|
+| Pre-flight (JEV) | 0.2 sec | $0.00001 |
+| Whisper | ~12 min | $0 |
+| Hallucination filter (JEV) | 2 sec | $0.0001 |
+| LLM postprocess | ~10 sec | $0.005 |
+| Quality gate (JEV) | 0.2 sec | $0.00001 |
+| Wiki annotation (JEV) | 0.2 sec | $0.00001 |
+| **Total** | **~12.5 min** | **~$0.005** |
+
+**For 120 lectures (30 hours audio)**:
+
+| Metric | Without JEV | With JEV |
+|---|---|---|
+| Wall time | 80-100 hours | 80-100 hours |
+| API cost | $0.60 (LLM only) | $1.20 (LLM + JEV) |
+| Manual review | 30 hours | 5 hours |
+| Auto-tagged for wiki | 0 | 120 |
+
+**ROI**: +$0.60 cost → 25 hours saved.
+
+## When to Skip JEV
+
+Use `--skip-jev` if:
+- Quick draft needed, no quality check
+- Cost-sensitive (no API budget)
+- Output is for personal use, not publication
+- JEV API is down
+
+Without JEV:
+- No pre-flight check (transcribe everything)
+- No hallucination filter (raw Whisper output)
+- No quality gate (always accept)
+- No wiki annotation (manual)
+
+## Verification
+
+After running:
+
+- [ ] All 4-7 output files exist
+- [ ] `<base>.md` has timestamps `[HH:MM:SS]`
+- [ ] `<base>_words.json` has 100+ words (for non-trivial audio)
+- [ ] `<base>_postprocess.md` has punctuation
+- [ ] `<base>_quality.json` action is `accept` or `polish`
+- [ ] `<base>_annotation.json` has topic, type, quality
+
+## Pitfalls
+
+- **RAM pressure**: large-v3 needs ~3 GB. Keep 4-5 GB free.
+- **cgroup OOM after first chunk**: `large-v3` (2.8 GB peak) survives one chunk then dies with SIGKILL on the 2nd–5th in a batch. Switch to `medium` (1.5 GB peak) for full batches — see `references/whisper_tuning.md` §7a.
+- **Hermes background bash dies at 5–7 min**: long-running whisper jobs from `terminal(background=true)` get SIGKILL'd mid-transcript. Use `cronjob_manage` for >5-chunk batches — see `references/whisper_tuning.md` §7b.
+- **Orphan python from background bash**: never run multiple `terminal(background=true)` for transcribe in parallel; the bash wrapper exits and python becomes orphan, accumulating 2–3 GB per orphan.
+- **First run slow**: model download (~1.5 GB).
+- **Whisper hallucinations on silence**: VAD helps but doesn't eliminate.
+- **Long audio > 60 min**: split first with `ffmpeg -f segment`.
+- **LLM latency**: 5–15 sec per call.
+- **JEV API limits**: not documented, but be reasonable.
+- **Network outage**: `--skip-jev` mode still works.
+- **`log_prob_threshold` has an underscore** — faster-whisper API parameter is `log_prob_threshold`, not `logprob_threshold`. Wrong name silently ignored (no error), so verify against `inspect.signature(WhisperModel.transcribe)` if filter seems ineffective.
+- **v3 conservative pipeline REGRESSED material** (2026-10-06): 1-min chunks × 30-sec overlap with LLM stitch produced 4615 words (≈2.1× raw) because LLM stitcher kept BOTH copies of overlapping speech instead of deduping. Then Pass 1 (punctuation via LLM) saw the dupes and "fixed" them by deleting ~57% of text, ending at 1988 words (slightly LESS than raw ~2200). Pass 2 (ASR fix) worked correctly (имперический→эмпирический, сниженка→снежинка, свепроводящ→сверхпроводящ, мусор вычищен). **Fix**: between Stitch and Punctuation, run `scripts/dedup_overlap.py` to deterministically remove overlap duplicates BEFORE LLM touches the text — LLM is unreliable at pure dedup and will also delete legitimate repeated phrases.
+
+## Files in This Skill
+
+```
+audio-transcription/
+├── SKILL.md                           # this file
+├── scripts/
+│   ├── transcribe.py                  # Stage 1 only (Whisper with all tuning params)
+│   ├── full_pipeline.py               # All 5 stages (Whisper + JEV)
+│   ├── two_pass_transcribe.py         # Small→hotwords→Large (2-pass)
+│   ├── batch_transcribe.py            # Batch with resume
+│   ├── benchmark.py                   # Benchmark different configurations
+│   ├── transcribe.sh                  # Bash wrapper (all options)
+│   └── cleanup.py                     # Postprocess cleanup (remove PAUSE markers, chunk headers, metadata)
+├── templates/
+│   └── initial_prompts/
+│       ├── README.md                  # How to use prompts
+│       ├── business_analysis.txt      # ~700 BA terms
+│       ├── bpmn.txt                   # ~650 BPMN terms
+│       ├── it_programming.txt         # ~200 IT terms
+│       ├── marketing_sales.txt        # ~460 marketing/sales terms
+│       ├── medicine.txt               # ~460 medical terms
+│       ├── education.txt              # ~490 pedagogical terms
+│       ├── hermes_agents.txt          # ~700 Hermes/agent terms
+│       └── general_russian.txt        # minimal
+├── references/
+│   └── whisper_tuning.md              # Detailed tuning guide (with real benchmark)
+└── tests/
+    ├── test_pipeline.py               # Pipeline tests (8 tests)
+    ├── test_whisper_tuning.py         # Whisper tuning tests (8 tests)
+    └── test_cleanup.py                # Cleanup script tests (33 tests)
+```
+
+## Whisper Tuning Parameters (v2.0)
+
+| Parameter | Type | Default | Effect |
+|---|---|---|---|
+| `initial_prompt` | text/file | None | **+5-10% WER** with topic-specific vocabulary |
+| `hotwords` | str | None | **+10% on boosted words** (e.g. "BPMN шлюз") |
+| `beam_size` | int | 5 | 1=fast, 10=accurate |
+| `vad_filter` | bool | True | -30% time, fewer hallucinations |
+| `temperature` | list | [0..1] | Fallback on failures |
+| `compression_ratio_threshold` | float | 2.4 | Skip repetitive segments |
+| `log_prob_threshold` | float | -1.0 | Skip low-confidence segments |
+| `no_speech_threshold` | float | 0.6 | Skip silence |
+| `two_pass` | flag | off | **+10-15% on domain terms** (auto hotwords) |
+
+## Postprocess Cleanup
+
+After `transcription-postprocess`, the output contains metadata (chunk headers, LLM info) and pause markers (`[PAUSE 0.46]`). For a clean final file, use `scripts/cleanup.py`:
+
+```bash
+# Remove all service elements, output to new file
+python3 scripts/cleanup.py full_postprocessed.md full_postprocessed_clean.md
+
+# In-place cleanup
+python3 scripts/cleanup.py full_postprocessed.md --in-place
+
+# Preview what will be removed
+python3 scripts/cleanup.py full_postprocessed.md --preview
+```
+
+**What is removed**:
+- `[PAUSE X.XX]` markers (~250 per 72-min audio)
+- `<!-- chunk_NNN_postprocess.md -->` HTML comments (37 per multi-chunk run)
+- `# Transcription: chunk_NNN (LLM postprocessed)` section headers
+- `**Word count:**`, `**LLM model:**`, `**LLM response time:**` metadata
+- `---` separators around metadata blocks
+- Extra blank lines (>2 in a row)
+
+**Output**: 14% smaller file, only clean readable text remains.
+
+## See Also
+
+- `audio-postprocess` — multi-pass LLM cleanup (downstream, recommended)
+- `transcription-postprocess` — alternative single-pass LLM cleanup
+- `jev-decisions` — JEV client library
+- `wiki-enrichment-worker` — Uses Stage 5 annotations for wiki
+
+## Recommended Pipeline
+
+For high-quality Russian lecture transcripts:
+
+```
+raw audio
+   ↓
+[1] transcribe.py (Whisper medium + initial_prompt + hotwords)
+   ↓
+[2] scripts/cleanup.py (remove metadata from raw output)
+   ↓
+[3] audio-postprocess/scripts/postprocess_multi.py
+      Pass 1: filler removal
+      Pass 2: ASR error fix
+      Pass 3: thematic structure (## headings)
+      Pass 4: final polish
+   ↓
+final polished transcript
+```
+
+This is the pipeline that produced `ba_modeling_v2.md` from `Лекции 1_1.mp3`
+(17.8 min → 1661 words, 13 thematic blocks).

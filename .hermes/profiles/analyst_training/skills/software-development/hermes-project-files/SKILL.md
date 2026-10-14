@@ -1,0 +1,140 @@
+---
+name: hermes-project-files
+description: "Use when the user sends a file (program description, dataset, source code, attachment) that needs to be placed in a specific project location — typically projects/<slug>/Inputs/ or projects/<slug>/Outputs/. Covers ingesting uploaded files into the right project folder, preserving original Cyrillic filenames, recording progress in project_meta, and writing outputs back with the SANL_ prefix or matching name."
+version: 1.0.0
+author: Hermes Agent
+license: MIT
+metadata:
+  hermes:
+    tags: [hermes, projects, file-ingest, inputs, outputs, project_meta, sqlite]
+    related_skills: [plan, skill-candidate-review]
+---
+
+# Hermes Project Files
+
+## Overview
+
+Hermes profiles store user files in `~/.hermes/profiles/<profile>/`. Telegram attachments land in `cache/documents/` with auto-generated names (`doc_<hash>_<original>.md`). Project structure lives under `projects/<slug>/` with `Inputs/`, `Outputs/`, and project metadata in `projects.db` (SQLite).
+
+When the user sends a file and says "place it in Inputs of project X", the work is:
+
+1. Locate the cached file (often in `cache/documents/`, with an auto-prefixed name).
+2. Decide on the destination filename — usually **preserve the user's original Cyrillic/Latin name**, not the cache's mangled version. Telegram replaces spaces with underscores in attachment names; restore them if the user used spaces.
+3. Copy to `projects/<slug>/Inputs/<filename>`.
+4. Optionally update `projects.db` (`projects.primary_path`, `project_folders`) and create a `progress.json` next to the project.
+
+## When to Use
+
+- User sends a file and asks to put it in `Inputs/`, `Outputs/`, or any project subfolder.
+- User says "save to project X" / "добавь в проект" / "положи в Inputs" / "сохрани как выходной".
+- You are wiring up a new project from scratch and need to set up `Inputs/`, `Outputs/`, `progress.json`, README, and the `project_folders` SQLite row in one go.
+- You need to write a generated report into `Outputs/` with a name matching the input file (e.g. `SANL_<input-stem>.md`).
+
+## Don't Use For
+
+- Reading or summarizing the file's contents — that's a downstream skill (e.g. `vuz-prof-ba-anl`).
+- Cross-session state management — that's the broader `plan` skill.
+- Sending the file back to the user via Telegram — see the messaging docs; use `MEDIA:/absolute/path` and let the gateway deliver it.
+
+For **end-to-end execution of a user-supplied TASK-* spec** (read task → update `progress.json` per file → run a skill per file → write `SANL_*` outputs → close overall), see `references/task-driven-workflow.md`.
+
+## File-Location Conventions (analyst_training, observed)
+
+| Source | Typical path | Notes |
+|---|---|---|
+| Telegram attachment | `~/.hermes/profiles/<profile>/cache/documents/doc_<hash>_<orig>.md` | Auto-generated `<hash>` prefix; original name follows, may have `_` instead of spaces |
+| User-local project | `~/.hermes/profiles/<profile>/projects/<slug>/` | Created on first ingest if absent |
+| Inputs/ | `projects/<slug>/Inputs/` | User-original filenames preserved (Cyrillic OK) |
+| Outputs/ | `projects/<slug>/Outputs/` | Generated artifacts |
+| Project metadata | `~/.hermes/profiles/<profile>/projects.db` (SQLite) | Tables: `projects`, `project_folders`, `project_meta`, `discovered_repos` |
+| Project progress | `projects/<slug>/progress.json` | Optional, task-driven |
+| Plan file | `~/.hermes/profiles/<profile>/plans/TASK-YYYY-MM-DD-<slug>.md` | Optional |
+
+**Filenames:** always preserve the user's original Cyrillic name when possible. Telegram attachments sometimes come with `_` instead of spaces; ask before silently renaming.
+
+## Procedure
+
+### Ingest one file
+
+1. **Locate the cached file.** If the user attached via Telegram, the file is in `cache/documents/` with a name like `doc_<hash>_<original>.md`. Confirm the user-visible filename before copying.
+2. **Confirm destination.** `projects/<slug>/Inputs/` (create `<slug>/` if missing). Use `mkdir(parents=True, exist_ok=True)`.
+3. **Copy with `shutil.copy2`** (preserves mtime). Do **not** rewrite content — user files often contain Cyrillic/Latin homoglyphs that look the same but differ in encoding.
+4. **Verify:** `os.path.getsize(src) == os.path.getsize(dst)` and the file opens as UTF-8 text. If size or encoding fails, abort and report — don't fix silently.
+5. **Don't rename without asking.** If the cached name has `_` and the user's intended name had spaces, ask before renaming. Cyrillic filenames with `_` are common and acceptable.
+
+### Set up a new project
+
+When a project has no `primary_path` and no `project_folders` row:
+
+```python
+project_root = profile_dir / "projects" / slug
+(project_root / "Inputs").mkdir(parents=True, exist_ok=True)
+(project_root / "Outputs").mkdir(parents=True, exist_ok=True)
+(project_root / "README.md").write_text(...)  # brief structure overview
+
+# SQLite: link primary_path + folder row
+conn = sqlite3.connect(profile_dir / "projects.db")
+conn.execute("UPDATE projects SET primary_path=? WHERE id=?", (str(project_root), pid))
+conn.execute("INSERT INTO project_folders (project_id, path, label, is_primary, added_at) VALUES (?,?,?,?,?)",
+            (pid, str(project_root), "project root", 1, int(time.time())))
+conn.commit()
+```
+
+The active project ID is in `project_meta.active_id` (single row).
+
+### Write a generated output
+
+- Filename = `SANL_<input-stem>.md` (or whatever prefix the task specifies).
+- Target = `projects/<slug>/Outputs/results/<task-id>/SANL_*.md` when the task defines a `results/` subdir.
+- After writing, update `progress.json` `per_file_status` entry to `done` with `finished_at` and `report_path`.
+
+### Update progress.json
+
+Standard schema:
+
+```json
+{
+  "task_id": "TASK-YYYY-MM-DD-<slug>",
+  "title": "...",
+  "profile": "<profile>",
+  "project_id": "p_xxx",
+  "project_slug": "<slug>",
+  "state": "draft|in_progress|done",
+  "skill": "<skill-name>",
+  "inputs": ["<file1>", ...],
+  "outputs": ["<path1>", ...],
+  "per_file_status": {"<file>": {"state": "...", "started_at": ..., "finished_at": ..., "report_path": "..."}},
+  "overall": {"state": "...", "started_at": ..., "finished_at": ...},
+  "token_budget_estimate": <int>,
+  "wall_clock_budget_seconds": <int>
+}
+```
+
+## Common Pitfalls
+
+1. **Renaming the user's file silently.** If you copy and rename, you destroy the contract — the user expects to find the file under the name they sent. Always preserve unless they explicitly asked for a rename.
+2. **Treating Cyrillic filenames as "broken".** They're fine. UTF-8 + any modern FS handles them. Don't escape them, don't transliterate to Latin.
+3. **Forgetting the SQLite update.** Files copied to `projects/<slug>/` are NOT registered until you set `primary_path` and insert a `project_folders` row. Many tools (skill loaders, search indexers) check the DB before the FS.
+4. **Mixing up `cache/documents/` and `projects/<slug>/Inputs/`.** `cache/` is throwaway storage; `projects/<slug>/Inputs/` is the persistent project location. Files in `cache/` can be cleaned up.
+5. **Writing outputs with the wrong path.** If the task spec says `Outputs/results/TASK-.../SANL_*.md`, create the nested dirs. Don't flatten to `Outputs/SANL_*.md` "for simplicity" — that breaks the acceptance criteria.
+6. **Skipping verification after copy.** A failed copy (disk full, permission denied, name collision) is silent. Always `os.path.getsize` both ends and assert equality.
+
+## Verification Checklist
+
+- [ ] Source file found at expected path (cache/documents or user-provided).
+- [ ] Destination directory exists (`mkdir -p` or pre-existing).
+- [ ] `shutil.copy2` succeeded; sizes match; mtime preserved.
+- [ ] UTF-8 read on destination succeeds (file_content has no decode errors).
+- [ ] If new project: `projects.primary_path` and `project_folders` updated in SQLite.
+- [ ] If new task: `progress.json` written with state=draft and per_file_status for each input.
+- [ ] Filename preserves user's original name (no silent rename).
+- [ ] No content rewrite; byte-identical or only metadata changes.
+
+## Related Skills
+
+- `plan` — when a task involves multiple files / a runnable plan, save it under `plans/TASK-<id>.md`.
+- `skill-candidate-review` — when an Inputs file is itself a SKILL draft being validated, that workflow applies first.
+
+## Scripts
+
+- `scripts/ingest_project_input.py` — atomic "copy one file into `projects/<slug>/Inputs/`" with all checks above.

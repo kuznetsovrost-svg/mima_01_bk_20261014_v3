@@ -1,0 +1,93 @@
+"""
+indicator_thresholds.py — пороги для интерпретации индикаторов проекта.
+
+Для каждого из 16 индикаторов определены критерии вердикта:
+- Критическое (требует немедленных действий)
+- Существенное (требует внимания)
+- Информационное (есть информация)
+- Норма (всё хорошо)
+
+Формат для каждого индикатора:
+
+INDICATOR_THRESHOLDS = {
+    "6.X_<name>": {
+        "critical_when": <callable|condition>,
+        "substantial_when": <callable|condition>,
+        "informational_when": <callable|condition>,
+        "default_verdict": "Норма",
+        # Дополнительные параметры специфичные для индикатора
+        "threshold_<param>": <value>,
+    }
+}
+
+Заполняется по мере получения деталей от пользователя.
+"""
+from typing import Callable, Any, Dict, Optional
+
+
+# ============================================================================
+# ШАБЛОН ДЛЯ КАЖДОГО ИНДИКАТОРА — заполняется пошагово
+# ============================================================================
+
+# Пример структуры (заменим реальными по мере добавления):
+# INDICATOR_THRESHOLDS = {
+#     "6.1_kurator": {
+#         "critical_when": lambda r: r.result == "Нет",  # нет куратора = критично
+#         "substantial_when": None,  # нет промежуточного
+#         "informational_when": None,
+#         "default_verdict": "Норма",
+#     },
+#     ...
+# }
+
+INDICATOR_THRESHOLDS: Dict[str, Dict[str, Any]] = {
+    # 6.1 — _ждём определения_
+    # 6.2 — _ждём определения_
+    # ...
+}
+
+
+# ============================================================================
+# Утилиты для интерпретации
+# ============================================================================
+
+def interpret_indicator(indicator_key: str, result_value: str, detail: str = "") -> str:
+    """Вычислить вердикт индикатора по его ключу и результату.
+
+    Args:
+        indicator_key: ключ вида "6.1_kurator"
+        result_value: результат проверки ("Да" / "Нет" / другие)
+        detail: детализация (опционально)
+
+    Returns:
+        Вердикт: "Норма" / "Информационное" / "Существенное" / "Критическое"
+    """
+    cfg = INDICATOR_THRESHOLDS.get(indicator_key, {})
+    default = cfg.get("default_verdict", "Норма")
+
+    # Проверяем условия по приоритету
+    crit_when = cfg.get("critical_when")
+    if crit_when:
+        try:
+            if crit_when({"result": result_value, "detail": detail}):
+                return "Критическое"
+        except Exception:
+            pass
+
+    subst_when = cfg.get("substantial_when")
+    if subst_when:
+        try:
+            if subst_when({"result": result_value, "detail": detail}):
+                return "Существенное"
+        except Exception:
+            pass
+
+    info_when = cfg.get("informational_when")
+    if info_when:
+        try:
+            if info_when({"result": result_value, "detail": detail}):
+                return "Информационное"
+        except Exception:
+            pass
+
+    return default

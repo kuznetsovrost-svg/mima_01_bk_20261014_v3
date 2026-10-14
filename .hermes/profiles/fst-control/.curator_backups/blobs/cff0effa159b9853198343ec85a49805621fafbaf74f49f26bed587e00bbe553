@@ -1,0 +1,96 @@
+# Python MCP client: when to use scripts/mcp_config.py
+
+`scipts/mcp_config.py` — переиспользуемый Python-модуль, который инкапсулирует
+всю работу с MCP-сервером через `requests` без Hermes-обёртки. Это **Python-аналог**
+`scripts/probe_mcp_sse.sh` (bash-скрипт для одноразовых probe-ов).
+
+## Когда использовать
+
+| Сценарий | Что использовать |
+|----------|----------------|
+| Один раз дёрнуть tool, посмотреть что вернёт | `bash scripts/probe_mcp_sse.sh <URL> <TOKEN_VAR> <TOOL> '<ARGS>'` |
+| Написать Python-скрипт который вызывает MCP из кода | `from mcp_config import mcp_init, mcp_call` |
+| Отладить ошибку Pydantic / странный ответ | Оба подходят, но bash-скрипт быстрее для разовых probe-ов |
+| Много скриптов ходят в один MCP-сервер | Python-модуль — выносишь конфиг в одно место |
+
+## Что внутри `mcp_config.py`
+
+Единый модуль с настройками и функциями:
+
+- **Конфиг**: `MCP_URL`, `TOKEN_ENV_VAR`, `META_TIME_KEYS`, `ENV_FILE`, `TIMEOUT_*` — заменить под свой сервер.
+- **`require_token()`** — ленивое чтение токена из `os.environ` (pitfall #7).
+- **`load_token_from_env_file()`** — парсинг `.env` для CLI-утилит.
+- **`resolve_token()`** — стратегия CLI → env → .env.
+- **`headers_for_call()`** — стандартные заголовки (`Accept: application/json, text/event-stream`, `Content-Type`, `Authorization`, опц. `mcp-session-id`).
+- **`McpConnectionError`** — единое исключение.
+- **`parse_sse_response()`** — парсер SSE с принудительным UTF-8 (pitfall #2) и полным чтением тела без `stream+iter_lines` (pitfall #3).
+- **`mcp_init()`** — handshake: `initialize` → `notifications/initialized`. Возвращает `(sid, server_info)`.
+- **`mcp_call()`** — `tools/call` с парсингом двойного кодирования. Возвращает распарсенный payload или `{"_error": "..."}` при isError.
+
+## Минимальный пример
+
+```python
+import sys
+sys.path.insert(0, "/path/to/mcp-server-probing/scripts")
+from mcp_config import mcp_init, mcp_call, McpConnectionError
+
+try:
+    sid, info = mcp_init(client_name="my-script")
+    print(f"Server: {info.get('name')} v{info.get('version')}")
+
+    data = mcp_call(sid, "get_view",
+                    {"entityName": "Project", "viewName": "MyProject", "limit": 5})
+    print(f"Got {len(data.get('data', []))} rows")
+
+except McpConnectionError as e:
+    print(f"MCP error: {e}")
+except RuntimeError as e:
+    # require_token failed
+    print(f"Config error: {e}")
+```
+
+## Pitfalls, которые решены в модуле
+
+| Pitfall | Где исправлен | Симптом без фикса |
+|---------|---------------|--------------------|
+| #2 UTF-8/charset | `parse_sse_response()` | `Unterminated string starting at: line 1 column 68` на кириллице |
+| #3 SSE large views | `parse_sse_response()` (читает `r.text` целиком, не `stream=True`) | Обрезка данных на больших `get_view(Project, MyProject)` |
+| #7 Lazy token | `require_token()` (не на импорте) | Невозможно открыть модуль в IDE без секрета в env |
+| session-id dance | `mcp_init()` + `mcp_call()` | 400 "Missing session ID" / ошибка валидации |
+| `Accept` header | `headers_for_call()` | 406 Not Acceptable |
+
+## Когда НЕ использовать `mcp_config.py`
+
+- **Один раз дёрнуть tool, посмотреть что вернёт** → `bash scripts/probe_mcp_sse.sh`
+- **Нужен `urllib` для доступа к HTTP-уровню (status/headers)** → пиши свой
+  скрипт или используй `mcp_probe.py` из `fst-project-health` (он сохранил
+  свою `urllib`-реализацию для `--raw` режима по той же причине).
+- **Нужна потоковая обработка (stream=True)** → этот модуль читает
+  ответ целиком. Для длинных стримов подход не подходит.
+
+## Кастомизация под другой MCP-сервер
+
+Скопируй `mcp_config.py` в свою папку скриптов, поменяй:
+
+```python
+MCP_URL: str = "https://your-mcp.example.com/mcp"
+TOKEN_ENV_VAR: str = "YOUR_TOKEN"
+ENV_FILE: Path = Path.home() / ".your/profile/.env"
+```
+
+Pitfall-фиксы (`parse_sse_response`, `require_token`, `headers_for_call`)
+работают **для любого MCP-сервера** с SSE-транспортом, не только для Форсайт.
+
+## Зависимости
+
+- `requests>=2.28` — единственная внешняя зависимость.
+- `python>=3.7` (для `from __future__ import annotations` и `Path` typing).
+
+## История
+
+- Извлечено из `fst-project-health/scripts/mcp_config.py` (2026-08-05) после
+  отладки `fst-project-health` против проекта 504-595 — модуль оказался
+  переиспользуемым для любого Python-скрипта, который ходит в PMForesight
+  MCP напрямую.
+- Вынесен в `mcp-server-probing` как **канонический class-level паттерн**
+  для Python-клиентов MCP.

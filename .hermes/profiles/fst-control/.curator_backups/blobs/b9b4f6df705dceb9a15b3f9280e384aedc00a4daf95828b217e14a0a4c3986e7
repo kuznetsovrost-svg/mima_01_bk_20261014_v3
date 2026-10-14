@@ -1,0 +1,28 @@
+__version__ = "1.0.19"
+# Пороги классификации замечаний раздела 5 «Актуальность прогнозов по проекту».
+# Основание — кол-во дней просрочки ForecastDate относительно текущей даты:
+#   diff_days = (today - ForecastDate).days
+#   if   diff_days >= OVERDUE_THRESHOLDS["critical"]["min_days"]:      "Критическое"
+#   elif diff_days >= OVERDUE_THRESHOLDS["substantial"]["min_days"]:    "Существенное"
+#   elif diff_days >= OVERDUE_THRESHOLDS["informational"]["min_days"]:  "Информационное"
+#   # diff < informational.min_days (= 1) не попадает в таблицу (прогноз сегодня или в будущем).
+
+OVERDUE_THRESHOLDS = {
+    "critical": {
+        "min_days": 10,       # diff >= 10
+        "color":   "Красный",
+        "status":  "Критическое",
+    },
+    "substantial": {
+        "min_days": 2,        # 2 <= diff <= 9
+        "max_days": 9,
+        "color":   "Желтый",
+        "status":  "Существенное",
+    },
+    "informational": {
+        "min_days": 1,        # diff == 1
+        "max_days": 1,
+        "color":   "Синий",
+        "status":  "Информационное",
+    },
+}

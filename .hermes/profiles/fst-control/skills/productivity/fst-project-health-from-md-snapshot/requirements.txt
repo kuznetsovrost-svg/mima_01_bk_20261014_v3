@@ -1,0 +1,14 @@
+# Требования к Python-пакетам для fst-project-health-from-md-snapshot.
+#
+# requests — для HTTP-запросов к PMForesight MCP (list_files,
+# resources/read, upload_entity_file, find_entity, get_user_profile).
+#
+# Версия 2.28.0+ — нужны корректные JSON-ответы через SSE
+# (Content-Type: text/event-stream).
+#
+# Установка:
+#   pip install -r requirements.txt
+#
+# Если переиспользуете Python-окружение от fst-project-health,
+# зависимость уже может быть установлена.
+requests>=2.28.0

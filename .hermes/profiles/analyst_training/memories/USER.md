@@ -1,0 +1,7 @@
+Rostislav Kuznetsov ("Rost") — owner of profile analyst_training. Russian-speaking; mixes RU + EN technical terms. Author of skill VUZ-PROF-BA-ANL (analyzing ВУЗ programs for AI-architect fit).
+
+Preferences: ASCII-only slugs/names (explicitly cleans Cyrillic homoglyphs); backs up SOUL.md/projects.db/config.yaml to .old/.bak before destructive edits; sanity-checks before mutating (show first lines, then act); Telegram replies ≤7 paragraphs without explicit ask; likes structured tables + argumented conclusions with cited links.
+
+When Rost asks "пришли файл / send file" he expects a native Telegram attachment (📎, downloadable), not inline text. Use `MEDIA:/abs/path` on its own line for any extension in Hermes allowlist (.txt, .md, .pdf, .csv, .json, .xml, .yaml, .log, .docx, .xlsx, .zip, ...). If he later reports it came as inline text, ask whether the message has "Save as" — distinguishes gateway bug from client-side preview rendering.
+§
+User (Rostislav K.) runs a checklist-driven workflow when editing skills: marks items `[ ДА]` (yes, change) or `[НЕТ]` / `[НЕ ДЕЛАТЬ]` (no, leave alone). Treat each marker as a hard scope boundary. Apply ONLY the marked-yes items exactly; do not silently "clean up" adjacent items even if they look like cruft (typos, odd abbreviations, headings). If something marked-no looks worth changing, ask first.

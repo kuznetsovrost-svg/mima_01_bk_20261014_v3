@@ -1,0 +1,16 @@
+# Требования к Python-пакетам для fst-project-health-tests.
+#
+# requests — нужен только для группы тестов mcp (test_02_mcp.py
+# использует прямые HTTP-вызовы к MCP, не через subprocess).
+# Без requests группа mcp упадёт на import.
+#
+# Все остальные группы (regression, snap_md, from_md, cross_skill,
+# invariants) работают только через stdlib + subprocess к скриптам
+# тестируемых скиллов.
+#
+# Установка:
+#   pip install -r requirements.txt
+#
+# Если requests уже стоит (например, из fst-project-health-snap-md),
+# ничего дополнительного ставить не нужно.
+requests>=2.28.0

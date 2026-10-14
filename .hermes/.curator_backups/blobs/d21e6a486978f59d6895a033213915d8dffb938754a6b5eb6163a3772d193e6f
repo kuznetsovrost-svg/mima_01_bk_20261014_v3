@@ -1,0 +1,87 @@
+Лекция по бизнес-анализу и моделированию процессов.
+
+Терминология и имена: BPMN, BPMN 2.0, jBPM, Camunda, EA, ARIS, бизнес-процесс,
+нотация, диаграмма, шлюз (gateway), событие (event), задача (task), пул (pool),
+дорожка (lane), поток (sequence flow), сообщение (message flow), процесс,
+подпроцесс, активность, исполнитель, инициатор, КСО, КПЭ, KPI, SLA, BPM,
+BAM, business process, business analysis, business analyst, требования,
+Use Case, User Story, диаграмма деятельности, activity diagram, IDEF0,
+IDEF3, DFD, swimlane, flowchart, flowcharting, EPC, event-driven process
+chain, value chain, цепочка создания стоимости, stakeholder, заинтересованная
+сторона, заказчик, customer, CJM, customer journey map, customer experience,
+scope, scope management, scope of work, T&M, fixed price, time and material,
+fixed bid, agile, scrum, kanban, lean, six sigma, waterwall, waterfall, agile
+трансформация, цифровая трансформация, цифровизация, автоматизация, RPA, low-code,
+no-code, citizen developer, центр компетенций, центр экспертизы, СОВА, СУП,
+система управления проектами, система управления портфелем, методология,
+фреймворк, BABOK, PMBOK, PRINCE2, IIBA, requirements management, управление
+требованиями, анализ требований, выявление требований, приоритизация
+требований, traceability, трассируемость, верификация, валидация, UAT,
+приёмочное тестирование, smoke test, регрессионное тестирование, функциональное
+тестирование, нефункциональное тестирование, тест-кейс, test case, defect,
+баг, defect management, risk, риск, issue, проблема, эскалация, escalation,
+митigation, митигация, change request, запрос на изменение, change management,
+управление изменениями, release, релиз, deployment, деплой, CI/CD, devops,
+pipeline, пайплайн, infrastructure, инфраструктура, on-premise, cloud, SaaS,
+IaaS, PaaS, microservice, микросервис, monolith, монолит, API, интеграция,
+ESB, message broker, Kafka, RabbitMQ, MQ, ETL, data lake, data warehouse,
+olap, oltp, SQL, NoSQL, database, база данных, ORM, нормализация, денормализация,
+индекс, транзакция, ACID, CAP, BASE, eventual consistency, микросервисная
+архитектура, монолит, service-oriented architecture, сервис-ориентированная
+архитектура, REST, SOAP, GraphQL, gRPC, openapi, swagger, json, xml, yaml,
+markdown, документирование, проект, программа, портфель, портфель проектов,
+программа проектов, гейт, gate, стадия, фаза, этап, milestone, веха, deliverable,
+результат, исход, outcome, output, activity, work package, work breakdown
+structure, WBS, иерархическая структура работ, дерево работ, OBS, organizational
+breakdown structure, ответственный, RACI, ответственность, полномочия, матрица
+ответственности, ресурс, команда, рол, роль, полномочия, уровень доступа,
+авторизация, аутентификация, SSO, LDAP, AD, Active Directory, audit log, журнал
+аудита, compliance, комплаенс, нормативные требования, регулятор, ФЗ-152,
+GDPR, защита персональных данных, ПДн, ИСПДн, ИБ, информационная безопасность,
+уязвимость, vulnerability, угроза, threat, risk assessment, оценка рисков,
+СОВА, система обеспечения информационной безопасности, ISO 27001, ГОСТ Р
+ИСО, ГОСТ, стандарт, сертификация, лицензия, ФСТЭК, ФСБ, регулятор,
+информационная система, ИС, АИС, автоматизированная информационная система,
+государственная информационная система, ГИС, ЕСИА, СМЭВ, электронный
+документооборот, ЭДО, СЭД, система электронного документооборота, архив,
+электронный архив, scan, сканирование, OCR, распознавание текста, шаблон,
+template, реестр, registry, классификатор, справочник, dictionary, lookup,
+table, таблица, отчёт, dashboard, дашборд, KPI dashboard, метрика, показатель,
+индикатор, trend, тренд, прогноз, forecast, аномалия, anomaly, alert, оповещение,
+уведомление, эскалация, дежурный, on-call, инцидент, incident, постмортем,
+postmortem, RCA, root cause analysis, анализ первопричин, corrective action,
+корректирующее действие, preventive action, предупреждающее действие, capa,
+CAPA, процессный подход, процессное управление, операционная эффективность,
+bottleneck, узкое место, throughput, пропускная способность, cycle time,
+время цикла, lead time, время выполнения, SLA, SLO, SLI, соглашение об уровне
+сервиса, метрика качества, оценка, бенчмарк, benchmark, лучшая практика,
+best practice, lesson learned, извлечённый урок, knowledge base, база знаний,
+wiki, documentation, knowledge management, управление знаниями, репозиторий,
+version control, система контроля версий, Git, commit, push, pull, merge,
+branch, ветка, fork, pull request, code review, ревью кода, continuous
+integration, непрерывная интеграция, continuous delivery, непрерывная
+доставка, deployment pipeline, конвейер развертывания, build, сборка, artifact,
+артефакт, container, контейнер, docker, kubernetes, оркестрация, helm, чарт,
+manifest, манифест, infrastructure as code, инфраструктура как код, terraform,
+ansible, puppet, chef, observability, наблюдаемость, monitoring, мониторинг,
+logging, логирование, metrics, метрики, traces, трейсы, distributed tracing,
+распределённая трассировка, jaeger, zipkin, prometheus, grafana, alerting,
+PromQL, logstash, elasticsearch, kibana, elk, splunk, datadog, newrelic,
+sentry, APM, Application Performance Management, SRE, Site Reliability
+Engineering, DevOps, GitOps, разработка, эксплуатация, поддержка, оператор,
+администратор, базы данных, DBA, devops-инженер, разработчик, программист,
+архитектор, solution architect, enterprise architect, системный архитектор,
+бизнес-аналитик, BA, SA, system analyst, продуктовый менеджер, product manager,
+product owner, PO, скрам-мастер, scrum master, project manager, PM, менеджер
+проекта, руководитель проекта, PMO, офис управления проектами, методолог,
+аналитик данных, data analyst, data scientist, data engineer, ML-инженер,
+machine learning, искусственный интеллект, AI, нейронная сеть, нейросеть,
+chatbot, чат-бот, RPA, robotic process automation, программный робот,
+digital worker, цифровой работник, citizen developer, бизнес-пользователь,
+power user, продвинутый пользователь, low-code платформа, no-code платформа,
+outsystems, mendix, appian, pega, oracle, sap, 1C, Битрикс, ELMA, Bizagi,
+visio, draw.io, lucidchart, camunda modeler, bpmn.io, ARIS, bizagi modeler,
+signavio, processmaker, bonitasoft, activiti, flowable, jbpm, bizagi,
+enterprise, корпоративный, корпоративная система, ландшафт, архитектура,
+IT-архитектура, техническая архитектура, бизнес-архитектура, архитектура
+предприятия, TOGAF, ArchiMate, zachman, методология, фреймворк.

@@ -1,0 +1,298 @@
+/* templates/styles.css — стили HTML-отчёта по FIGMA-макету 2026-08-06.
+ *
+ * Generated for fst-project-health v1.0.19 (2026-09-23).
+ * Owner: SKILL.md + CHANGELOG.md семейства (root of skill).
+ *
+ * Источник:
+ * - `references/figma-to-html-workflow.md` — workflow экспорта FIGMA → HTML
+ * - Исходные FIGMA-стили содержали `position:absolute` (440×956 iPhone).
+ *   Это переписано в production-flex/grid с адаптивностью до 920px max-width.
+ *   Сетка FIGMA была **визуальной подсказкой** (не частью дизайна), см. pitfall #17.
+ */
+
+@import url('https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;700&display=swap');
+
+* { box-sizing: border-box; }
+
+body {
+    font-family: 'Open Sans', sans-serif;
+    margin: 0;
+    padding: 20px;
+    background: #f3f4f6;
+    color: #000;
+}
+
+.report-container {
+    max-width: 920px;
+    margin: 0 auto;
+    background: #dbeafe;
+    border-radius: 18px;
+    padding: 24px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, .06);
+}
+
+/* HEADER — две колонки: текст слева, индикатор справа.
+ *
+ * ⚠️ FIGMA-стиль: <div class="report.header"> — это ОДИН класс с точкой,
+ * не два класса. CSS-селектор .report.header интерпретирует как два класса
+ * (через пробел). Поэтому используем [class~="report.header"].
+ * Современный .report-header — на случай если HTML перепишем.
+ */
+[class~="report.header"] {
+    display: grid;
+    grid-template-columns: 1fr 158px;
+    gap: 0;
+    margin-bottom: 24px;
+    border-radius: 12px;
+    overflow: hidden;
+}
+.report-header {
+    display: grid;
+    grid-template-columns: 1fr 158px;
+    gap: 0;
+    margin-bottom: 24px;
+    border-radius: 12px;
+    overflow: hidden;
+}
+.report-header-text {
+    background: #2563eb;
+    color: #ffffff;
+    padding: 16px 18px;
+    min-height: 158px;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    gap: 10px;
+}
+.txt-report-prefix2 {
+    font-size: 15px;
+    font-weight: 700;
+    line-height: 1.3;
+    color: #ffffff;
+}
+.report-title {
+    font-size: 22px;
+    font-weight: 700;
+    color: #fffcfc;
+    margin-top: 4px;
+    line-height: 1.2;
+}
+.report-created-label,
+.report-datetime {
+    font-size: 13px;
+    font-weight: 700;
+    color: #ffffff;
+}
+.report-datetime { font-weight: 400; }
+
+/* ИНДИКАТОР — круглый значок справа.
+ *
+ * ⚠️ FIGMA использует CSS-классы с точками: <div class="report.project.indicator">.
+ * Это ОДИН класс, а не три (в HTML/CSS нельзя ставить точки в class).
+ * Стилизация: для FIGMA-совместимости используем [class~="report.project.indicator"] —
+ * селектор по полному совпадению class-атрибута. Также работает и обычный
+ * селектор через .report-header-indicator (если приведём HTML к конвенциональному виду).
+ */
+[class~="report.project.indicator"] {
+    background-color: #2563eb;
+    color: #000;
+    position: relative;
+    min-height: 158px;
+    padding: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+/* Современный конвенциональный класс — на случай если HTML перепишем */
+.report-indicator {
+    background-color: #2563eb;
+    color: #000;
+    position: relative;
+    min-height: 158px;
+    padding: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.ellipse1 {
+    background: #ffffff;
+    width: 136px;
+    height: 136px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    font-size: 15px;
+    font-weight: 700;
+    line-height: 1.2;
+    color: #000;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, .15);
+}
+
+/* ТАБЛИЦЫ-ОТКРЫВАШКИ (5 шт.) */
+.variant-tbl {
+    width: 100%;
+    margin-bottom: 8px;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, .04);
+}
+.tbl-controls-collapsed {
+    background: #d1cfd7;
+    padding: 8px 14px;
+    cursor: pointer;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 13px;
+    transition: background .15s;
+}
+.tbl-controls-collapsed:hover { background: #c8c5cd; }
+.tbl-controls-collapsed summary {
+    list-style: none;
+    cursor: pointer;
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-weight: 700;
+}
+.tbl-controls-collapsed summary::-webkit-details-marker { display: none; }
+.tbl-controls-collapsed summary::after {
+    content: "▼";
+    font-size: 10px;
+    margin-left: 8px;
+    transition: transform .15s;
+}
+details[open] .tbl-controls-collapsed summary::after { transform: rotate(180deg); }
+
+.tbl-name { font-weight: 700; }
+.tbl-preview { font-weight: 400; opacity: .8; }
+
+/* РАСКРЫТОЕ СОДЕРЖИМОЕ — белый фон, таблицы внутри */
+.tbl-expanded-content {
+    background: #ffffff;
+    padding: 16px 20px;
+    border-top: 1px solid #d1cfd7;
+    font-size: 13px;
+    line-height: 1.5;
+    max-height: 600px;
+    overflow-y: auto;
+}
+.tbl-expanded-content h3 {
+    margin-top: 0;
+    font-size: 16px;
+    color: #2563eb;
+    border-bottom: 2px solid #dbeafe;
+    padding-bottom: 6px;
+    margin-bottom: 12px;
+}
+.tbl-expanded-content p { margin: 6px 0; }
+.tbl-expanded-content table.tbl {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 10px 0;
+    font-size: 12px;
+}
+.tbl-expanded-content table.tbl th {
+    background: #f1f5f9;
+    text-align: left;
+    padding: 6px 8px;
+    border: 1px solid #e5e7eb;
+    font-weight: 700;
+    color: #374151;
+}
+.tbl-expanded-content table.tbl td {
+    padding: 6px 8px;
+    border: 1px solid #e5e7eb;
+    vertical-align: top;
+}
+.tbl-expanded-content table.tbl tr:nth-child(even) td { background: #fafafa; }
+.tbl-expanded-content hr { border: none; border-top: 1px dashed #cbd5e1; margin: 12px 0; }
+
+/* Цвета статусов — для вердиктов и меток */
+.status-red    { color: #dc2626; font-weight: 700; }
+.status-yellow { color: #d97706; font-weight: 700; }
+.status-green  { color: #059669; font-weight: 700; }
+.status-grey   { color: #6b7280; font-weight: 700; }
+
+/* === ПОДКРАСКА СТРОК ПО СТАТУСУ КТ/ПОКАЗАТЕЛЯ ===
+ * Решает pitfall «если КТ/показатель критичен или требует внимания —
+ * подкрашиваем строку» (формулировка пользователя 2026-08-06).
+ * Применяется к <tr class="status-critical|warning|info"> внутри любой <table.tbl>.
+ */
+table.tbl tr.status-critical td {
+    background-color: #fee2e2 !important;  /* красный (красный индикатор) */
+    font-weight: 700;
+}
+table.tbl tr.status-warning td {
+    background-color: #fef3c7 !important;  /* жёлтый (жёлтый индикатор) */
+}
+table.tbl tr.status-info td {
+    background-color: #f0fdf4 !important;  /* зелёный (здоров) */
+}
+/* На чётных строках (zebra-striping) подкраска важнее — !important */
+table.tbl tr.status-critical:nth-child(even) td,
+table.tbl tr.status-warning:nth-child(even) td,
+table.tbl tr.status-info:nth-child(even) td {
+    background-color: inherit;
+}
+
+/* === ВАРИАНТ-СПЕЦИФИЧНЫЕ СТИЛИ ===
+ * Высота строк и ширины колонок подобраны по FIGMA-экспорту 2026-08-06.
+ * tbl-finance — 70px (длинный текст показателя), остальные — 30px.
+ */
+table.tbl-kt th,
+table.tbl-kt td {
+    height: 30px;
+}
+table.tbl-overdue th,
+table.tbl-overdue td {
+    height: 30px;
+}
+table.tbl-completeness th,
+table.tbl-completeness td {
+    height: 30px;
+}
+table.tbl-tech th,
+table.tbl-tech td {
+    height: 30px;
+}
+table.tbl-finance th {
+    height: 30px;
+}
+table.tbl-finance td {
+    height: 70px;
+    vertical-align: top;
+    padding-top: 10px;
+}
+table.tbl-finance td.col-name { font-weight: 700; }
+
+/* Колонки с фиксированными размерами */
+table.tbl td.col-num {
+    text-align: center;
+    width: 40px;
+    font-size: 11px;
+}
+table.tbl td.col-name {
+    font-size: 11px;
+}
+table.tbl td.col-result,
+table.tbl td.col-value {
+    font-size: 11px;
+}
+
+/* Стили для <details>/<summary> — современный селектор */
+.variant-tbl[open] > summary::after { transform: rotate(180deg); }
+
+/* FOOTER */
+.report-footer {
+    margin-top: 24px;
+    padding: 16px;
+    text-align: center;
+    font-size: 11px;
+    color: #64748b;
+    border-top: 1px solid #cbd5e1;
+}

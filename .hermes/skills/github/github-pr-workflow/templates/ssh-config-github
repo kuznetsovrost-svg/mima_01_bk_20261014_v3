@@ -1,0 +1,53 @@
+# ~/.ssh/config — copy this whole block, or `cat >> ~/.ssh/config` it.
+#
+# Why this template:
+#   - IdentitiesOnly yes → OpenSSH offers EXACTLY one key per host.
+#     Without it, SSH offers every key in ~/.ssh/ one by one, and
+#     the first accepted key wins. On a box with personal + work
+#     + bot keys, this silently authenticates to the wrong account.
+#   - ControlMaster auto + ControlPersist 600 → first git operation
+#     opens a TCP+SSH session, the next 10 minutes of operations
+#     reuse it. `ls-remote` drops from ~700ms to ~50ms.
+#   - Host github-443 → fallback when outbound 22/tcp is blocked
+#     by the host's firewall or ISP. ssh.github.com:443 is GitHub's
+#     public SSH-over-TLS endpoint. Usage:
+#         git clone git@github-443:owner/repo.git
+#         ssh -T git@github-443
+#     First use will fail with "Host key verification failed" until
+#     you also run:
+#         ssh-keyscan -H -t rsa,ecdsa,ed25519 ssh.github.com \
+#           >> ~/.ssh/known_hosts
+#     Those keys are public; safe to append automatically.
+#
+# Replace ~/.ssh/id_ed25519 below with your actual key path if it
+# differs. Verify with:
+#     ssh -T -v git@github.com 2>&1 \
+#       | grep -E 'Offering|Authenticated'
+# Expect: ONE "Offering" line for your key, then "Authenticated to
+# github.com ... using publickey".
+
+Host github.com
+    HostName github.com
+    User git
+    Port 22
+    IdentityFile ~/.ssh/id_ed25519
+    IdentitiesOnly yes
+    PreferredAuthentications publickey
+    ServerAliveInterval 60
+    ServerAliveCountMax 3
+
+Host github-443
+    HostName ssh.github.com
+    User git
+    Port 443
+    IdentityFile ~/.ssh/id_ed25519
+    IdentitiesOnly yes
+    PreferredAuthentications publickey
+    ServerAliveInterval 60
+    ServerAliveCountMax 3
+
+# Apply connection multiplexing to all GitHub hosts
+Host github.com github-443
+    ControlMaster auto
+    ControlPath ~/.ssh/cm-%r@%h:%p
+    ControlPersist 600

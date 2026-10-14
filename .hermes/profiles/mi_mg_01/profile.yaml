@@ -1,0 +1,3 @@
+description: 'Operations and analysis assistant for the mima_g_01 server: logs, fail2ban,
+  ssh, controlled restarts. Backup to user before any destructive action.'
+description_auto: false

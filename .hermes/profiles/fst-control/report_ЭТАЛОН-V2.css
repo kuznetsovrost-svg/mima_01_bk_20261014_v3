@@ -1,0 +1,267 @@
+@import url('https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;700&display=swap');
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+    font-family: 'Open Sans', Arial, sans-serif;
+    background: #dbeafe;
+    color: #000;
+    padding: 24px;
+    line-height: 1.5;
+}
+
+.report-container {
+    max-width: 920px;
+    margin: 0 auto;
+}
+
+/* === HEADER === */
+.report-header {
+    display: grid;
+    grid-template-columns: 1fr 158px;
+    gap: 0;
+    margin-bottom: 20px;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0,0,0,.08);
+}
+.report-header-text {
+    background: #2563eb;
+    color: #ffffff;
+    padding: 18px 20px;
+    min-height: 158px;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    gap: 10px;
+}
+.report-header-prefix {
+    font-size: 15px;
+    font-weight: 700;
+}
+.report-header-title {
+    font-size: 22px;
+    font-weight: 700;
+    color: #fffcfc;
+}
+.report-header-meta {
+    font-size: 13px;
+    font-weight: 400;
+}
+.report-header-meta b { font-weight: 700; }
+.report-indicator {
+    background: #2563eb;
+    padding: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 158px;
+}
+/* === ИНДИКАТОР — ЦВЕТНОЙ КРУГ С РАДИАЛЬНЫМ ГРАДИЕНТОМ ===
+ *
+ * Логика цветов:
+ *   🔴 Проект болен        → красный градиент (от светлого к тёмному к центру)
+ *   🟡 Требует внимания   → жёлтый/оранжевый градиент
+ *   🟢 Здоров             → зелёный градиент
+ *   ⚪ Нет данных         → серый градиент
+ *
+ * Радиальный градиент создаёт эффект «выпуклости» — светлая точка в верхнем-левом
+ * углу, тёмная в правом-нижнем, имитация сферической кнопки.
+ *
+ * Текст статуса — белый, поверх цветной заливки, жирный.
+ */
+.report-indicator-circle {
+    /* Базовый (нет данных / серый) */
+    background: radial-gradient(
+        circle at 30% 30%,
+        #d1d5db 0%,
+        #9ca3af 40%,
+        #6b7280 100%
+    );
+    width: 160px;
+    height: 160px;
+    border-radius: 50%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    font-size: 14px;
+    font-weight: 700;
+    color: #ffffff;
+    line-height: 1.2;
+    box-shadow:
+        inset 0 -8px 16px rgba(0, 0, 0, 0.25),   /* тень внизу — для объёма */
+        inset 0 4px 8px rgba(255, 255, 255, 0.4), /* блик сверху */
+        0 4px 12px rgba(0, 0, 0, 0.2);           /* внешняя тень */
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);    /* тень текста */
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* === Цвета по статусу (применяется к data-status атрибуту) === */
+.report-indicator-circle[data-status="sick"] {
+    background: radial-gradient(
+        circle at 30% 30%,
+        #fca5a5 0%,
+        #ef4444 40%,
+        #b91c1c 100%
+    );
+}
+
+.report-indicator-circle[data-status="attention"] {
+    background: radial-gradient(
+        circle at 30% 30%,
+        #fde68a 0%,
+        #f59e0b 40%,
+        #b45309 100%
+    );
+}
+
+.report-indicator-circle[data-status="healthy"] {
+    background: radial-gradient(
+        circle at 30% 30%,
+        #86efac 0%,
+        #22c55e 40%,
+        #15803d 100%
+    );
+}
+
+.report-indicator-circle[data-status="unknown"] {
+    background: radial-gradient(
+        circle at 30% 30%,
+        #d1d5db 0%,
+        #9ca3af 40%,
+        #6b7280 100%
+    );
+}
+
+.report-indicator-circle .verdict-emoji {
+    font-size: 32px;
+    margin-bottom: 6px;
+    filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.3));
+}
+
+/* === TABLE-OF-CONTENTS / COLLAPSIBLES === */
+.variant-tbl {
+    background: #ffffff;
+    margin-bottom: 8px;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 1px 4px rgba(0,0,0,.06);
+}
+.variant-tbl > summary {
+    background: #d1cfd7;
+    padding: 8px 14px;
+    cursor: pointer;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 13px;
+    font-weight: 700;
+    list-style: none;
+    transition: background .15s;
+}
+.variant-tbl > summary:hover { background: #c8c5cd; }
+.variant-tbl > summary::-webkit-details-marker { display: none; }
+.variant-tbl > summary::after {
+    content: "▼";
+    font-size: 10px;
+    transition: transform .15s;
+}
+.variant-tbl[open] > summary::after { transform: rotate(180deg); }
+
+.tbl-name { font-weight: 700; }
+.tbl-preview { font-weight: 400; opacity: .8; font-size: 12px; }
+
+.tbl-content {
+    background: #ffffff;
+    padding: 12px 16px;
+    border-top: 1px solid #d1cfd7;
+    overflow-x: auto;
+}
+
+/* === TABLE STYLES === */
+table.tbl {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 12px;
+    color: #232326;
+}
+table.tbl th {
+    background: #f7f7fa;
+    text-align: left;
+    padding: 6px 10px;
+    border: 1px solid #d1cfd7;
+    font-weight: 700;
+    color: #374151;
+    font-size: 12px;
+}
+table.tbl td {
+    padding: 6px 10px;
+    border: 1px solid #d1cfd7;
+    vertical-align: middle;
+}
+table.tbl tr td.col-num {
+    text-align: center;
+    width: 40px;
+    font-size: 11px;
+}
+table.tbl tr td.col-name {
+    font-size: 11px;
+    color: #232326;
+}
+table.tbl tr td.col-result,
+table.tbl tr td.col-value {
+    font-size: 11px;
+    color: #232326;
+}
+
+/* === Row highlighting === */
+table.tbl tr.status-critical td {
+    background: #fee2e2 !important;
+    font-weight: 700;
+}
+table.tbl tr.status-warning td {
+    background: #fef3c7 !important;
+}
+table.tbl tr.status-info td {
+    background: #f0fdf4 !important;
+}
+
+/* === Variant-specific styles === */
+table.tbl-kt th,
+table.tbl-kt td {
+    height: 30px;
+}
+table.tbl-overdue th,
+table.tbl-overdue td {
+    height: 30px;
+}
+table.tbl-completeness th,
+table.tbl-completeness td {
+    height: 30px;
+}
+table.tbl-tech th,
+table.tbl-tech td {
+    height: 30px;
+}
+table.tbl-finance th {
+    height: 30px;
+}
+table.tbl-finance td {
+    height: 70px;
+    vertical-align: top;
+    padding-top: 10px;
+}
+table.tbl-finance td.col-name { font-weight: 700; }
+
+/* === Footer === */
+.report-footer {
+    margin-top: 24px;
+    padding: 12px;
+    text-align: center;
+    font-size: 11px;
+    color: #475569;
+}

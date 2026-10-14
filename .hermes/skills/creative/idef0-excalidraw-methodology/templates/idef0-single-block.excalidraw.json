@@ -1,0 +1,200 @@
+{
+  "type": "excalidraw",
+  "version": 2,
+  "source": "idef0-excalidraw-methodology",
+  "elements": [
+    {
+      "type": "frame",
+      "id": "frame-A0",
+      "name": "A0 <описание функции> (parent: A-0)",
+      "x": 100,
+      "y": 100,
+      "width": 800,
+      "height": 600,
+      "strokeColor": "#1e1e1e",
+      "backgroundColor": "transparent"
+    },
+
+    {
+      "type": "rectangle",
+      "id": "block-A0-1",
+      "x": 200,
+      "y": 250,
+      "width": 200,
+      "height": 100,
+      "strokeColor": "#1e1e1e",
+      "backgroundColor": "#a5d8ff",
+      "fillStyle": "solid",
+      "roundness": {"type": 3},
+      "groupIds": ["group-A0-1"]
+    },
+    {
+      "type": "text",
+      "id": "func-A0-1",
+      "x": 220,
+      "y": 280,
+      "width": 160,
+      "height": 25,
+      "text": "<имя функции блока 1>",
+      "textAlign": "center",
+      "fontSize": 18,
+      "fontFamily": 1,
+      "strokeColor": "#1e1e1e",
+      "containerId": "block-A0-1",
+      "originalText": "<имя функции блока 1>",
+      "autoResize": true,
+      "groupIds": ["group-A0-1"]
+    },
+    {
+      "type": "text",
+      "id": "num-A0-1",
+      "x": 205,
+      "y": 332,
+      "width": 40,
+      "height": 16,
+      "text": "A0.1",
+      "textAlign": "left",
+      "fontSize": 12,
+      "fontFamily": 1,
+      "strokeColor": "#757575",
+      "groupIds": ["group-A0-1"]
+    },
+
+    {
+      "type": "text",
+      "id": "icom-I1",
+      "x": 110,
+      "y": 380,
+      "width": 30,
+      "height": 16,
+      "text": "I1",
+      "fontSize": 12,
+      "fontFamily": 1,
+      "strokeColor": "#757575",
+      "textAlign": "left"
+    },
+    {
+      "type": "text",
+      "id": "icom-C1",
+      "x": 280,
+      "y": 210,
+      "width": 30,
+      "height": 16,
+      "text": "C1",
+      "fontSize": 12,
+      "fontFamily": 1,
+      "strokeColor": "#757575",
+      "textAlign": "left"
+    },
+    {
+      "type": "text",
+      "id": "icom-O1",
+      "x": 425,
+      "y": 380,
+      "width": 30,
+      "height": 16,
+      "text": "O1",
+      "fontSize": 12,
+      "fontFamily": 1,
+      "strokeColor": "#757575",
+      "textAlign": "left"
+    },
+    {
+      "type": "text",
+      "id": "icom-M1",
+      "x": 280,
+      "y": 410,
+      "width": 30,
+      "height": 16,
+      "text": "M1",
+      "fontSize": 12,
+      "fontFamily": 1,
+      "strokeColor": "#757575",
+      "textAlign": "left"
+    },
+
+    {
+      "type": "frame",
+      "id": "cat-A0",
+      "name": "Arrow Catalogue A0",
+      "x": 1000,
+      "y": 100,
+      "width": 350,
+      "height": 250
+    },
+    {
+      "type": "rectangle",
+      "id": "cat-A0-bg",
+      "x": 1010,
+      "y": 130,
+      "width": 330,
+      "height": 200,
+      "strokeStyle": "solid",
+      "fillStyle": "hachure"
+    },
+    {
+      "type": "text",
+      "id": "cat-A0-title",
+      "x": 1020,
+      "y": 140,
+      "width": 200,
+      "height": 22,
+      "text": "Arrow Catalogue A0",
+      "fontWeight": "bold",
+      "fontSize": 16,
+      "fontFamily": 1,
+      "strokeColor": "#1e1e1e"
+    },
+    {
+      "type": "text",
+      "id": "cat-A0-row1",
+      "x": 1020,
+      "y": 175,
+      "width": 320,
+      "height": 18,
+      "text": "I1 | Граница | Блок 1 | I",
+      "fontSize": 12,
+      "fontFamily": 1,
+      "strokeColor": "#1e1e1e"
+    },
+    {
+      "type": "text",
+      "id": "cat-A0-row2",
+      "x": 1020,
+      "y": 200,
+      "width": 320,
+      "height": 18,
+      "text": "C1 | Граница | Блок 1 | C",
+      "fontSize": 12,
+      "fontFamily": 1,
+      "strokeColor": "#1e1e1e"
+    },
+    {
+      "type": "text",
+      "id": "cat-A0-row3",
+      "x": 1020,
+      "y": 225,
+      "width": 320,
+      "height": 18,
+      "text": "O1 | Блок 1 | Граница | O",
+      "fontSize": 12,
+      "fontFamily": 1,
+      "strokeColor": "#1e1e1e"
+    },
+    {
+      "type": "text",
+      "id": "cat-A0-row4",
+      "x": 1020,
+      "y": 250,
+      "width": 320,
+      "height": 18,
+      "text": "M1 | Граница | Блок 1 | M",
+      "fontSize": 12,
+      "fontFamily": 1,
+      "strokeColor": "#1e1e1e"
+    }
+  ],
+  "appState": {
+    "viewBackgroundColor": "#ffffff"
+  }
+}

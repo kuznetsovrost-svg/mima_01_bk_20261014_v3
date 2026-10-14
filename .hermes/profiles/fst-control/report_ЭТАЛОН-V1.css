@@ -1,0 +1,200 @@
+@import url('https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;700&display=swap');
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+    font-family: 'Open Sans', Arial, sans-serif;
+    background: #dbeafe;
+    color: #000;
+    padding: 24px;
+    line-height: 1.5;
+}
+
+.report-container {
+    max-width: 920px;
+    margin: 0 auto;
+}
+
+/* === HEADER === */
+.report-header {
+    display: grid;
+    grid-template-columns: 1fr 158px;
+    gap: 0;
+    margin-bottom: 20px;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0,0,0,.08);
+}
+.report-header-text {
+    background: #2563eb;
+    color: #ffffff;
+    padding: 18px 20px;
+    min-height: 158px;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    gap: 10px;
+}
+.report-header-prefix {
+    font-size: 15px;
+    font-weight: 700;
+}
+.report-header-title {
+    font-size: 22px;
+    font-weight: 700;
+    color: #fffcfc;
+}
+.report-header-meta {
+    font-size: 13px;
+    font-weight: 400;
+}
+.report-header-meta b { font-weight: 700; }
+.report-indicator {
+    background: #2563eb;
+    padding: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 158px;
+}
+.report-indicator-circle {
+    background: #ffffff;
+    width: 136px;
+    height: 136px;
+    border-radius: 50%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    font-size: 13px;
+    font-weight: 700;
+    color: #000;
+    box-shadow: 0 2px 8px rgba(0,0,0,.15);
+    line-height: 1.2;
+}
+.report-indicator-circle .verdict-emoji { font-size: 28px; margin-bottom: 4px; }
+
+/* === TABLE-OF-CONTENTS / COLLAPSIBLES === */
+.variant-tbl {
+    background: #ffffff;
+    margin-bottom: 8px;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 1px 4px rgba(0,0,0,.06);
+}
+.variant-tbl > summary {
+    background: #d1cfd7;
+    padding: 8px 14px;
+    cursor: pointer;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 13px;
+    font-weight: 700;
+    list-style: none;
+    transition: background .15s;
+}
+.variant-tbl > summary:hover { background: #c8c5cd; }
+.variant-tbl > summary::-webkit-details-marker { display: none; }
+.variant-tbl > summary::after {
+    content: "▼";
+    font-size: 10px;
+    transition: transform .15s;
+}
+.variant-tbl[open] > summary::after { transform: rotate(180deg); }
+
+.tbl-name { font-weight: 700; }
+.tbl-preview { font-weight: 400; opacity: .8; font-size: 12px; }
+
+.tbl-content {
+    background: #ffffff;
+    padding: 12px 16px;
+    border-top: 1px solid #d1cfd7;
+    overflow-x: auto;
+}
+
+/* === TABLE STYLES === */
+table.tbl {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 12px;
+    color: #232326;
+}
+table.tbl th {
+    background: #f7f7fa;
+    text-align: left;
+    padding: 6px 10px;
+    border: 1px solid #d1cfd7;
+    font-weight: 700;
+    color: #374151;
+    font-size: 12px;
+}
+table.tbl td {
+    padding: 6px 10px;
+    border: 1px solid #d1cfd7;
+    vertical-align: middle;
+}
+table.tbl tr td.col-num {
+    text-align: center;
+    width: 40px;
+    font-size: 11px;
+}
+table.tbl tr td.col-name {
+    font-size: 11px;
+    color: #232326;
+}
+table.tbl tr td.col-result,
+table.tbl tr td.col-value {
+    font-size: 11px;
+    color: #232326;
+}
+
+/* === Row highlighting === */
+table.tbl tr.status-critical td {
+    background: #fee2e2 !important;
+    font-weight: 700;
+}
+table.tbl tr.status-warning td {
+    background: #fef3c7 !important;
+}
+table.tbl tr.status-info td {
+    background: #f0fdf4 !important;
+}
+
+/* === Variant-specific styles === */
+table.tbl-kt th,
+table.tbl-kt td {
+    height: 30px;
+}
+table.tbl-overdue th,
+table.tbl-overdue td {
+    height: 30px;
+}
+table.tbl-completeness th,
+table.tbl-completeness td {
+    height: 30px;
+}
+table.tbl-tech th,
+table.tbl-tech td {
+    height: 30px;
+}
+table.tbl-finance th {
+    height: 30px;
+}
+table.tbl-finance td {
+    height: 70px;
+    vertical-align: top;
+    padding-top: 10px;
+}
+table.tbl-finance td.col-name { font-weight: 700; }
+
+/* === Footer === */
+.report-footer {
+    margin-top: 24px;
+    padding: 12px;
+    text-align: center;
+    font-size: 11px;
+    color: #475569;
+}

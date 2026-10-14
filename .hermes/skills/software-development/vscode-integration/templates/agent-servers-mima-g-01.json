@@ -1,0 +1,37 @@
+{
+  "agent_servers": {
+    "hermes-main": {
+      "name": "Hermes-agent",
+      "command": "ssh",
+      "args": [
+        "root@mima-g-01",
+        "/usr/local/lib/hermes-agent/venv/bin/hermes-acp",
+        "--profile", "default"
+      ],
+      "cwd": "${workspaceFolder}"
+    },
+    "hermes-coder-vsc": {
+      "name": "coder-vsc",
+      "command": "ssh",
+      "args": [
+        "root@mima-g-01",
+        "/usr/local/lib/hermes-agent/venv/bin/hermes-acp",
+        "--profile", "coder-vsc"
+      ],
+      "cwd": "${workspaceFolder}"
+    },
+    "hermes-fst-control": {
+      "name": "fst-control",
+      "command": "ssh",
+      "args": [
+        "root@mima-g-01",
+        "/usr/local/lib/hermes-agent/venv/bin/hermes-acp",
+        "--profile", "fst-control"
+      ],
+      "cwd": "${workspaceFolder}"
+    }
+  },
+  "acp.connectTimeoutMs": 600000,
+  "acp.autoApprovePermissions": "ask",
+  "acp.logTraffic": true
+}

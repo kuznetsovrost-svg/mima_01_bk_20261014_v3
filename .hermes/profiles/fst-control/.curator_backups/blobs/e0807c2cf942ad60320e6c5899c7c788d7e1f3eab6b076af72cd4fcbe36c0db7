@@ -1,0 +1,491 @@
+@import url('https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;700&display=swap');
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+    font-family: 'Open Sans', Arial, sans-serif;
+    background: #dbeafe;
+    color: #000;
+    padding: 24px;
+    line-height: 1.5;
+}
+
+.report-container {
+    max-width: 920px;
+    margin: 0 auto;
+}
+
+/* === HEADER === */
+.report-header {
+    display: grid;
+    /* Колонка индикатора — 172px (круг 160px + padding 12px) */
+    grid-template-columns: 1fr 172px;
+    gap: 0;
+    margin-bottom: 20px;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0,0,0,.08);
+}
+.report-header-text {
+    background: #2563eb;
+    color: #ffffff;
+    padding: 18px 20px;
+    min-height: 158px;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    gap: 10px;
+}
+.report-header-prefix {
+    font-size: 15px;
+    font-weight: 700;
+}
+.report-header-title {
+    font-size: 22px;
+    font-weight: 700;
+    color: #fffcfc;
+}
+.report-header-meta {
+    font-size: 13px;
+    font-weight: 400;
+}
+.report-header-meta b { font-weight: 700; }
+.report-indicator {
+    background: #2563eb;
+    padding: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 172px;
+}
+
+/* === ИНДИКАТОР — ЦВЕТНОЙ КРУГ С РАДИАЛЬНЫМ ГРАДИЕНТОМ ===
+ *
+ * Логика цветов (применяется через data-status="..."):
+ *   🔴 sick         → Проект болен       (красный)
+ *   🟡 attention    → Требует внимания  (оранжевый)
+ *   🟢 healthy      → Здоров            (зелёный)
+ *   ⚪ unknown      → Нет данных         (серый)
+ *
+ * Радиальный градиент — круглый (center at center, не at 30% 30%).
+ * Без inset shadow — иначе получается «вмятина» в центре.
+ * Размер зафиксирован min/max — иначе контент растягивает контейнер в овал.
+ * Текст по центру — `align-items: center; justify-content: center`.
+ */
+.report-indicator-circle {
+    /* Базовый — нет данных (серый) */
+    background: radial-gradient(
+        circle at center,
+        #cbd5e1 0%,
+        #9ca3af 60%,
+        #6b7280 100%
+    );
+    width: 160px !important;
+    height: 160px !important;
+    min-width: 160px;
+    max-width: 160px;
+    min-height: 160px;
+    max-height: 160px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    /* Flex для центрирования единственного текста */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 0 16px;
+    font-size: 13px;
+    font-weight: 700;
+    color: #ffffff;
+    line-height: 1.2;
+    /* Только ВНЕШНЯЯ тень — для объёма без «вмятины» */
+    box-shadow:
+        0 6px 16px rgba(0, 0, 0, 0.25),
+        0 2px 4px rgba(0, 0, 0, 0.15);
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* === Цвета по статусу (data-status атрибут) === */
+.report-indicator-circle[data-status="sick"] {
+    background: radial-gradient(
+        circle at center,
+        #fca5a5 0%,
+        #ef4444 60%,
+        #dc2626 100%
+    );
+}
+
+.report-indicator-circle[data-status="attention"] {
+    background: radial-gradient(
+        circle at center,
+        #fde68a 0%,
+        #f59e0b 60%,
+        #d97706 100%
+    );
+}
+
+.report-indicator-circle[data-status="healthy"] {
+    background: radial-gradient(
+        circle at center,
+        #86efac 0%,
+        #22c55e 60%,
+        #16a34a 100%
+    );
+}
+
+.report-indicator-circle[data-status="unknown"] {
+    background: radial-gradient(
+        circle at center,
+        #d1d5db 0%,
+        #9ca3af 60%,
+        #6b7280 100%
+    );
+}
+
+.report-indicator-circle .verdict-text {
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1.2;
+    max-width: 130px;
+    word-wrap: break-word;
+    margin: 0;
+    padding: 0;
+    display: block;
+}
+
+/* === TABLE-OF-CONTENTS / COLLAPSIBLES === */
+.variant-tbl {
+    background: #ffffff;
+    margin-bottom: 8px;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 1px 4px rgba(0,0,0,.06);
+}
+.variant-tbl > summary {
+    background: #d1cfd7;
+    padding: 8px 14px;
+    cursor: pointer;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 13px;
+    font-weight: 700;
+    list-style: none;
+    transition: background .15s;
+}
+.variant-tbl > summary:hover { background: #c8c5cd; }
+.variant-tbl > summary::-webkit-details-marker { display: none; }
+.variant-tbl > summary::after {
+    content: "▼";
+    font-size: 10px;
+    transition: transform .15s;
+}
+.variant-tbl[open] > summary::after { transform: rotate(180deg); }
+
+.tbl-name { font-weight: 700; }
+.tbl-preview { font-weight: 400; opacity: .8; font-size: 12px; }
+
+.tbl-content {
+    background: #ffffff;
+    padding: 12px 16px;
+    border-top: 1px solid #d1cfd7;
+    overflow-x: auto;
+}
+
+/* === TABLE STYLES === */
+table.tbl {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 12px;
+    color: #232326;
+}
+table.tbl th {
+    background: #f7f7fa;
+    text-align: left;
+    padding: 6px 10px;
+    border: 1px solid #d1cfd7;
+    font-weight: 700;
+    color: #374151;
+    font-size: 12px;
+}
+table.tbl td {
+    padding: 6px 10px;
+    border: 1px solid #d1cfd7;
+    vertical-align: middle;
+}
+table.tbl tr td.col-num {
+    text-align: center;
+    width: 40px;
+    font-size: 11px;
+}
+table.tbl tr td.col-name {
+    font-size: 11px;
+    color: #232326;
+}
+table.tbl tr td.col-result,
+table.tbl tr td.col-value {
+    font-size: 11px;
+    color: #232326;
+}
+
+/* === Row highlighting === */
+table.tbl tr.status-critical td {
+    background: #fee2e2 !important;
+    font-weight: 700;
+}
+table.tbl tr.status-warning td {
+    background: #fef3c7 !important;
+}
+table.tbl tr.status-info td {
+    background: #f0fdf4 !important;
+}
+
+/* === Variant-specific styles === */
+table.tbl-kt th,
+table.tbl-kt td {
+    height: 30px;
+}
+/* Ширины колонок для tbl-kt (раздел 3: замечания по срокам):
+   # | Код | Наименование | План | Прогноз | Факт | Исполнитель
+   40  90   552          110   110      90    110    = 1102
+   План/Прогноз = 110px (как tbl-overdue План/Прогноз) чтобы дата помещалась.
+*/
+table.tbl-kt th:nth-child(1), table.tbl-kt td:nth-child(1) { width: 40px; }
+table.tbl-kt th:nth-child(2), table.tbl-kt td:nth-child(2) { width: 90px; }
+table.tbl-kt th:nth-child(3), table.tbl-kt td:nth-child(3) { width: 552px; }
+table.tbl-kt th:nth-child(4), table.tbl-kt td:nth-child(4) { width: 110px; }
+table.tbl-kt th:nth-child(5), table.tbl-kt td:nth-child(5) { width: 110px; }
+table.tbl-kt th:nth-child(6), table.tbl-kt td:nth-child(6) { width: 90px; }
+table.tbl-kt th:nth-child(7), table.tbl-kt td:nth-child(7) { width: 110px; }
+/* Разрешаем перенос строк в длинных наименованиях (как tbl-overdue). */
+table.tbl-kt td { word-wrap: break-word; overflow-wrap: break-word; }
+table.tbl-overdue th,
+table.tbl-overdue td {
+    height: 30px;
+}
+/* Ширины колонок для tbl-overdue (fix 2026-08-21):
+   # | Код | Название | План | Прогноз | Просрочка, дн
+   40  90   552       140   140       140 = 1102
+   Прогно: 140px вместо 90px чтобы дата 2026-08-13 помещалась без переноса.
+*/
+table.tbl-overdue th:nth-child(1), table.tbl-overdue td:nth-child(1) { width: 40px; }
+table.tbl-overdue th:nth-child(2), table.tbl-overdue td:nth-child(2) { width: 90px; }
+table.tbl-overdue th:nth-child(3), table.tbl-overdue td:nth-child(3) { width: 552px; }
+table.tbl-overdue th:nth-child(4), table.tbl-overdue td:nth-child(4) { width: 140px; }
+table.tbl-overdue th:nth-child(5), table.tbl-overdue td:nth-child(5) { width: 140px; }
+table.tbl-overdue th:nth-child(6), table.tbl-overdue td:nth-child(6) { width: 140px; }
+/* fix 2026-08-21: разрешаем перенос строк в длинных наименованиях (как в tbl-kt).
+   nowrap был применён чтобы даты не переносились — но это убивает перенос
+   длинных названий КТ. Удаляем nowrap, дни и даты остаются достаточно узкими. */
+table.tbl-overdue td { word-wrap: break-word; overflow-wrap: break-word; }
+table.tbl-completeness th,
+table.tbl-completeness td {
+    height: 30px;
+}
+table.tbl-tech th,
+table.tbl-tech td {
+    height: 30px;
+}
+table.tbl-finance th {
+    height: 30px;
+}
+table.tbl-finance td {
+    height: 40px;  /* fix 2026-08-21: уменьшено с 70px чтобы убрать огромные строки */
+    vertical-align: middle;
+    padding-top: 4px;
+}
+table.tbl-finance td.col-name { font-weight: 700; }
+
+/* === Footer === */
+.report-footer {
+    margin-top: 24px;
+    padding: 12px;
+    text-align: center;
+    font-size: 11px;
+    color: #475569;
+}
+
+/* === Section 6: Показатели проекта (16 индикаторов) — v1.0.3 === */
+/* Структура: каждый индикатор = <details>.
+   <summary> содержит мини-таблицу (одна <tr>) + маркер ▼.
+   После </summary> — <div class='indicator-details-panel'> с вложенной таблицей.
+   Раскрытие — нативное через <details>. */
+
+table.tbl-indicators {
+    table-layout: fixed;
+    width: 100%;
+    border-collapse: collapse;
+}
+table.tbl-indicators th,
+table.tbl-indicators td {
+    border: 1px solid #cbd5e1;
+    padding: 6px 8px;
+    text-align: left;
+    vertical-align: middle;
+}
+table.tbl-indicators th {
+    background: #f1f5f9;
+    font-weight: 600;
+}
+table.tbl-indicators col.col-num { width: 60px; }
+table.tbl-indicators col.col-name { width: 40%; }
+table.tbl-indicators col.col-result { width: calc(60% - 130px); word-wrap: break-word; }
+table.tbl-indicators col.col-details { width: 70px; }
+
+table.tbl-indicators td {
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    vertical-align: middle;
+}
+
+/* Подкраска строк по severity (применяется на <tr> мини-таблицы) */
+table.tbl-indicators tr[data-status="critical"] {
+    background: #fee2e2;
+}
+table.tbl-indicators tr[data-status="substantial"] {
+    background: #fef3c7;
+}
+table.tbl-indicators tr[data-status="informational"] {
+    background: #dbeafe;
+}
+table.tbl-indicators tr[data-status="normal"] {
+    background: #ffffff;
+}
+
+/* Колонка "Детали" — кликабельный треугольник (▼) */
+table.tbl-indicators td.col-details {
+    text-align: center;
+    padding: 8px;
+    width: 70px;
+    font-weight: 700;
+    color: #475569;
+}
+
+/* === v1.0.3: <details> оборачивает индикатор === */
+
+/* <details> = блочный, без рамки */
+details.indicator-details {
+    display: block;
+    margin: 0;
+}
+
+/* <summary> — кликабельная обёртка мини-таблицы.
+   Убираем нативный marker (▼) браузера, рисуем свой через .col-details-marker. */
+details.indicator-details > summary {
+    list-style: none;
+    cursor: pointer;
+    display: block;
+    margin: 0;
+    padding: 0;
+}
+details.indicator-details > summary::-webkit-details-marker { display: none; }
+details.indicator-details > summary::marker { display: none; content: ""; }
+details.indicator-details > summary > table.tbl-indicators { margin: 0; }
+
+/* Ховер по строке — лёгкая подсветка треугольника */
+details.indicator-details > summary:hover .col-details-marker { color: #0284c7; }
+
+/* Маркер ▼ в колонке "Детали" (для индикаторов с данными — кликабельный) */
+.col-details-marker {
+    display: inline-block;
+    font-size: 9px;       /* меньше чем в заголовках разделов (10px) */
+    line-height: 1;
+    color: #1e40af;        /* тёмно-синий */
+}
+
+/* Когда details открыт — маркер ▲ (через ::after на td.col-details) */
+details.indicator-details[open] > summary .col-details-marker {
+    color: #1e40af;
+}
+details.indicator-details[open] > summary .col-details-marker::after {
+    content: "▲";
+}
+details.indicator-details[open] > summary .col-details-marker {
+    font-size: 0;
+}
+details.indicator-details[open] > summary .col-details-marker::after {
+    font-size: 9px;
+}
+
+/* Когда у индикатора НЕТ данных — ▼ серый неактивный, не кликабельный.
+   (Используется td.col-details без обёртки <details>)
+   Цвет светлее чем #475569 в заголовках разделов. */
+.col-details-marker-disabled {
+    display: inline-block;
+    font-size: 9px;
+    line-height: 1;
+    color: #94a3b8;        /* slate-400 — светлее slate-600 */
+    cursor: default;       /* не кликабельный */
+}
+
+/* Panel с вложенной таблицей — виден только когда details[open] */
+details.indicator-details .indicator-details-panel {
+    display: none;
+    padding: 0 40px 12px;
+    background: #fafafa;
+    border-bottom: 1px solid #e2e8f0;
+}
+details.indicator-details[open] .indicator-details-panel {
+    display: block;
+}
+
+/* Вложенная таблица (3 уровень) */
+table.tbl-nested {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 8px;
+}
+table.tbl-nested th {
+    background: #f8fafc;
+    border: 1px solid #cbd5e1;  /* темнее (было #e2e8f0), толщина 1px — без изменений */
+    padding: 4px 6px;
+    font-weight: 600;
+    font-size: 12px;
+    text-align: left;
+}
+table.tbl-nested td {
+    border: 1px solid #cbd5e1;  /* темнее (было #e2e8f0), толщина 1px — без изменений */
+    padding: 4px 6px;
+    font-size: 12px;
+    vertical-align: middle;
+}
+table.tbl-nested tr[data-status="critical"] {
+    background: #fee2e2;
+}
+table.tbl-nested tr[data-status="substantial"] {
+    background: #fef3c7;
+}
+table.tbl-nested tr[data-status="informational"] {
+    background: #dbeafe;
+}
+table.tbl-nested tr[data-status="normal"] {
+    background: #ffffff;
+}
+
+.tbl-nested-title {
+    font-weight: 600;
+    color: #475569;
+    margin-bottom: 6px;
+    margin-top: 6px;
+    font-size: 12px;
+}
+
+/* Заголовок секции 6 (скрыт — выводится в <summary> родительского <details>) */
+.section-6-title {
+    display: none;
+}
+
+/* Вердикт секции 6 */
+.section-6-verdict {
+    margin: 4px 0 8px 0;
+    padding: 6px 12px;
+    font-size: 14px;
+    font-weight: 600;
+}
+.section-6-verdict.verdict-critical { background: #fee2e2; color: #991b1b; }
+.section-6-verdict.verdict-substantial { background: #fef3c7; color: #92400e; }
+.section-6-verdict.verdict-informational { background: #dbeafe; color: #1e40af; }
+.section-6-verdict.verdict-normal { background: #ffffff; color: #475569; }
