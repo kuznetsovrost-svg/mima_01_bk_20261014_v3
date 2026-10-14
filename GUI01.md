@@ -1,0 +1,344 @@
+# GUI для Hermes Agent на Linux VPS
+
+> Версия 1.0 · Ubuntu 24.04 · без GUI-сервера из коробки
+> Назначение: какой интерфейс к Hermes можно поднять на этом VPS,
+> плюс что на нём уже работает как "GUI" через messaging.
+
+## Оглавление
+
+- [§0. Короткий ответ](#0-короткий-ответ)
+- [§1. Что на сервере уже сейчас является "GUI"](#1-что-на-сервере-уже-сейчас-является-gui)
+- [§2. Вариант A. ttyd + tmux + `hermes chat`](#2-вариант-a-web-терминал-через-ttyd-самый-прагматичный)
+- [§3. Вариант B. Open WebUI + Hermes API Server adapter](#3-вариант-b-open-webui--hermes-api-server-adapter)
+- [§4. Вариант C. X11-forwarding через SSH + ACP-IDE](#4-вариант-c-x11-forwarding-через-ssh--acp-ide)
+- [§5. Вариант D. noVNC + Xvfb](#5-вариант-d-novnc--xvfb-тяжёлая-артиллерия)
+- [§6. Вариант E. Browser-скилл Hermes](#6-вариант-e-браузер-скилл-hermes-как-gui)
+- [§7. Сравнительная таблица](#7-сравнительная-таблица)
+- [§8. Рекомендация для этого VPS](#8-рекомендация-для-этого-vps)
+- [§9. Чеклист перед внедрением](#9-чеклист-перед-внедрением)
+- [§10. Контакты](#10-контакты)
+
+---
+
+## §0. Короткий ответ
+
+Сам Hermes — терминальное приложение (использует `prompt_toolkit`, требует TTY).
+**Полноценного официального web-GUI / desktop-GUI для Linux у Hermes нет.**
+Из коробки в docs описаны 4 пути:
+
+1. **Hermes Desktop** — только Windows/macOS, не подходит.
+2. `hermes acp` + ACP-IDE (Zed и т. п.) — требует редактора на стороне клиента.
+3. `hermes chat` в tmux — это TUI, не GUI, но выглядит "как окно" при подключении.
+4. `hermes chat -q "<prompt>"` — one-shot, без интерактива.
+
+Всё, что ниже, — это обходные пути, ранжированные от прагматичного к костыльному.
+
+---
+
+## §1. Что на сервере уже сейчас является "GUI"
+
+**1.1.** Matrix-комната `!qtymGlxhfChwRcTygM:msg.lab.aidemo.adaptivepm.ru` —
+подключена через `hermes-gateway.service`, файлы приходят как `m.file`, текст — как `m.text`.
+Управлять агентом можно с любого устройства, где есть Matrix-клиент (телефон, планшет, веб).
+**Это и есть рабочий "GUI"** в смысле "человек управляет агентом удалённо".
+
+**1.2.** Telegram — **ЗАБЛОКИРОВАН** на этом хосте. Зафиксировано в `MEMORY.md`:
+> "Host (twc1.net, 8.31.79.37) cannot reach api.telegram.org or 149.154.166.110:443 — TCP/443 connections time out."
+
+Для поднятия Telegram-доступа нужен внешний SOCKS/HTTP-прокси или релей.
+
+**1.3.** CLI-доступ — `hermes` v0.16.0 уже в `/usr/local/bin/hermes`. Доступен через SSH
+в tmux-сессии (TUI) или как `hermes chat -q` в cron/скриптах/пайплайнах.
+
+---
+
+## §2. Вариант A. Web-терминал через ttyd (самый прагматичный)
+
+**2.1. Что это:**
+[ttyd](https://github.com/tsl0922/ttyd) пробрасывает произвольный TTY-процесс в
+браузер через WebSocket. Любой браузер на любом устройстве получает работающий
+TUI-чат прямо в окне. Без X-сервера, без VNC, без перекомпиляции.
+
+**2.2. Что нужно на сервере:**
+
+```bash
+apt-get update
+apt-get install -y ttyd tmux
+# hermes и tmux уже стоят
+```
+
+**2.3. Запуск (systemd unit для боевого деплоя):**
+
+```ini
+# /etc/systemd/system/ttyd-hermes.service
+[Unit]
+Description=ttyd web terminal for Hermes chat
+After=network.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/bin/ttyd -p 7681 -i 0.0.0.0 \
+          tmux new-session -A -s hermes -x 120 -y 40 \
+          'HERMES_TMUX=1 hermes chat'
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+systemctl daemon-reload
+systemctl enable --now ttyd-hermes.service
+# открыть в браузере:  http://<vps-ip>:7681
+```
+
+**2.4. Подводные камни:**
+
+- Порт `7681/tcp` должен быть открыт в firewall (`ufw allow 7681/tcp` или cloud-provider security group).
+- Без TLS логин и команды идут plain-text. Если VPS публичный — **обязательно** повесить
+  nginx/Caddy с TLS перед ttyd, либо заходить через SSH-туннель:
+  ```bash
+  ssh -L 7681:localhost:7681 root@<vps>
+  # и открывать http://localhost:7681 в браузере
+  ```
+- `ttyd` без `-c basic-auth` пускает всех. Добавьте:
+  `-c admin:<password>` — но **НЕ пишите пароль в cmdline** (см. sanitization-нюанс
+  в skill `messaging-gateway-setup`).
+- Из-под root `hermes chat` работает, но если запускать от обычного пользователя —
+  `$HOME` другой, и `~/.hermes` будет свой. Учитывайте при выборе `User=`.
+
+**2.5. Проверка:**
+
+```bash
+systemctl status ttyd-hermes.service
+curl -sS -m 5 -o /dev/null -w "ttyd HTTP=%{http_code}\n" \
+     http://localhost:7681
+# Должен быть 200; в браузере — окно с prompt_toolkit.
+```
+
+---
+
+## §3. Вариант B. Open WebUI + Hermes API Server adapter
+
+**3.1. Что это:**
+В скилле `hermes-agent` и в официальной документации упомянуто: *"Open WebUI connects
+via the API Server adapter"*. [Open WebUI](https://github.com/open-webui/open-webui) —
+это полноценный web-чат с историей, сессиями, файлами, голосом, RAG, и т. п.
+Подключается к Hermes через `gateway/platforms/apiserver.py` как к
+OpenAI-совместимому API endpoint'у.
+
+**3.2. Что нужно:**
+
+```bash
+# Open WebUI ставится через pip venv или docker.
+# Предпочтительно через uv, т.к. системный python=3.12.3 без pip (PEP 668).
+apt-get install -y docker.io docker-compose-plugin
+# или
+pipx install open-webui
+```
+
+**3.3. Запуск (docker-вариант):**
+
+```bash
+docker run -d --name open-webui \
+  -p 8080:8080 \
+  -v open-webui-data:/app/backend/data \
+  --restart always \
+  ghcr.io/open-webui/open-webui:main
+```
+
+**3.4. На стороне Hermes:**
+
+```bash
+hermes gateway setup        # включить API Server platform
+# или вручную в ~/.hermes/config.yaml:
+#   gateway.platforms.apiserver.enabled: true
+#   gateway.platforms.apiserver.port:     9000
+hermes gateway restart
+# Open WebUI на 8080, Hermes API на 9000. Связать через
+# "OpenAI API" endpoint: http://localhost:9000/v1
+```
+
+**3.5. Подводные камни:**
+
+- Docker может быть недоступен на этом VPS (нужно проверить: `docker info`,
+  есть ли `/var/run/docker.sock`).
+- Open WebUI пробрасывает свои пути к моделям; Hermes использует свой `~/.hermes`.
+  Конфигурация моделей не пересекается, но в Open WebUI нужно вручную добавить
+  endpoint и API-ключ (можно сгенерировать фиктивный, если adapter не проверяет).
+- Это **НЕ официальный GUI Hermes**, а сторонний интерфейс поверх API Server adapter.
+  Внешний вид и фичи определяются Open WebUI, а не Hermes.
+
+**3.6. Проверка:**
+
+```bash
+curl -sS -m 5 -o /dev/null -w "openwebui HTTP=%{http_code}\n" \
+     http://localhost:8080
+hermes gateway status | grep -i apiserver
+hermes mcp list            # API server не путать с MCP
+```
+
+---
+
+## §4. Вариант C. X11-forwarding через SSH + ACP-IDE
+
+**4.1. Что это:**
+На локальной Linux/Mac-станции поднимается X-сервер (XQuartz на Mac, обычный
+X.org на Linux). SSH-форвардинг X11 тянет GUI-окна на локальную машину.
+На сервере запускается IDE (Zed) и подключается к Hermes через `hermes acp`.
+
+**4.2. Что нужно:**
+
+```bash
+# Локально (Linux):
+sudo apt-get install -y xauth
+ssh -X root@<vps>            # или ssh -Y для trusted forwarding
+
+# На сервере:
+apt-get install -y xauth libx11-xcb1
+# Установить Zed на сервер:
+curl -fsSL https://zed.dev/install.sh | sh
+# (если у них сейчас .deb — лучше скачать .deb)
+zed &
+# В Zed — настроить ACP-подключение к Hermes:
+#   "Hermes ACP" → host: localhost, command: hermes acp
+# Это экспериментальная интеграция; может потребоваться плагин.
+```
+
+**4.3. Подводные камни:**
+
+- Zed на серверной Ubuntu — тяжёлая зависимость: GTK4, cargo (~600 МБ), build-deps.
+  Долгая компиляция из исходников.
+- X11-форвардинг медленный по WAN. Если VPS в другой стране — Zed будет лагать.
+- `hermes acp` + Zed — экспериментальная интеграция. В скилле Hermes упомянуто
+  вскользь; готового plug-and-play нет. Готовьтесь читать исходники.
+- Если локально Windows — путь сильно другой (WSLg или VcXsrv/WSL2).
+
+**4.4. Альтернатива попроще: VSCode Remote-SSH.**
+VSCode умеет Remote-SSH без X-форвардинга — он сам тянет remote-server и работает
+локально как тонкий клиент. В Remote-окне ставите расширение "Hermes" (если есть
+в marketplace) или подключаетесь к `hermes acp` через custom command. Сложно,
+но работает.
+
+---
+
+## §5. Вариант D. noVNC + Xvfb (тяжёлая артиллерия)
+
+**5.1. Что это:**
+На сервере поднимается виртуальный X-сервер (Xvfb), внутри openbox-сессия,
+в ней xterm с `hermes chat`, VNC пробрасывается через websockify в браузер
+как noVNC-страница. Получается настоящий web-рабочий стол с окном терминала.
+
+**5.2. Что нужно:**
+
+```bash
+apt-get install -y xvfb x11vnc openbox xterm websockify novnc
+# Xvfb и libx11 на сервере уже стоят; не хватает
+# x11vnc, openbox, xterm, websockify, novnc.
+```
+
+**5.3. Запуск (всё в фоне):**
+
+```bash
+Xvfb :99 -screen 0 1280x800x24 -ac &
+DISPLAY=:99 openbox-session &
+DISPLAY=:99 xterm -fa 'Monospace' -fs 12 \
+                -e 'tmux new-session -A -s hermes hermes chat' &
+x11vnc -display :99 -forever -nopw -rfbport 5900 &
+websockify --web /usr/share/novnc 6080 localhost:5900 &
+
+# В браузере: http://<vps-ip>:6080/vnc.html
+```
+
+**5.4. Подводные камни:**
+
+- Тяжело: жрёт RAM (~300 МБ на Xvfb + openbox + терминалы).
+- Нет шифрования по умолчанию — VNC plain-text. Нужен SSH-туннель ИЛИ
+  nginx/Caddy с WebSocket-проксированием.
+- Из пушки по воробьям ради текстового TUI. Имеет смысл только если вы хотите
+  в одном окне видеть ещё и другие GUI-приложения (например, GUI-IDE,
+  файловый менеджер).
+- На headless-сервере без `/dev/dri` и без GPU всё равно работает (Xvfb —
+  софтрендер), но производительность оставляет желать лучшего.
+
+**5.5. Когда выбирать:**
+
+- Нужно "настоящий рабочий стол" с несколькими окнами (терминал + браузер + IDE).
+- VPS с 4+ ГБ RAM и 2+ CPU.
+- Готовы потратить день на настройку и отладку.
+
+---
+
+## §6. Вариант E. Browser-скилл Hermes как "GUI"
+
+**6.1. Что это:**
+В скиллах Hermes есть browser-тулзеты (`browser`, `image_gen`, `vision`).
+Hermes сам поднимает headless-браузер и управляет web-интерфейсами. Это
+**НЕ "GUI для оператора"** — это "GUI как ещё один tool для агента".
+
+**6.2. Когда это уместно:**
+
+- Агент сам заходит на сайты (например, заполняет формы, скрейпит данные,
+  делает скриншоты).
+- Вам нужно, чтобы агент мог отображать результат своей работы в виде
+  web-страницы (например, сгенерированный отчёт).
+- Вам нужен скриншот интерфейса для последующей работы.
+
+**6.3. Это не альтернатива операторскому GUI** — это дополнение.
+
+---
+
+## §7. Сравнительная таблица
+
+| Вариант                | Сложность  | RAM       | Когда брать                                   |
+|------------------------|------------|-----------|------------------------------------------------|
+| Matrix/Telegram (есть) | ★☆☆☆☆      | 0         | Уже работает, хватает для 90% случаев          |
+| ttyd + tmux            | ★☆☆☆☆      | ~30 МБ    | Нужен web-доступ в браузере                    |
+| Open WebUI + API srv   | ★★☆☆☆      | ~300 МБ   | Нужен полноценный web-чат с историей           |
+| X11-forward + Zed/ACP  | ★★★☆☆      | ~600 МБ   | Локально Linux/Mac с X-сервером                |
+| noVNC + Xvfb + openbox | ★★★★☆      | ~400 МБ   | Нужен "настоящий рабочий стол" с окнами        |
+| Browser-skill агента   | n/a        | 0         | Это не операторский GUI, а tool для агента     |
+
+---
+
+## §8. Рекомендация для этого VPS
+
+- **Matrix уже работает**, Telegram заблокирован upstream'ом — в первую очередь
+  использовать Matrix-комнату.
+- Если нужен именно браузер/web — ставить `ttyd` (2 команды, 1 минута, ~30 МБ RAM).
+- Если нужен полноценный чат с историей/сессиями/файлами — поднимать
+  **Open WebUI + API Server adapter** (потребуется `docker.io` или `pipx`).
+- X11-форвардинг и noVNC — для редких случаев, когда нужен именно "рабочий стол"
+  с несколькими окнами.
+
+---
+
+## §9. Чеклист перед внедрением
+
+- [ ] Определён реальный сценарий: web-доступ, чат, IDE, RDP
+- [ ] Выбран один вариант, не все сразу
+- [ ] Firewall: открыт нужный порт (7681 / 8080 / 6080)
+- [ ] TLS: для публичного доступа — nginx/Caddy перед GUI
+- [ ] Для SSH-доступа вместо TLS: настроен SSH-туннель
+- [ ] systemd unit создан, `enable --now` отработал
+- [ ] Тест с другого устройства (телефон, ноутбук)
+- [ ] Если через прокси — прокси прописан и в ttyd/unit
+- [ ] Пароль (если используется) **НЕ зашит** в cmdline (риск sanitization
+      и безопасности) — вынесен в env-файл
+
+---
+
+## §10. Контакты
+
+- Документация Hermes: [hermes-agent.nousresearch.com/docs](https://hermes-agent.nousresearch.com/docs/)
+- Скилл `hermes-agent`: `~/.hermes/skills/autonomous-ai-agents/hermes-agent/SKILL.md`
+- ttyd: [github.com/tsl0922/ttyd](https://github.com/tsl0922/ttyd)
+- Open WebUI: [github.com/open-webui/open-webui](https://github.com/open-webui/open-webui)
+- Эта карточка в Matrix-комнате рядом с `GitHab01.txt`, `GitHub02.txt`,
+  `RollbackRecipe.txt`, `DESCOTOPDESKTOP01.{txt,md}`.
+
+---
+
+*Конец карточки. Идентично содержимому `GUI01.txt`, v1.0 от 2026-06-14.*

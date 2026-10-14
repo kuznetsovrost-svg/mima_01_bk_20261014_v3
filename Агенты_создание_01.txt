@@ -1,0 +1,755 @@
+=============================================================================
+  HERMES AGENT — ПОЛНОЕ РУКОВОДСТВО ПО СОЗДАНИЮ НОВОГО АГЕНТА
+  Файл: Агенты_создание_01.txt
+  Версия: 1.0
+=============================================================================
+
+СЛОВО "АГЕНТ" В HERMES МОЖЕТ ОЗНАЧАТЬ ТРИ РАЗНЫЕ ВЕЩИ.
+В этом файле описаны все три варианта, чтобы покрыть любую задачу.
+Краткая навигация:
+
+  1. HERMES PROFILE
+     Изолированный Hermes-инстанс: свои скиллы, память, конфиг, секреты,
+     сессии, cron, MCP. По сути — второй Hermes на той же машине.
+     -> "Я хочу нового бота с другими настройками"
+     -> "Сделай мне отдельного агента для работы"
+     -> "Хочу двух агентов в одной установке"
+
+  2. AGENT PACKAGE (portability)
+     Канонический каталог skills+memories+config+env+cron+mcp, упакованный
+     в Git-репо. Для бэкапа, шаринга, переноса на другую машину.
+     -> "Забэкапь моего агента"
+     -> "Опубликуй этого агента на GitHub"
+     -> "Подгрузи агента из этого репо"
+
+  3. SPAWN (дочерний процесс)
+     Запуск ещё одного hermes-процесса в фоне/параллельно.
+     -> "Запусти параллельного агента, чтобы он сделал X"
+     -> "Дай мне вторую сессию, не блокируя текущую"
+
+
+=============================================================================
+ЧАСТЬ 1.  HERMES PROFILE  (изолированный Hermes-инстанс)
+=============================================================================
+
+PROFILE — это полностью независимый Hermes, у которого своя копия:
+  - config.yaml          (настройки модели, gateway, toolsets)
+  - .env                 (API-ключи, секреты, токены платформ)
+  - skills/              (установленные скиллы)
+  - memories/            (memory.md, user.md и др.)
+  - sessions/            (индекс маршрутизации, дампы запросов)
+  - state.db             (SQLite-стор сессий с FTS5-поиском)
+  - logs/                (gateway.log, error.log)
+  - auth.json            (OAuth-токены и пулы учёток)
+  - cron/                (SQLite-стор запланированных задач)
+  - mcp/                 (реестр MCP-серверов)
+  - plugins/             (плагины, активные только в этом профиле)
+  - profiles/<name>/     (вложенные профили внутри профиля — опционально)
+  - hermes-agent/        (исходный код, если установлено из git)
+
+Всё это лежит в:
+  ~/.hermes/profiles/<имя_профиля>/
+(на самом деле это полная копия ~/.hermes/ для профиля, кроме самого
+profiles/, чтобы избежать рекурсии)
+
+----------------------------------------------------------------------------
+1.1. СОЗДАНИЕ ПРОФИЛЯ
+----------------------------------------------------------------------------
+
+# Создать пустой профиль
+hermes profile create researcher
+
+# Создать профиль и скопировать туда скиллы из текущего (default)
+hermes profile create researcher --clone
+
+# Скопировать ВСЁ (скиллы + память + сессии) — самый полный клон
+hermes profile create researcher --clone-all
+
+# Склонировать из конкретного существующего профиля
+hermes profile create researcher --clone-from work
+
+После создания профиль сразу виден в:
+  hermes profile list
+
+----------------------------------------------------------------------------
+1.2. ЗАПУСК С УКАЗАНИЕМ ПРОФИЛЯ
+----------------------------------------------------------------------------
+
+# Одноразовый запуск без смены дефолта
+hermes --profile researcher
+hermes chat -p researcher -q "Привет"
+hermes gateway run --profile researcher
+
+# Сделать профиль "липким" дефолтом для текущего юзера
+hermes profile use researcher
+# Все последующие hermes / hermes gateway / hermes cron будут работать
+# в контексте этого профиля.
+
+# Вернуться к основному
+hermes profile use default
+
+# Запустить шлюз (gateway) для конкретного профиля как systemd-сервис
+hermes gateway install --profile researcher
+systemctl --user status hermes-gateway-researcher
+systemctl --user start hermes-gateway-researcher
+
+----------------------------------------------------------------------------
+1.3. ПОЛНЫЙ СОСТАВ КАТАЛОГА ПРОФИЛЯ  (что внутри)
+----------------------------------------------------------------------------
+
+После "hermes profile create researcher --clone-all" в
+~/.hermes/profiles/researcher/ появятся:
+
+  config.yaml                 # Главный конфиг. РЕДАКТИРОВАТЬ ЧЕРЕЗ:
+                              #   hermes --profile researcher config edit
+                              #   hermes --profile researcher config set KEY VAL
+                              # НЕ ЧЕРЕЗ write_file/patch — защита агента
+  .env                        # API-ключи. Права 0o600. Содержит:
+                              #   OPENROUTER_API_KEY=
+                              #   ANTHROPIC_API_KEY=
+                              #   TELEGRAM_BOT_TOKEN=
+                              #   MATRIX_HOMESERVER_URL=
+                              #   MATRIX_USER_ID=
+                              #   MATRIX_ACCESS_TOKEN=
+                              #   ... и т.п.
+  skills/                     # Установленные скиллы (каталоги с SKILL.md)
+    hermes-agent/
+    hermes-agent-vcs-portability/
+    messaging-gateway-setup/
+    ...
+  memories/                   # Долговременная память
+    memory.md                 # Факты окружения (Hermes читает каждый ход)
+    user.md                   # Профиль пользователя
+    *.json                    # Кастомные блоки памяти
+  sessions/                   # Индекс маршрутизации, дампы запросов,
+                              # *.jsonl-транскрипты
+  state.db                    # SQLite + FTS5: основной стор сессий
+  logs/
+    gateway.log               # Лог шлюза сообщений
+    error.log
+  auth.json                   # OAuth и пулы учётных данных
+  cron/                       # Хранилище НЕ файловое — SQLite внутри
+                              # state.db или отдельный cron.db. Управление:
+                              #   hermes --profile researcher cron list
+                              #   hermes --profile researcher cron create ...
+  mcp/                        # Реестр MCP-серверов. Управление:
+                              #   hermes --profile researcher mcp list
+                              #   hermes --profile researcher mcp add NAME
+  plugins/                    # Каталог плагинов
+  hermes-agent/               # Исходный код, если Hermes ставился из git
+  plugins/cron/               # (опц.) доп. каталоги плагинов
+
+----------------------------------------------------------------------------
+1.4. ШАБЛОН CONFIG.YAML  (минимальный рабочий)
+----------------------------------------------------------------------------
+
+  model:
+    provider: openrouter                # openrouter|anthropic|nous|openai|...
+    name: anthropic/claude-sonnet-4
+    api_key: ${OPENROUTER_API_KEY}      # подставляется из .env
+    context_length: 200000
+    temperature: 0.7
+
+  agent:
+    max_turns: 90
+    tool_use_enforcement: true
+
+  terminal:
+    backend: local
+    timeout: 180
+
+  memory:
+    memory_enabled: true
+    user_profile_enabled: true
+    provider: built-in                  # built-in|honcho|mem0|...
+
+  delegation:
+    max_concurrent_children: 3
+    max_spawn_depth: 1
+
+  gateway:
+    strict: false
+    media_delivery_allow_dirs:
+      - /root
+      - /tmp
+    platforms:
+      telegram:
+        enabled: true
+        home_chat_id: 505586502
+        allowed_users: [505586502]
+        pairing: true
+        poll_timeout: 30
+        request_timeout: 60
+      matrix:
+        enabled: true
+        homeserver: https://matrix.org
+        user_id: "@agent:matrix.org"
+        access_token: ${MATRIX_ACCESS_TOKEN}
+        home_room_id: "!xxx:matrix.org"
+        allowed_users: ["@user:matrix.org"]
+        device_id: "ABCDEFGHIJ"
+
+  platform_toolsets:
+    telegram: [web, terminal, file, skills, memory, cronjob, todo,
+               delegation, clarify, messaging, vision, image_gen, tts]
+    matrix:   [web, terminal, file, skills, memory, cronjob, todo,
+               delegation, clarify, messaging, vision, image_gen, tts]
+
+  display:
+    skin: default
+    show_reasoning: true
+    show_cost: true
+
+  security:
+    tirith_enabled: true
+    redact_secrets: true                 # НЕ выключать в проде
+    website_blocklist: []
+
+  approvals:
+    mode: smart                          # manual|smart|off
+
+  compression:
+    enabled: true
+    threshold: 0.50
+    target_ratio: 0.20
+
+----------------------------------------------------------------------------
+1.5. ШАБЛОН ENV-TEMPLATE.ENV  (только ИМЕНА, без значений)
+----------------------------------------------------------------------------
+
+  # Хранится в репо как ОБРАЗЕЦ, реальные значения в .env профиля
+  # === LLM-провайдеры ===
+  OPENROUTER_API_KEY=
+  ANTHROPIC_API_KEY=
+  OPENAI_API_KEY=
+  DEEPSEEK_API_KEY=
+  GOOGLE_API_KEY=
+  GEMINI_API_KEY=
+  XAI_API_KEY=
+  HF_TOKEN=
+  MINIMAX_API_KEY=
+  KIMI_API_KEY=
+  DASHSCOPE_API_KEY=
+
+  # === Голос ===
+  ELEVENLABS_API_KEY=
+  VOICE_TOOLS_OPENAI_KEY=
+  GROQ_API_KEY=
+  MISTRAL_API_KEY=
+
+  # === Мессенджеры ===
+  TELEGRAM_BOT_TOKEN=
+  MATRIX_HOMESERVER_URL=
+  MATRIX_USER_ID=
+  MATRIX_ACCESS_TOKEN=
+  MATRIX_DEVICE_ID=
+  MATRIX_ENCRYPTION_PASSWORD=
+  DISCORD_BOT_TOKEN=
+  SLACK_BOT_TOKEN=
+  SIGNAL_PHONE_NUMBER=
+
+  # === GitHub / VCS ===
+  GITHUB_TOKEN=
+  GH_TOKEN=
+
+  # === Прочее ===
+  COPILOT_GITHUB_TOKEN=
+  COPILOT_CLI_PATH=
+  TAVILY_API_KEY=
+
+----------------------------------------------------------------------------
+1.6. БЭКАП ПРОФИЛЯ
+----------------------------------------------------------------------------
+
+  # В один tar.gz (для переноса на другую машину или в облако)
+  hermes --profile researcher profile export researcher-$(date +%F).tar.gz
+
+  # Импорт обратно
+  hermes --profile work profile import researcher-2026-06-15.tar.gz
+
+  # Ручной архив (полный контроль, без вырезания секретов)
+  tar -czf /var/tmp/researcher-bak-$(date -u +%Y%m%dT%H%M%SZ).tar.gz \
+      -C $HOME/.hermes/profiles researcher
+
+----------------------------------------------------------------------------
+1.7. ПЕРЕИМЕНОВАНИЕ / УДАЛЕНИЕ / ИНФО
+----------------------------------------------------------------------------
+
+  hermes profile list              # список всех
+  hermes profile show researcher   # детально (путь, размер, когда создан)
+  hermes profile rename oldname newname
+  hermes profile delete researcher # удалить профиль и все его данные
+
+  # Если у профиля есть systemd-юнит gateway — сначала остановить:
+  systemctl --user stop hermes-gateway-researcher
+  systemctl --user disable hermes-gateway-researcher
+  hermes profile delete researcher
+
+----------------------------------------------------------------------------
+1.8. ИЗОЛЯЦИЯ — ЧТО ИМЕННО РАЗДЕЛЕНО
+----------------------------------------------------------------------------
+
+Полностью изолировано:
+  ✓ config.yaml         — свои настройки модели, toolsets, gateway
+  ✓ .env                — свои секреты
+  ✓ skills/             — свой набор скиллов (можно ставить/удалять
+                          независимо)
+  ✓ memories/           — своя память, не "перетекает" между профилями
+  ✓ sessions/state.db   — своя история сессий и FTS5-индекс
+  ✓ logs/               — свои логи
+  ✓ auth.json           — свои OAuth-токены и пулы
+  ✓ cron                — свои расписания
+  ✓ mcp                 — свои MCP-серверы
+  ✓ plugins/            — свои плагины
+  ✓ hermes-agent/       — можно держать разные версии кода
+
+Общее (НЕ изолировано):
+  ✗ Бинарь `hermes` (CLI) — один на машине
+  ✗ Установленные пакеты Python (venv) — общий
+  ✗ Системные лимиты (ulimit, диск, RAM) — общие
+
+----------------------------------------------------------------------------
+1.9. ПРОВЕРКА ПОСЛЕ СОЗДАНИЯ
+----------------------------------------------------------------------------
+
+  hermes --profile researcher doctor            # все подсистемы ✓
+  hermes --profile researcher skills list       # скиллы на месте
+  hermes --profile researcher config check      # конфиг валиден
+  hermes --profile researcher auth list         # учётки подхватились
+  hermes --profile researcher gateway status    # шлюз живой (если запущен)
+  hermes --profile researcher chat -q "/skills" # тестовый сеанс
+
+
+=============================================================================
+ЧАСТЬ 2.  AGENT PACKAGE  (бэкап/шаринг/перенос через Git)
+=============================================================================
+
+AGENT PACKAGE — это канонический каталог, который можно положить в Git
+и раздать кому угодно. Импортирующая сторона раскладывает его в свой
+~/.hermes/ по правилам merge-логики.
+
+----------------------------------------------------------------------------
+2.1. КАНОНИЧЕСКИЙ LAYOUT ПАКЕТА
+----------------------------------------------------------------------------
+
+  agents-backup/
+  ├── README.md                    # кто этот агент, как запустить
+  ├── VERSION                      # semver, например "1.2.3"
+  ├── .gitignore                   # исключает .env, *.bak, __pycache__
+  ├── env-template.env             # ИМЕНА переменных без значений
+  ├── skills/                      # скиллы пакета
+  │   ├── my-skill-1/SKILL.md
+  │   └── my-skill-2/SKILL.md
+  ├── memories/                    # блоки памяти (НЕ перезаписывать чужие!)
+  │   ├── memory.md
+  │   └── user.md
+  ├── config-snippets/             # merge-фрагменты для config.yaml
+  │   ├── model.yaml
+  │   ├── gateway.yaml
+  │   └── toolsets.yaml
+  ├── cron/                        # (опц.) описания задач для cron CLI
+  │   └── daily-briefing.yaml
+  ├── mcp/                         # (опц.) описания MCP-серверов
+  │   └── github-mcp.yaml
+  └── release/                     # (опц.) тарболы + sha256
+      ├── 1.2.3.tar.gz
+      └── 1.2.3.sha256
+
+----------------------------------------------------------------------------
+2.2. ПУБЛИКАЦИЯ ПАКЕТА (snapshot → git push)
+----------------------------------------------------------------------------
+
+# 1. Снять снапшот в scratch-каталог (НИКОГДА не править ~/.hermes/ in-place)
+cp -r ~/.hermes/skills        /tmp/agent-pkg/skills
+cp -r ~/.hermes/memories      /tmp/agent-pkg/memories
+# config.yaml целиком НЕ копируем — собираем фрагменты по секциям:
+mkdir -p /tmp/agent-pkg/config-snippets
+yq eval '.model'      ~/.hermes/config.yaml > /tmp/agent-pkg/config-snippets/model.yaml
+yq eval '.gateway'    ~/.hermes/config.yaml > /tmp/agent-pkg/config-snippets/gateway.yaml
+yq eval '.toolsets'   ~/.hermes/config.yaml > /tmp/agent-pkg/config-snippets/toolsets.yaml
+# Сгенерировать env-template (имена без значений)
+grep -oE '^[A-Z_][A-Z0-9_]+' ~/.hermes/.env | sort -u \
+    | sed 's/$/=/' > /tmp/agent-pkg/env-template.env
+# README, VERSION, .gitignore — вручную
+
+# 2. Инициализировать репо
+cd /tmp/agent-pkg
+git init -b main
+git add .
+git commit -m "agent package: initial snapshot"
+git remote add origin git@github.com:USER/agents-backup.git
+git tag v1.0.0
+git push -u origin main --tags
+
+# 3. Опц. — подписать тег + прикрепить tar.gz к GitHub Release
+gpg --sign v1.0.0
+tar -czf release/1.0.0.tar.gz -C /tmp agent-pkg
+sha256sum release/1.0.0.tar.gz > release/1.0.0.sha256
+
+----------------------------------------------------------------------------
+2.3. ИМПОРТ ПАКЕТА (на другой машине)
+----------------------------------------------------------------------------
+
+# 1. СНАПШОТ ТЕКУЩЕГО СОСТОЯНИЯ (ОБЯЗАТЕЛЬНО, иначе нельзя откатить!)
+TS=$(date -u +%Y%m%dT%H%M%SZ)
+systemctl --user stop hermes-gateway
+tar -czf /var/tmp/hermes-pre-import-$TS.tar.gz -C $HOME .hermes
+hermes --version                > /var/tmp/hermes-pre-import-$TS.ver
+hermes skills list              > /var/tmp/hermes-pre-import-$TS.skills
+systemctl --user start hermes-gateway
+
+# 2. Клонировать пакет в scratch
+git clone git@github.com:USER/agents-backup.git /tmp/repo
+cd /tmp/repo && git checkout v1.0.0      # ВСЕГДА на тег, не на main!
+
+# 3. Проверить на утечку секретов
+grep -rE '(API_KEY|SECRET|TOKEN|PASSWORD|BEGIN.*PRIVATE KEY)' . \
+  | grep -v env-template.env | grep -v README
+# Если что-то нашлось — СТОП. Автор упаковал секрет. Не импортировать.
+
+# 4. Импортировать скиллы (3 стратегии конфликтов)
+for skill_dir in repo/skills/*/; do
+  name=$(basename "$skill_dir")
+  if [ ! -d "$HOME/.hermes/skills/$name" ]; then
+    cp -r "$skill_dir" "$HOME/.hermes/skills/"  # нет конфликта
+  else
+    echo "Конфликт: $name уже есть. Стратегия:"
+    echo "  A) оставить локальный"
+    echo "  B) заменить, сохранив локальный как ${name}.local.bak"
+    echo "  C) положить рядом как ${name}.from-repo"
+    # B — безопасно для первого импорта; C — для итеративного
+  fi
+done
+
+# 5. Импортировать память (НИКОГДА не перезаписывать)
+cp -n repo/memories/*.md $HOME/.hermes/memories/ 2>/dev/null
+# Если файлы уже есть — копировать с суффиксом
+for f in repo/memories/*; do
+  name=$(basename "$f")
+  [ -f "$HOME/.hermes/memories/$name" ] && \
+    cp "$f" "$HOME/.hermes/memories/${name}.from-repo-$TS"
+done
+
+# 6. Смерджить config-snippets через yq
+yq eval-all 'select(fileIndex == 0) * select(fileIndex == 1)' \
+  $HOME/.hermes/config.yaml repo/config-snippets/model.yaml \
+  > /tmp/config.merged && mv /tmp/config.merged $HOME/.hermes/config.yaml
+# Повторить для gateway.yaml, toolsets.yaml
+
+# 7. Добавить переменные окружения (только отсутствующие)
+while IFS='=' read -r key _; do
+  grep -q "^$key=" $HOME/.hermes/.env || echo "$key=" >> $HOME/.hermes/.env
+done < repo/env-template.env
+# Вручную заполнить значения из своего vault
+
+# 8. Cron и MCP — НЕ файлами, а через CLI
+# (см. cron/mcp/* и перевести в hermes cron create / hermes mcp add)
+
+# 9. Валидация
+hermes config check
+hermes skills list
+hermes doctor
+hermes chat -q "/skills"
+
+----------------------------------------------------------------------------
+2.4. ОТКАТ (3 уровня, от лёгкого к тяжёлому)
+----------------------------------------------------------------------------
+
+# Уровень 1: откатить один скилл
+mv $HOME/.hermes/skills/foo.local.bak $HOME/.hermes/skills/foo
+# (если на импорте выбирали стратегию B)
+
+# Уровень 2: полный откат из снапшота
+systemctl --user stop hermes-gateway
+rm -rf $HOME/.hermes
+tar -xzf /var/tmp/hermes-pre-import-$TS.tar.gz -C $HOME
+systemctl --user start hermes-gateway
+hermes doctor
+
+# Уровень 3: escape valve — переустановить Hermes с нуля
+# (если снапшот тоже сломан)
+systemctl --user stop hermes-gateway
+rm -rf $HOME/.hermes
+curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash
+hermes setup
+# !!! ТЕРЯЕТСЯ всё, что не в снапшоте. Восстановить ключи из vault.
+
+
+=============================================================================
+ЧАСТЬ 3.  SPAWN  (запуск дочернего Hermes-процесса)
+=============================================================================
+
+Это НЕ про хранение данных, а про запуск ещё одного работающего Hermes,
+чтобы он делал что-то параллельно с текущим.
+
+----------------------------------------------------------------------------
+3.1. ОДНОРАЗОВЫЙ ЗАПУСК (без PTY, в фоне)
+----------------------------------------------------------------------------
+
+  # Простой fire-and-forget
+  terminal(command="hermes chat -q 'Сделай ресёрч по X и сохрани в ~/x.md'",
+           background=true, notify_on_complete=true)
+
+  # С другой моделью
+  terminal(command="hermes chat -q '...' --model anthropic/claude-sonnet-4")
+
+  # С предзагруженным скиллом
+  terminal(command="hermes chat -q '...' -s my-skill")
+
+  # В worktree-режиме (для кодовых задач, чтобы не конфликтовать с git)
+  terminal(command="hermes chat -q 'Рефакторни модуль X' --worktree")
+
+----------------------------------------------------------------------------
+3.2. ИНТЕРАКТИВНЫЙ ЗАПУСК (через tmux)
+----------------------------------------------------------------------------
+
+  # Создать сессию tmux с Hermes
+  tmux new-session -d -s agent1 -x 120 -y 40 'hermes'
+
+  # Подождать старт
+  sleep 8
+
+  # Отправить сообщение
+  tmux send-keys -t agent1 'Построй мне FastAPI-сервис' Enter
+
+  # Прочитать ответ
+  sleep 20 && tmux capture-pane -t agent1 -p | tail -50
+
+  # Отправить follow-up
+  tmux send-keys -t agent1 'Добавь rate limiting' Enter
+
+  # Закрыть
+  tmux send-keys -t agent1 '/exit' Enter
+  sleep 2 && tmux kill-session -t agent1
+
+----------------------------------------------------------------------------
+3.3. МУЛЬТИ-КООРДИНАЦИЯ  (несколько агентов параллельно)
+----------------------------------------------------------------------------
+
+  # Агент A: бэкенд
+  tmux new-session -d -s backend -x 120 -y 40 'hermes -w'
+
+  # Агент B: фронтенд
+  tmux new-session -d -s frontend -x 120 -y 40 'hermes -w'
+
+  # Координатор читает вывод одного и ретранслирует другому
+  tmux capture-pane -t backend -p | tail -30
+  tmux send-keys -t frontend 'API-схема от бэкенда: ...' Enter
+
+  # -w (--worktree) — изолированный git-worktree, чтобы они не конфликтовали
+
+----------------------------------------------------------------------------
+3.4. RESUME / CONTINUE
+----------------------------------------------------------------------------
+
+  # Продолжить последнюю сессию
+  hermes --continue
+  tmux new-session -d -s resumed 'hermes --continue'
+
+  # Продолжить конкретную сессию по ID
+  hermes --resume 20260225_143052_a1b2c3
+
+  # Список сессий
+  hermes sessions list
+  hermes sessions browse          # интерактивный TUI-выбор
+
+----------------------------------------------------------------------------
+3.5. КОГДА ЧТО ИСПОЛЬЗОВАТЬ
+----------------------------------------------------------------------------
+
+  delegate_task    — короткая задача (минуты), нужен reasoning,
+                     не нужно переживать за durability.
+                     Выполняется СИНХРОННО в текущем ходе.
+
+  spawn (hermes chat -q / tmux)
+                   — длительная задача (часы), полный набор тулзов,
+                     нужно сохранить сессию. Не блокирует текущий ход.
+
+  cronjob          — задача по расписанию, должна пережить перезагрузку,
+                     доставка результата в указанный канал.
+
+  profile          — изолированное долгосрочное хранилище контекста
+                     (свои скиллы, память, секреты).
+
+  agent package    — переносимый слепок для бэкапа/шаринга через Git.
+
+=============================================================================
+КОНТРОЛЬНЫЙ ЧЕК-ЛИСТ  (универсальный, для любого варианта)
+============================================================================
+
+  [ ] Определился, что именно создаю: profile / package / spawn
+  [ ] Если profile — выбрал стратегию (пустой / --clone / --clone-all)
+  [ ] Записал все нужные API-ключи в .env профиля
+  [ ] Если конфиг — отредактировал config.yaml через `hermes config edit`
+  [ ] Если gateway — настроил платформы через `hermes setup gateway`
+  [ ] Если скиллы — установил через `hermes skills install` / `hermes skills tap add`
+  [ ] Положил стартовую память в memories/
+  [ ] Если cron — создал через `hermes cron create`
+  [ ] Если MCP — `hermes mcp add`
+  [ ] Прогнал `hermes doctor` — все подсистемы ✓
+  [ ] Тестовый запуск: `hermes chat -q "/skills"`
+  [ ] Сделал бэкап профиля / пакета
+  [ ] Записал в README, как этим пользоваться (если для шаринга)
+
+
+=============================================================================
+PITFALLS  (типичные грабли)
+============================================================================
+
+1. CONFIG.YAML НЕ ПРАВИТСЯ ЧЕРЕЗ WRITE_FILE
+   Агентский write_file/patch ЗАБЛОКИРОВАН на ~/.hermes/config.yaml
+   ("security-sensitive configuration"). Редактировать ТОЛЬКО через:
+     - hermes config edit            (откроет в $EDITOR)
+     - hermes config set KEY VAL
+     - yq eval-all ... (для скриптов)
+   Это касается и вложенных путей вроде gateway.platforms.<pl>.
+
+2. CRON И MCP — НЕ ФАЙЛЫ, А SQLITE/REGISTRY
+   "cp cron/foo.yaml ~/.hermes/cron/" НИЧЕГО НЕ ДЕЛАЕТ.
+   Использовать ТОЛЬКО:
+     hermes cron create ...
+     hermes mcp add ...
+   Иначе задача не появится, а файл-пустышка будет мозолить глаза.
+
+3. .ENV — ИМЕНА В РЕПО, ЗНАЧЕНИЯ В ВАШЕМ ХРАНИЛИЩЕ
+   В Git-репо пакета класть ТОЛЬКО env-template.env (без значений).
+   Реальный .env с ключами — НИКОГДА не коммитить.
+   Перед импортом пакета: grep на API_KEY|SECRET|TOKEN — СТОП если нашлось.
+
+4. СЕКРЕТЫ РЕДАКТИРУЮТСЯ ТОЛЬКО ВРУЧНУЮ
+   Слой Hermes санитизирует прогоны из 3+ символов "*" в write_file,
+   terminal(), execute_code. Не пытаться передавать токены через
+   bash-кавычки — лучше сразу через файл с -H @file или через
+   env-переменные.
+
+5. КОНФЛИКТ СКИЛЛОВ — НЕ ТИХИЙ OVERWRITE
+   Никогда "cp -r repo/skills/* ~/.hermes/skills/" — это перезапишет
+   ваш локальный скилл с тем же именем. Всегда перебор с
+   детектором конфликта и явным выбором A/B/C.
+
+6. MEMORY.MD НЕЛЬЗЯ ДОПИСЫВАТЬ ЧЕРЕЗ cat >> ~/.hermes/memories/...
+   Этот путь заблокирован защитным gate. Использовать инструмент `memory`
+   или `patch` / `write_file` напрямую.
+
+7. /reload-skills — ЭТО СЛОШ-КОМАНДА В ЧАТЕ
+   Из CLI: /reload-skills. Из gateway: /restart.
+   Из shell: systemctl --user restart hermes-gateway.
+   Без перезапуска новые скиллы в текущей сессии НЕ ВИДНЫ.
+
+8. ВСЕГДА СНАПШОТ ПЕРЕД ИМПОРТОМ
+   tar -czf /var/tmp/hermes-pre-import-$TS.tar.gz -C $HOME .hermes
+   Без этого файла откатить импорт можно ТОЛЬКО escape-valve'ом
+   (полная переустановка с потерей локальных данных).
+
+9. HERMES_HOME И ПРОФИЛИ
+   Все пути в коде через get_hermes_home() (из hermes_constants).
+   Никогда не хардкодить ~/.hermes/ — иначе сломается при работе
+   с профилями и тестами.
+
+10. UTF-8 BOM ЛОМАЕТ CONFIG.YAML
+    Если редактировали config.yaml в Notepad на Windows, может
+    появиться UTF-8 BOM. Hermes упадёт с HTTP 400 "No models provided".
+    Решение: пересохранить без BOM. `hermes config edit` пишет без BOM.
+
+
+=============================================================================
+СПРАВОЧНИК КОМАНД  (шпаргалка)
+=============================================================================
+
+  УСТАНОВКА
+    curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash
+
+  БАЗОВОЕ
+    hermes                          # TUI-чат
+    hermes chat -q "вопрос"         # одноразовый режим
+    hermes doctor                   # проверка здоровья
+    hermes status                   # статус компонентов
+    hermes model                    # смена модели/провайдера
+    hermes setup                    # мастер настройки
+
+  КОНФИГ
+    hermes config                   # показать
+    hermes config edit              # открыть в $EDITOR
+    hermes config set KEY VAL       # точечно
+    hermes config check             # валидация
+    hermes config path              # путь к config.yaml
+    hermes config env-path          # путь к .env
+
+  ПРОФИЛИ
+    hermes profile list
+    hermes profile create NAME [--clone | --clone-all | --clone-from OTHER]
+    hermes profile use NAME
+    hermes profile show NAME
+    hermes profile rename A B
+    hermes profile export NAME FILE.tar.gz
+    hermes profile import FILE.tar.gz
+    hermes profile delete NAME
+
+  СКИЛЛЫ
+    hermes skills list
+    hermes skills install ID
+    hermes skills search QUERY
+    hermes skills publish PATH
+    hermes skills tap add REPO
+    hermes skills update
+    hermes skills check
+    /reload-skills                  # в чате
+
+  ПЛАТФОРМЫ (GATEWAY)
+    hermes gateway setup
+    hermes gateway run              # запуск в fg
+    hermes gateway install          # установить systemd-юнит
+    hermes gateway start|stop|restart|status
+    /restart                        # в gateway-сессии
+
+  CRON
+    hermes cron list
+    hermes cron create SCHED        # '30m' | 'every 2h' | '0 9 * * *'
+    hermes cron edit ID
+    hermes cron pause|resume ID
+    hermes cron run ID              # выполнить немедленно
+    hermes cron remove ID
+
+  MCP
+    hermes mcp list
+    hermes mcp add NAME --url ...   # или --command ...
+    hermes mcp remove NAME
+    hermes mcp test NAME
+    hermes mcp configure NAME
+
+  СЕССИИ
+    hermes sessions list
+    hermes sessions browse
+    hermes sessions export OUT.jsonl
+    hermes sessions rename ID TITLE
+    hermes sessions delete ID
+    hermes --resume ID
+    hermes --continue               # последняя
+
+  АВТОРИЗАЦИЯ
+    hermes auth
+    hermes auth add PROVIDER        # nous|openai-codex|qwen-oauth|...
+    hermes auth list
+    hermes auth remove PROVIDER [INDEX]
+
+  ОБНОВЛЕНИЕ
+    hermes update
+    hermes skills update
+    /update                         # в gateway-сессии
+
+
+=============================================================================
+ИСТОЧНИКИ
+=============================================================================
+
+  - Документация Hermes Agent:
+      https://hermes-agent.nousresearch.com/docs/
+  - Skills (загружены в этой сессии):
+      hermes-agent           — CLI, конфиг, шлюз, провайдеры
+      hermes-agent-vcs-portability  — agent packages, snapshot/import/rollback
+  - Сообщество / Issues:
+      https://github.com/NousResearch/hermes-agent
+
+=============================================================================
+КОНЕЦ ФАЙЛА
+=============================================================================

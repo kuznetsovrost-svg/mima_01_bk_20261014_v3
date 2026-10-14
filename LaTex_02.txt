@@ -1,0 +1,732 @@
+# LaTeX для формирования PDF: шаблоны, данные, финал
+Версия 02, 2026-07-08. Продолжение LaTex_DOCX.txt (v01) и LaTex_DOCX_02.txt (DOCX ↔ LaTeX).
+Здесь — от шаблона до готового PDF: полный конвейер, движки, таблицы, нумерация, автоматизация.
+
+## 1. Два движка — выбрать ДО начала
+
+| | pdfLaTeX | XeLaTeX | LuaLaTeX |
+|---|---|---|---|
+| Шрифты | только T1/Type1, system не видит | TTF/OTF напрямую через `fontspec` | TTF/OTF + программируемость через Lua |
+| Кириллица | babel с `russian` или `babel-russian` | polyglossia `default=cyrillic` или babel | polyglossia или babel |
+| Unicode | не полный | полный | полный |
+| Скорость | самый быстрый | медленнее из-за шрифтов | медленнее всех |
+| Микротипография | отличная | хуже | хуже |
+| Минусы | жёсткие шрифты, тяжело кириллица с системными | нужны `.otf/.ttf`, шрифт должен поддерживать кириллицу | нужны OTF, шрифт должен быть Unicode |
+
+**Рекомендация:**
+- Документы только латиницей или простой кириллицей → **pdfLaTeX** (быстрее, стабильнее, меньше сюрпризов).
+- Сложная кириллица, кавычки-ёлочки, ligatures, системные шрифты → **XeLaTeX** с `fontspec`.
+- Шаблон должен содержать кириллические тексты в шапке, типографике → **XeLaTeX**.
+
+> В современных дистрибутивах (TeX Live 2023+) все три движка идут одним пакетом `texlive-full`. На серверах mima_g_01 и хостах Hermes — выбирай исходя из языка и шрифтовых требований.
+
+## 2. Минимальный шаблон
+
+### 2.1. pdfLaTeX (простой, латиница)
+```latex
+\documentclass[12pt,a4paper]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[english,russian]{babel}
+\usepackage[a4paper,margin=2.5cm]{geometry}
+\usepackage{microtype}          % микротипография
+\usepackage{lmodern}            % шрифты Latin Modern
+\usepackage{graphicx}
+\usepackage{booktabs}           % \toprule \midrule \bottomrule
+\usepackage{longtable}          % таблицы длиннее страницы
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{hyperref}
+\hypersetup{
+  pdftitle={Отчёт за квартал},
+  pdfauthor={Rost},
+  colorlinks=true,
+  linkcolor=blue,
+  citecolor=teal,
+  urlcolor=magenta
+}
+\begin{document}
+% ...содержимое...
+\end{document}
+```
+
+### 2.2. XeLaTeX (системные шрифты, кириллица)
+```latex
+\documentclass[12pt,a4paper]{article}
+\usepackage{fontspec}
+\setmainfont{PT Serif}[Ligatures=TeX]            % или Liberation Serif, Fira Serif
+\setmonofont{Fira Mono}[Scale=0.9]
+\usepackage{polyglossia}
+\setdefaultlanguage{russian}
+\setotherlanguage{english}
+\usepackage[a4paper,margin=2.5cm]{geometry}
+\usepackage{microtype}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{hyperref}
+\begin{document}
+% ...содержимое...
+\end{document}
+```
+
+> С `babel` + `russian` (pdfLaTeX) переносы работают «из коробки». С `polyglossia` — переносы зависят от того, что знает выбранный шрифт.
+
+## 3. Шаблоны — три уровня сложности
+
+### 3.1. Уровень «Базовый» — два-три файла
+Структура:
+```
+project/
+├── main.tex             % документ
+├── chapters/
+│   ├── intro.tex
+│   ├── data.tex
+│   └── conclusion.tex
+└── images/
+```
+Подключение:
+```latex
+\input{chapters/intro}    % без \include
+% или
+\include{chapters/data}   % с \clearpage до/после
+```
+
+### 3.2. Уровень «Класс» — свой .cls
+Когда шаблон используется многократно (отчёты, дипломы, ТЗ, КП), выноси повторяющееся в `.cls`:
+```
+project/
+├── mycompany.cls         % класс
+├── main.tex              % 20-30 строк
+└── chapters/...
+```
+`mycompany.cls`:
+```latex
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesClass{mycompany}[2026/07/08 v1.0 MyCo Reports]
+\LoadClass[a4paper,12pt]{article}
+\RequirePackage[utf8]{inputenc}
+\RequirePackage[T1]{fontenc}
+\RequirePackage[english,russian]{babel}
+\RequirePackage[a4paper,margin=2.5cm]{geometry}
+% ... пакеты и настройки ...
+% Команды \mysection, \mytable, \mylogo и т.д.
+```
+`main.tex`:
+```latex
+\documentclass{mycompany}
+\mytitle{Отчёт Q2}
+\myauthor{Rost}
+\begin{document}
+% ...
+\end{document}
+```
+
+### 3.3. Уровень «Jinja2-шаблон» — для автогенерации из данных
+Когда один и тот же документ формируется программно (из Python, Go, Node), Jinja2 — стандарт де-факто.
+
+`template.tex.j2`:
+```latex
+\documentclass[12pt,a4paper]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[english,russian]{babel}
+\usepackage{booktabs}
+\usepackage{longtable}
+\title{ {{ report.title | latex_escape }} }
+\author{ {{ report.author | latex_escape }} }
+\begin{document}
+\maketitle
+\section{Сводка}
+{{ report.summary | latex_escape }}
+
+\section{Таблица результатов}
+\begin{longtable}{lrr}
+\toprule
+Метрика & Q1 & Q2 \\
+\midrule
+\endhead
+{% for row in report.rows %}
+{{ row.metric | latex_escape }} &
+{{ row.q1 | latex_escape }} &
+{{ row.q2 | latex_escape }} \\
+{% endfor %}
+\bottomrule
+\end{longtable}
+\end{document}
+```
+
+Генерация из Python:
+```python
+from jinja2 import Environment, FileSystemLoader
+env = Environment(
+    loader=FileSystemLoader('templates'),
+    autoescape=False,                 # выключить автоэскейп
+    trim_blocks=True,
+    lstrip_blocks=True
+)
+env.filters['latex_escape'] = lambda s: (
+    str(s).replace('\\', r'\textbackslash{}')
+           .replace('&', r'\&')
+           .replace('%', r'\%')
+           .replace('$', r'\$')
+           .replace('#', r'\#')
+           .replace('_', r'\_')
+           .replace('{', r'\{')
+           .replace('}', r'\}')
+           .replace('~', r'\textasciitilde{}')
+           .replace('^', r'\textasciicircum{}')
+)
+template = env.get_template('template.tex.j2')
+data = {
+    'report': {
+        'title': 'Отчёт за Q2 2026',
+        'author': 'Rost',
+        'summary': 'Рост выручки на 12%.',
+        'rows': [
+            {'metric': 'Выручка', 'q1': '12.4M', 'q2': '14.1M'},
+            {'metric': 'Маржа',   'q1': '32%',   'q2': '35%'},
+        ]
+    }
+}
+with open('main.tex', 'w', encoding='utf-8') as f:
+    f.write(template.render(data))
+```
+
+## 4. Таблицы — все варианты
+
+### 4.1. `tabular` — основной пакет
+```latex
+\begin{tabular}{|l|c|r|}
+\hline
+Лево & Центр & Право \\ \hline
+a & b & c \\
+d & e & f \\ \hline
+\end{tabular}
+```
+Вертикальные разделители `|` — антипаттерн в профессиональной вёрстке. Используй `booktabs`.
+
+### 4.2. `booktabs` — профессиональные правила
+```latex
+\begin{tabular}{lrr}
+\toprule
+Показатель & 2024 & 2025 \\
+\midrule
+Выручка & 12.4M & 14.1M \\
+Маржа & 32\% & 35\% \\
+\bottomrule
+\end{tabular}
+```
+
+### 4.3. `tabularx` — автоподбор ширины колонок
+```latex
+\begin{tabularx}{\textwidth}{Xrr}
+\toprule
+Длинный заголовок, требующий переноса & Q1 & Q2 \\
+\midrule
+Конверсия в покупку & 4.2\% & 4.8\% \\
+Средний чек, ₽ & 1240 & 1310 \\
+\bottomrule
+\end{tabularx}
+```
+`X` — колонка, которая растягивается/сжимается до заполнения ширины.
+
+### 4.4. `longtable` — таблицы длиннее страницы
+```latex
+\begin{longtable}{lrrr}
+\caption{Длинная таблица помесячно} \label{tab:long} \\
+\toprule
+Месяц & 2023 & 2024 & 2025 \\
+\midrule
+\endfirsthead
+\multicolumn{4}{c}{\textit{Продолжение на след. стр.}} \\
+\toprule
+Месяц & 2023 & 2024 & 2025 \\
+\midrule
+\endhead
+\midrule \multicolumn{4}{r}{\textit{Продолжение следует}} \\
+\endfoot
+\bottomrule
+\endlastfoot
+Январь & 1.1 & 1.3 & 1.5 \\
+Февраль & 1.0 & 1.2 & 1.4 \\
+% ... ещё 50 строк ...
+\end{longtable}
+```
+
+### 4.5. `siunitx` — числа с единицами (S-колонка)
+```latex
+\usepackage{siunitx}
+\sisetup{output-decimal-marker={,}}
+\begin{tabular}{lS[table-format=2.1]S[table-format=3.1]}
+\toprule
+Показатель & {2024, млн} & {2025, млн} \\
+\midrule
+Выручка & 12.4 & 14.1 \\
+Прибыль & 3.2 & 4.1 \\
+\bottomrule
+\end{tabular}
+```
+Преимущества: выравнивание по десятичной запятой, единицы измерения в шапке, разделители тысяч.
+
+### 4.6. `multirow` + `booktabs` — объединение ячеек
+```latex
+\usepackage{multirow}
+\begin{tabular}{lrr}
+\toprule
+\multirow{2}{*}{Регион} & \multicolumn{2}{c}{Год} \\
+\cmidrule(lr){2-3}
+ & 2024 & 2025 \\
+\midrule
+Москва & 5.2 & 5.8 \\
+СПб & 2.1 & 2.3 \\
+\bottomrule
+\end{tabular}
+```
+
+### 4.7. `pgfplotstable` — таблицы из CSV
+```latex
+\usepackage{pgfplotstable}
+\pgfplotstabletypeset[
+  col sep=comma,
+  header=true,
+  columns/Метрика/.style={string type},
+  columns/Q1/.style={fixed, fixed zerofill, precision=1, column type=r},
+  columns/Q2/.style={fixed, fixed zerofill, precision=1, column type=r},
+  every head row/.style={before row=\toprule, after row=\midrule},
+  every last row/.style={after row=\bottomrule}
+]{data.csv}
+```
+`data.csv`:
+```csv
+Метрика,Q1,Q2
+Выручка,12.4,14.1
+Маржа,32.0,35.0
+```
+
+### 4.8. Цветные таблицы
+```latex
+\usepackage[table]{xcolor}
+\rowcolors{2}{gray!10}{white}
+\begin{tabular}{lrr}
+\toprule
+Показатель & Q1 & Q2 \\
+\midrule
+Выручка & 12.4 & 14.1 \\
+Маржа & 32\% & 35\% \\
+\bottomrule
+\end{tabular}
+```
+
+## 5. Нумерация — главы, секции, формулы, таблицы, рисунки, списки
+
+### 5.1. Главы и секции
+LaTeX нумерует автоматически:
+```latex
+\chapter{Введение}             % только в report/book
+\section{Постановка задачи}
+\subsection{Определения}
+\subsubsection{Обозначения}
+\paragraph{Замечание}            % не номеруется по умолчанию
+```
+
+### 5.2. Глубина нумерации
+```latex
+\setcounter{secnumdepth}{3}     % нумеровать до \subsubsection
+\setcounter{tocdepth}{3}        % включать в оглавление до \subsubsection
+```
+
+### 5.3. Таблицы и рисунки
+```latex
+\begin{table}[h]
+\centering
+\caption{Сводка по регионам}
+\label{tab:regions}
+\begin{tabular}{lrr}
+\toprule
+Регион & Q1 & Q2 \\
+\midrule
+Москва & 5.2 & 5.8 \\
+СПб & 2.1 & 2.3 \\
+\bottomrule
+\end{tabular}
+\end{table}
+```
+Ссылка в тексте: `см. табл.~\ref{tab:regions} на стр.~\pageref{tab:regions}`.
+
+Подписи на русском: `\usepackage[labelsep=period]{caption}` плюс `captionsetup[table]{name=Таблица}`, `captionsetup[figure]{name=Рисунок}`.
+
+### 5.4. Списки с собственной нумерацией
+```latex
+\usepackage{enumitem}
+\begin{enumerate}[label=\textbf{\arabic*.}, leftmargin=*]
+\item Первый
+\item Второй
+\end{enumerate}
+
+% Продолжение нумерации после разрыва
+\begin{enumerate}[resume]
+\item Третий (продолжает счёт с трёх)
+\end{enumerate}
+```
+
+### 5.5. Формулы с подписями
+```latex
+\begin{equation}
+  \label{eq:revenue}
+  R = P \cdot Q
+\end{equation}
+% В тексте: формула~\eqref{eq:revenue}
+```
+
+### 5.6. Перекрёстные ссылки — `cleveref`
+```latex
+\usepackage{cleveref}
+\crefname{table}{таблица}{таблицы}
+\Crefname{table}{Таблица}{Таблицы}
+% В тексте: \Cref{tab:regions} на стр.~\pageref{tab:regions}
+%         или \cref{tab:regions,fig:graph}
+```
+
+### 5.7. Переопределение формата номера
+```latex
+\renewcommand{\thesection}{\Roman{section}}        % I, II, III
+\renewcommand{\thesubsection}{\thesection.\arabic{subsection}}  % 1.1, 1.2
+\renewcommand{\thetable}{\arabic{table}}            % без главы
+```
+
+### 5.8. Перенумерация с произвольного номера
+```latex
+\setcounter{section}{5}    % следующая секция будет 6
+\setcounter{table}{10}     % следующая таблица будет 11
+```
+
+## 6. Заполнение шаблона данными — 4 подхода
+
+### 6.1. Подход 1: ручной — переменные в преамбуле
+```latex
+\newcommand{\reporttitle}{Отчёт Q2}
+\newcommand{\reportdate}{2026-07-08}
+\newcommand{\authorname}{Rost}
+\title{\reporttitle}
+\author{\authorname}
+\date{\reportdate}
+```
+Минус: нужно править `.tex` руками. Плюс: видно весь документ, легко отлаживать.
+
+### 6.2. Подход 2: `datatool` + CSV
+```latex
+\usepackage{datatool}
+\DTLloaddb{regions}{data.csv}
+% В таблице:
+\DTLforeach{regions}{\name=Name, q1=Q1, q2=Q2}{
+  \name & \q1 & \q2 \\
+}
+```
+Плюс: разделение данных и шаблона. Минус: ограниченная логика (нет условий, циклов сложной структуры).
+
+### 6.3. Подход 3: Jinja2 → `.tex` → pdfLaTeX/XeLaTeX
+(пример в разделе 3.3) — лучший баланс между мощностью и сложностью.
+
+### 6.4. Подход 4: Pandoc — Markdown → PDF
+```bash
+pandoc report.md -o report.pdf \
+  --pdf-engine=xelatex \
+  --variable=geometry:margin=2.5cm \
+  --variable=mainfont="PT Serif" \
+  --variable=monofont="Fira Mono" \
+  --variable=lang=russian \
+  --highlight-style=tango \
+  --number-sections \
+  --toc
+```
+Плюс: markdown знаком, фронт-энд быстрый. Минус: точный контроль за вёрсткой ограничен.
+
+## 7. Полный конвейер «данные → PDF» на Python
+
+`build.py`:
+```python
+#!/usr/bin/env python3
+"""Конвейер: данные → Jinja2 → .tex → PDF"""
+import subprocess
+import sys
+from pathlib import Path
+from jinja2 import Environment, FileSystemLoader
+
+def render_template(data: dict) -> str:
+    env = Environment(
+        loader=FileSystemLoader('templates'),
+        autoescape=False,
+        trim_blocks=True,
+        lstrip_blocks=True
+    )
+    env.filters['latex_escape'] = latex_escape
+    return env.get_template('report.tex.j2').render(**data)
+
+def latex_escape(s) -> str:
+    if s is None: return ''
+    s = str(s)
+    return (s.replace('\\', r'\textbackslash{}')
+             .replace('&', r'\&')
+             .replace('%', r'\%')
+             .replace('$', r'\$')
+             .replace('#', r'\#')
+             .replace('_', r'\_')
+             .replace('{', r'\{')
+             .replace('}', r'\}')
+             .replace('~', r'\textasciitilde{}')
+             .replace('^', r'\textasciicircum{}'))
+
+def compile_pdf(tex_path: Path, engine: str = 'xelatex') -> Path:
+    """Двухпроходная компиляция: оглавление + перекрёстные ссылки."""
+    for _ in range(2):
+        result = subprocess.run(
+            [engine, '-interaction=nonstopmode', '-halt-on-error', tex_path.name],
+            cwd=tex_path.parent,
+            capture_output=True,
+            text=True
+        )
+        if result.returncode != 0:
+            print(result.stdout[-2000:])
+            print(result.stderr[-2000:])
+            sys.exit(f'LaTeX failed: exit code {result.returncode}')
+    return tex_path.with_suffix('.pdf')
+
+def main():
+    data = {
+        'title': 'Отчёт Q2 2026',
+        'author': 'Rost',
+        'date': '2026-07-08',
+        'rows': [
+            {'metric': 'Выручка', 'q1': '12.4M', 'q2': '14.1M'},
+            {'metric': 'Маржа',   'q1': '32%',   'q2': '35%'},
+        ]
+    }
+    tex = render_template(data)
+    out = Path('build/main.tex')
+    out.parent.mkdir(exist_ok=True)
+    out.write_text(tex, encoding='utf-8')
+    pdf = compile_pdf(out)
+    print(f'Готово: {pdf}')
+
+if __name__ == '__main__':
+    main()
+```
+
+## 8. Полный конвейер на Make
+
+`Makefile`:
+```makefile
+ENGINE ?= xelatex
+JOBS   ?= 1
+SRC    := report
+BUILD  := build
+
+.PHONY: all clean view
+
+all: $(BUILD)/$(SRC).pdf
+
+$(BUILD)/$(SRC).pdf: $(SRC).tex $(BUILD) $(wildcard chapters/*.tex)
+	@echo ">>> Pass 1: $(ENGINE)"
+	$(ENGINE) -interaction=nonstopmode -output-directory=$(BUILD) $(SRC).tex
+	@echo ">>> Pass 2: $(ENGINE)"
+	$(ENGINE) -interaction=nonstopmode -output-directory=$(BUILD) $(SRC).tex
+
+$(BUILD):
+	mkdir -p $(BUILD)
+
+view: $(BUILD)/$(SRC).pdf
+	xdg-open $(BUILD)/$(SRC).pdf  # Linux
+	# open $(BUILD)/$(SRC).pdf    # macOS
+
+clean:
+	rm -rf $(BUILD)
+```
+Вызов:
+```bash
+make                 # собрать PDF
+make ENGINE=pdflatex # собрать pdfLaTeX
+make view            # открыть в системном просмотрщике
+make clean           # удалить build/
+```
+
+## 9. Работа с кириллицей и типографикой
+
+### 9.1. Кавычки-ёлочки
+pdfLaTeX + babel + babel-russian: кавычки ``...''` и `<<...>>` уже работают (активные символы).
+XeLaTeX + polyglossia: работает только если в шрифте есть U+00AB/U+00BB.
+
+### 9.2. Тире
+- короткое тире (en-dash, –): `--`
+- длинное тире (em-dash, —): `---`
+- минус: `$-1$` или `−` (U+2212, нужен Unicode-движок)
+
+### 9.3. Многоточие
+`\ldots{}` или `…` (U+2026, только в XeLaTeX).
+
+### 9.4. Неразрывные пробелы
+`~` в обычном тексте: `стр.~\pageref{...}` (тонкий неразрывный пробел между «стр.» и числом).
+
+### 9.5. Переносы
+- pdfLaTeX: `babel` + `russian` — переносы работают.
+- XeLaTeX: `\usepackage{polyglossia}` + шрифт с поддержкой кириллицы — переносы работают, но **только если в шрифте есть U+00AD (soft hyphen) или языкозависимые правила для OTF** (через `babel-russian`).
+- Ручной перенос: `сло\-во` в исходнике.
+
+## 10. Графика и обтекание текстом
+
+```latex
+\usepackage{graphicx}
+\begin{figure}[h]
+  \centering
+  \includegraphics[width=0.8\textwidth]{images/architecture.pdf}
+  \caption{Архитектура системы}
+  \label{fig:arch}
+\end{figure}
+```
+
+Обтекание рисунка текстом (`wrapfig`):
+```latex
+\usepackage{wrapfig}
+\begin{wrapfigure}{l}{0.4\textwidth}
+  \centering
+  \includegraphics[width=0.38\textwidth]{chart.png}
+  \caption{Динамика выручки}
+\end{wrapfigure}
+Текст, который обтекает рисунок справа. Может быть несколько абзацев. В конце —
+\textnormal{обтекание прекращается автоматически, как только текста хватит
+чтобы «обойти» рисунок.}
+```
+
+## 11. Оглавление, индекс, глоссарий
+
+```latex
+\usepackage{tocbibind}      % включить список таблиц/рисунков в ToC
+\usepackage{titletoc}        % кастомные оглавления
+\setcounter{tocdepth}{2}
+\tableofcontents
+\listoffigures
+\listoftables
+
+\usepackage{makeidx}         % предметный указатель
+\makeindex
+% В тексте: \index{термин}
+% В конце: \printindex
+
+\usepackage{glossaries}
+\makeglossaries
+\newglossaryentry{api}{name=API,description={Application Programming Interface}}
+% В тексте: \gls{api}
+% В конце: \printglossaries
+```
+
+## 12. Диагностика и исправление ошибок
+
+### 12.1. Лог-файл `.log`
+`main.log` — главный источник диагностики. Поиск по слову `!` — строки с ошибками.
+
+### 12.2. Типичные ошибки
+
+| Ошибка | Причина | Решение |
+|---|---|---|
+| `Undefined control sequence` | Использован `\foo{}` без `\newcommand` | Определить команду или импортировать пакет |
+| `Missing $ inserted` | `_` или `^` в тексте без escape | `\_`, `\^` или `\$x_i$` |
+| `Overfull \hbox` | Строка не помещается | `\sloppy` или `\\` ручной перенос или `microtype` |
+| `File not found` | Путь к файлу/изображению | Абсолютный путь или проверить, что `images/foo.png` есть |
+| `Runaway argument` | Незакрытая фигурная скобка | Поиск парных `{ }` в исходнике |
+| `Encoding` проблемы | `inputenc` не загружен или не utf8 | `\usepackage[utf8]{inputenc}` |
+
+### 12.3. Просмотр PDF с синхронизацией
+```bash
+# Сборка с synctex для прямого перехода из PDF в исходник
+pdflatex -synctex=1 main.tex
+# В Okular/zathura: Ctrl+Click по PDF → переход в исходник
+```
+
+## 13. Автоматизация — 3 готовых сценария
+
+### 13.1. Ежедневный отчёт (cron)
+```bash
+# /etc/cron.daily/build-reports
+cd /opt/reports && /usr/bin/python3 build.py
+find build -name '*.pdf' -mtime -1 -exec \
+  curl -s -F "document=@{}" "https://api.telegram.org/bot${TG_TOKEN}/sendDocument?chat_id=${TG_CHAT_ID}" \;
+```
+
+### 13.2. Веб-сервис (Flask)
+```python
+from flask import Flask, request, send_file
+import subprocess, tempfile, os
+app = Flask(__name__)
+
+@app.route('/render', methods=['POST'])
+def render():
+    data = request.json
+    with tempfile.TemporaryDirectory() as d:
+        tex_path = os.path.join(d, 'doc.tex')
+        with open(tex_path, 'w', encoding='utf-8') as f:
+            f.write(render_template(data))
+        subprocess.run(['xelatex', '-interaction=nonstopmode', '-halt-on-error',
+                        '-output-directory', d, tex_path], check=True)
+        return send_file(os.path.join(d, 'doc.pdf'), as_attachment=True)
+```
+
+### 13.3. Serverless (AWS Lambda + Docker)
+Dockerfile:
+```dockerfile
+FROM texlive/texlive:latest
+COPY build.py template.tex.j2 /app/
+WORKDIR /app
+ENTRYPOINT ["python3", "build.py"]
+```
+Размер образа ~3 ГБ, но собирается моментально.
+
+## 14. Производительность — как ускорить
+
+| Действие | Эффект |
+|---|---|
+| `latexmk -pdf -interaction=nonstopmode main.tex` | Один проход вместо двух-трёх |
+| `\includeonly{chapters/current}` | Компилировать только текущую главу |
+| Убрать неиспользуемые пакеты | Каждый пакет — 50-200ms на загрузку |
+| `tikzexternalize` | Тяжёлые TikZ-рисунки → отдельные PDF, кэшируются |
+| LuaLaTeX с `luatexja-fontspec` (если нужна японская) | Без преимущества для кириллицы |
+| Прекомпилированный формат (`fmt`) | LaTeX сам кэширует формат, обычно не нужно трогать |
+
+## 15. Совместимость — что выбрать в 2026
+
+- **TeX Live 2025+** — стабильный, все пакеты свежие.
+- **`texlive-full`** — ~6 ГБ, содержит всё. Для сервера избыточно; достаточно `texlive-latex-extra` + `texlive-fonts-recommended` + `texlive-lang-cyrillic` + `texlive-xetex`.
+- **Pandoc 3.x** — для интеграции markdown/MediaWiki/Org-mode.
+- **Docker `texlive/texlive:latest`** — воспроизводимая среда, не зависит от состояния системы.
+
+## 16. Итоговая рекомендация
+
+1. **Базовый стек:** TeX Live 2025+, шаблон `.tex` с `booktabs + longtable + siunitx + hyperref + cleveref + microtype`, движок pdfLaTeX для простых случаев и XeLaTeX для кириллицы/системных шрифтов.
+2. **Автогенерация:** Jinja2 + Python-конвейер с эскейпингом LaTeX-спецсимволов.
+3. **Сборка:** `latexmk` для авто-проходов или Makefile.
+4. **Распространение:** `texlive/texlive` Docker-образ.
+5. **Диагностика:** `.log` + Overleaf (онлайн, если локально что-то непонятно).
+
+## 17. Чек-лист перед компиляцией
+
+- [ ] Все используемые пакеты импортированы в преамбуле
+- [ ] Все рисунки существуют по указанным путям
+- [ ] Все `\ref{}` указывают на существующие `\label{}`
+- [ ] Все `\cite{}` имеют соответствующие записи в `.bib`
+- [ ] Двух-проходная компиляция (если есть оглавление/перекрёстные ссылки)
+- [ ] `~` между короткими словами и числами/единицами
+- [ ] Кавычки ` `` ... '' ` для английского, `<<...>>` для русского (или наоборот)
+- [ ] Шрифт (если XeLaTeX) поддерживает кириллицу и имеет U+00AB/U+00BB
+- [ ] Лог чист: нет `! Error`, `Overfull \hbox` (для журнальной версии)
+- [ ] PDF просмотрен: оглавление, перекрёстные ссылки, переносы работают
+
+## 18. См. также
+- `LaTex_DOCX.txt` (v01) — LaTeX → DOCX через Pandoc
+- `LaTex_DOCX_02.txt` (v02) — DOCX → LaTeX, шаблонизация
+- Overleaf docs: https://www.overleaf.com/learn
+- `texdoc booktabs`, `texdoc siunitx`, `texdoc cleveref` — официальные доки пакетов
+- «The LaTeX Companion» (Mittelbach, Goossens, 2004) — библия LaTeX'а
+
+---
+Конец файла LaTex_02.txt.

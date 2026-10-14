@@ -1,0 +1,650 @@
+# Типовые .MD файлы Hermes Agent — сводный гайд
+## Что, где, когда, с примерами и сводной таблицей
+
+────────────────────────────────────────────────────────────────────────────
+0. КОРОТКО
+────────────────────────────────────────────────────────────────────────────
+
+В Hermes используются **8 основных .MD файлов**, которые агент
+реально читает (через `build_context_files_prompt()`,
+`load_soul_md()`, и `rglob("SKILL.md")`). Все остальные .md —
+обычные репо-файлы, которые тоже читаются, но не «триггерят»
+Hermes специальным образом.
+
+Этот гайд — сводка по **Hermes-специфичным** .MD: что каждый из
+них хранит, где лежит, когда использовать, как заполнять.
+
+────────────────────────────────────────────────────────────────────────────
+1. СВОДНАЯ ТАБЛИЦА
+────────────────────────────────────────────────────────────────────────────
+
+  ┌────────────────┬─────────────────────────────────────────────────────────┐
+  │ Файл           │ Краткая характеристика                                 │
+  ├────────────────┼─────────────────────────────────────────────────────────┤
+  │ SOUL.md        │ Личность агента: тон, стиль, identity. Подмешивается   │
+  │                │ в slot #1 system prompt (identity).                    │
+  ├────────────────┼─────────────────────────────────────────────────────────┤
+  │ MEMORY.md      │ Долговременная память: факты о мире, инфраструктуре,   │
+  │                │ конвенциях. Авто-дополняется моделью.                   │
+  ├────────────────┼─────────────────────────────────────────────────────────┤
+  │ USER.md        │ Профиль пользователя: имя, предпочтения, сенситивы.    │
+  │                │ То, что важно знать про человека.                      │
+  ├────────────────┼─────────────────────────────────────────────────────────┤
+  │ AGENTS.md      │ Проектный контекст: архитектура, conventions, деплои,   │
+  │                │ risks. Загружается из cwd или --workspace-target.      │
+  ├────────────────┼─────────────────────────────────────────────────────────┤
+  │ CLAUDE.md      │ Альтернативное имя для AGENTS.md (для совместимости с   │
+  │                │ Claude Code). Используется в той же priority-цепочке.   │
+  ├────────────────┼─────────────────────────────────────────────────────────┤
+  │ .cursorrules   │ Cursor-формат правил. Тот же приоритет, что и          │
+  │                │ AGENTS.md (приоритет-цепочка, first match wins).       │
+  ├────────────────┼─────────────────────────────────────────────────────────┤
+  │ .hermes.md     │ Hermes-специфичное имя для AGENTS.md. Эквивалент.      │
+  ├────────────────┼─────────────────────────────────────────────────────────┤
+  │ SKILL.md       │ Описание навыка: YAML frontmatter + body. ОБЯЗАТЕЛЬНО   │
+  │                │ в каждом skills/<name>/ каталоге. Триггер-загрузки —    │
+  │                │ поле description.                                       │
+  ├────────────────┼─────────────────────────────────────────────────────────┤
+  │ TODO.md        │ (опц.) Список задач для claw-окружения. Используется  │
+  │                │ для sandbox-режимов.                                     │
+  ├────────────────┼─────────────────────────────────────────────────────────┤
+  │ README.md      │ Стандартный репо-файл. Hermes его НЕ подгружает        │
+  │                │ автоматически, но читает через read_file, если указать. │
+  ├────────────────┼─────────────────────────────────────────────────────────┤
+  │ CHANGELOG.md   │ История версий. Не auto-load, но часто упоминается     │
+  │                │ в /hermes doctor и при обновлениях.                     │
+  └────────────────┴─────────────────────────────────────────────────────────┘
+
+────────────────────────────────────────────────────────────────────────────
+2. PRIORITY-ЦЕПОЧКА ЗАГРУЗКИ (ОЧЕНЬ ВАЖНО)
+────────────────────────────────────────────────────────────────────────────
+
+Из `tips.py:219`:
+
+> Hermes loads project context from `.hermes.md, AGENTS.md, CLAUDE.md,
+> or .cursorrules (first match).
+
+То есть **первый найденный файл** грузится, остальные игнорируются
+в рамках одного каталога. Цепочка по умолчанию:
+
+  .hermes.md  →  AGENTS.md  →  CLAUDE.md  →  .cursorrules  →  SOUL.md
+
+Из `environment-variables.md:720`:
+
+> `HERMES_MD_NAMES` — Comma-separated list of rules-file names to
+> auto-inject (default: `AGENTS.md,CLAUDE.md,.cursorrules,SOUL.md`).
+
+Можно переопределить через переменную окружения `HERMES_MD_NAMES`.
+
+────────────────────────────────────────────────────────────────────────────
+3. SOUL.MD — ЛИЧНОСТЬ АГЕНТА
+────────────────────────────────────────────────────────────────────────────
+
+3.1. Что это.
+   **Identity-файл**. Подмешивается в slot #1 system prompt
+   (см. `prompt_builder.py`). Заменяет дефолтную
+   `DEFAULT_AGENT_IDENTITY`.
+
+3.2. Где лежит.
+   `~/.hermes/profiles/<profile>/SOUL.md`
+
+   Для default: `~/.hermes/SOUL.md`
+
+3.3. Когда использовать.
+   - Хотите изменить **тон** общения (формальный/неформальный).
+   - Хотите задать **роль** агента (senior dev / teacher / reviewer).
+   - Хотите **специфический стиль** ответов (без эмодзи, без
+     канцелярита, конкретные формулировки).
+   - Универсально для всех задач в этом профиле.
+
+3.4. Когда НЕ использовать.
+   - Не дублируйте сюда project-specific инструкции (→ AGENTS.md).
+   - Не кладите секреты.
+   - Не кладите runtime-факты (→ MEMORY.md).
+
+3.5. Пример SOUL.md.
+
+```
+# Personality
+
+You are a pragmatic senior engineer with strong taste.
+You optimize for truth, clarity, and usefulness over politeness theater.
+
+## Style
+- Be direct without being cold.
+- Prefer substance over filler.
+- Push back when something is a bad idea.
+- Admit uncertainty plainly.
+- Keep explanations compact unless depth is useful.
+
+## What to avoid
+- Sycophancy.
+- Hype language.
+- Repeating the user's framing if it's wrong.
+- Overexplaining obvious things.
+
+## Technical posture
+- Prefer simple systems over clever systems.
+- Care about operational reality, not idealized architecture.
+- Treat edge cases as part of the design, not cleanup.
+
+## Language
+- Russian for casual chat, English for technical terms.
+- No emoji as decoration. Severity markers (🚨⚠️✅) are OK.
+
+## Defaults
+- Length: 2-4 paragraphs for short answers, longer if depth needed.
+- Show code in fenced blocks.
+- When uncertain, ask before assuming.
+```
+
+3.6. Размер.
+   Идеал: 1-4 КБ. Hard cap: 20 000 символов (smart head/tail
+   truncation).
+
+────────────────────────────────────────────────────────────────────────────
+4. MEMORY.MD — ДОЛГОВРЕМЕННАЯ ПАМЯТЬ
+────────────────────────────────────────────────────────────────────────────
+
+4.1. Что это.
+   **Факты о мире**. Авто-дополняется моделью через `memory` tool.
+   Агент может сам дописать «помни, что X».
+
+4.2. Где лежит.
+   `~/.hermes/profiles/<profile>/memories/MEMORY.md`
+
+4.3. Когда использовать.
+   - Инфраструктурные факты («IP = 72.56.29.69, hostname = mima-g-01»).
+   - Конвенции, принятые в работе.
+   - «Хитрости», которые работают и не очевидны.
+   - Контекст сервера, проектов, пользователей.
+
+4.4. Когда НЕ использовать.
+   - Не кладите сюда персональные данные (→ USER.md).
+   - Не кладите секреты (→ .env).
+   - Не кладите проекты (→ AGENTS.md).
+
+4.5. Пример MEMORY.md.
+
+```
+# Memory (project: mi_mg_01)
+
+## Server (mima-g-01)
+- IP: 72.56.29.69.
+- SSH: `ssh mima-g-01` (alias in ~/.ssh/config).
+- Always use `XDG_RUNTIME_DIR=/run/user/0` for `systemctl --user`
+  over SSH.
+
+## Bash quoting
+- Hermes sanitizes tokens (3+ `*`-runs) into literal `***` in
+  `write_file`/`terminal`/`execute_code`. Workaround: split
+  `Authorization`/`-H @file`/Python-req. Skill `messaging-gateway-setup`
+  has details.
+
+## Conventions
+- Telegram: home is 505586502, bot is @MMRV_Hermes_bot.
+- GitHub: kuznetsovrost-svg (SSH-authed).
+- Matrix: !OwBtrzzKTGFSNSmvQU:msg.lab.aidemo.adaptivepm.ru.
+```
+
+────────────────────────────────────────────────────────────────────────────
+5. USER.MD — ПРОФИЛЬ ПОЛЬЗОВАТЕЛЯ
+────────────────────────────────────────────────────────────────────────────
+
+5.1. Что это.
+   **Факты о человеке**. Создаётся автоматически при первом
+   упоминании пользователя.
+
+5.2. Где лежит.
+   `~/.hermes/profiles/<profile>/memories/USER.md`
+
+5.3. Когда использовать.
+   - Имя, часовой пояс, предпочтения языка.
+   - Что нельзя упоминать (sensitives).
+   - Какой стиль общения предпочитает.
+   - Профессиональный контекст (роль, опыт).
+
+5.4. Когда НЕ использовать.
+   - Не сюда профиль агента (→ SOUL.md).
+   - Не сюда инфраструктуру (→ MEMORY.md).
+
+5.5. Пример USER.md.
+
+```
+# User Profile: Rost
+
+## Identity
+- Name: Rost.
+- Telegram user id: 505586502.
+- GitHub: kuznetsovrost-svg.
+- Email: kuznetsov.rost@gmail.com.
+- Timezone: Europe/Moscow.
+
+## Preferences
+- Language: Russian for chat, English for technical terms.
+- Tone: direct, no small talk, no sycophancy.
+- Style: short answers preferred, length only when depth needed.
+- Format: avoid markdown tables in Telegram (not rendered).
+
+## Sensitivities
+- Never print tokens (replace with `***` if accidentally appears).
+- Never print `/etc/shadow` content.
+- Avoid `apt upgrade` without explicit confirmation.
+
+## Workflow
+- Asks with `@hermes` prefix to invoke the agent.
+- Prefers concrete, numbered options (1/2/3) over open questions.
+- Asks me to write detailed guides to files like `<Тема>_NN.txt`
+  and send them as Telegram attachments.
+```
+
+────────────────────────────────────────────────────────────────────────────
+6. AGENTS.MD — ПРОЕКТНЫЙ КОНТЕКСТ
+────────────────────────────────────────────────────────────────────────────
+
+6.1. Что это.
+   **Контекст конкретного проекта / каталога**. Загружается из cwd
+   или из `--workspace-target`.
+
+6.2. Где лежит.
+   `<project-root>/AGENTS.md` — в корне проекта.
+   Для subdirectory: `<project>/services/api/AGENTS.md` —
+   прогрессивное обнаружение.
+
+6.3. Когда использовать.
+   - Проект имеет **свои conventions** (стиль, naming).
+   - Есть **don'ts** (что нельзя делать в этом проекте).
+   - Есть **deployment notes** (как деплоить).
+   - Есть **specific stack** (uv, не pip; ruff, не flake8).
+
+6.4. Когда НЕ использовать.
+   - Универсальные правила (→ SOUL.md).
+   - Разовое чтение (просто `cat README.md` через `read_file`).
+
+6.5. Пример AGENTS.md.
+
+```
+# Photo Tools — Agent Guide
+
+## Stack
+- Python 3.11+.
+- uv for dependency management (NOT pip, NOT poetry).
+- Click for the CLI.
+- pytest + xdist for tests.
+- ruff for lint + format.
+- mypy --strict.
+
+## Commands
+- `uv sync`
+- `uv run pytest -n auto`
+- `uv run ruff check .`
+- `uv run ruff format .`
+- `uv run mypy src/photo_tools`
+
+## Don'ts
+- **Never** commit `.env`.
+- **Never** push to `main` directly.
+- **Never** use `print()` in production code.
+- **Never** add a dep without updating `pyproject.toml`.
+
+## Tests
+- New code must come with tests.
+- Use `tmp_path` for FS work.
+
+## Links
+- README.md
+- CHANGELOG.md
+```
+
+────────────────────────────────────────────────────────────────────────────
+7. CLAUDE.MD — АЛЬТЕРНАТИВНОЕ ИМЯ ДЛЯ AGENTS.MD
+────────────────────────────────────────────────────────────────────────────
+
+7.1. Что это.
+   То же, что AGENTS.md, но для совместимости с Claude Code.
+   Если ваш проект уже использует `CLAUDE.md` для Claude Code,
+   Hermes подхватит его автоматически (через priority-цепочку).
+
+7.2. Где лежит.
+   `<project-root>/CLAUDE.md`
+
+7.3. Когда использовать.
+   - Когда AGENTS.md уже есть, но вы **перешли на Claude Code**
+     и хотите единое имя.
+   - Когда в команде есть Claude Code пользователи.
+   - Когда хотите сделать проект портативным.
+
+7.4. Пример CLAUDE.md.
+   Идентичен AGENTS.md. Это просто alias в priority-цепочке.
+
+────────────────────────────────────────────────────────────────────────────
+8. .CURSORRULES — CURSOR-ФОРМАТ
+────────────────────────────────────────────────────────────────────────────
+
+8.1. Что это.
+   Cursor-формат правил. Один файл, не Markdown по строгому смыслу,
+   но может быть в формате .md. Hermes подхватывает его наравне
+   с AGENTS.md.
+
+8.2. Где лежит.
+   `<project-root>/.cursorrules`
+
+8.3. Когда использовать.
+   - Когда проект уже использует Cursor.
+   - Когда хотите единый формат для Cursor + Hermes.
+
+8.4. Пример .cursorrules (если он .md).
+
+```
+# Project Rules
+
+## Stack
+- Python 3.11+
+- uv (NOT pip)
+- pytest, ruff, mypy
+
+## Conventions
+- snake_case for files
+- type hints on public functions
+- no print() in prod
+
+## Don'ts
+- never commit .env
+- never push to main
+```
+
+────────────────────────────────────────────────────────────────────────────
+9. .HERMES.MD — HERMES-АЛЬТЕРНАТИВА
+────────────────────────────────────────────────────────────────────────────
+
+9.1. Что это.
+   Hermes-специфичное имя для AGENTS.md. Используется, если вы
+   хотите явно отделить Hermes-правила от других инструментов.
+
+9.2. Где лежит.
+   `<project-root>/.hermes.md`
+
+9.3. Когда использовать.
+   - Когда хотите разные правила для Hermes vs Claude Code.
+   - Когда в проекте есть отдельный AGENTS.md для всех, и
+     .hermes.md — только для Hermes-специфичных правил.
+
+9.4. Пример .hermes.md.
+
+```
+# Hermes-specific rules
+
+In addition to AGENTS.md:
+
+- Hermes sessions get MEMORY.md and USER.md automatically.
+- Skills auto-load from .hermes/skills/ if present.
+- After destructive operations, prefer `hermes doctor` validation.
+```
+
+────────────────────────────────────────────────────────────────────────────
+10. SKILL.MD — ОПИСАНИЕ НАВЫКА
+────────────────────────────────────────────────────────────────────────────
+
+10.1. Что это.
+   **Обязательный файл** в каждом каталоге навыка. Содержит
+   YAML frontmatter + тело.
+
+10.2. Где лежит.
+   `~/.hermes/skills/<skill-name>/SKILL.md` (bundled и global)
+   `~/.hermes/profiles/<profile>/skills/<skill-name>/SKILL.md`
+   (per-profile)
+
+10.3. Когда использовать.
+   - Создание **нового навыка** (процедурного знания).
+   - Подключение **per-profile skill** к конкретному профилю.
+   - **Шаринг** навыка через git / repo.
+
+10.4. Когда НЕ использовать.
+   - Не для project-specific контекста (→ AGENTS.md).
+   - Не для пользовательских фактов (→ USER.md).
+
+10.5. Пример SKILL.md.
+
+```
+---
+name: mima-g-01-operations
+description: Use when user asks to check, restart, or audit the mima_g_01 server (SSH, systemd, fail2ban, gateway).
+version: 0.1.0
+author: Rost
+license: MIT
+platforms: linux
+metadata:
+  hermes:
+    tags: [mima, ssh, ops, server]
+    related_skills: []
+---
+
+# mima_g_01 Operations
+
+## When to use
+Triggered when user mentions mima_g_01 / 72.56.29.69 / operations /
+server restart / fail2ban.
+
+## Steps
+1. SSH to `mima-g-01` via alias.
+2. ...
+3. ...
+
+## Pitfalls
+- Always use `XDG_RUNTIME_DIR=/run/user/0` for `systemctl --user` over SSH.
+- Don't kill the gateway process; use `systemctl --user restart`.
+
+## Verification
+- After restart: `journalctl --user -u hermes-gateway.service -n 50`.
+```
+
+────────────────────────────────────────────────────────────────────────────
+11. TODO.MD — СПИСОК ЗАДАЧ (ОПЦИОНАЛЬНО)
+────────────────────────────────────────────────────────────────────────────
+
+11.1. Что это.
+   Простой список задач. Используется в **claw-окружении**
+   (sandbox), см. `claw.py:635`:
+   `any((d / name).exists() for name in ("todo.json", "SOUL.md", "MEMORY.md", "USER.md"))`.
+
+11.2. Где лежит.
+   В claw workspace (sandbox).
+
+11.3. Когда использовать.
+   - Когда нужен простой task-list без Kanban.
+   - Когда работаете в sandbox-режиме.
+   - Когда хотите формат «- [ ] task1, - [ ] task2».
+
+11.4. Пример TODO.md.
+
+```
+# TODO
+
+- [ ] TASK-2026-07-04: audit mima_g_01 ssh
+- [ ] TASK-2026-07-05: setup new bot for mi_mg_01
+- [x] TASK-2026-07-03: rotate ssh keys
+```
+
+────────────────────────────────────────────────────────────────────────────
+12. README.MD / CHANGELOG.MD — СТАНДАРТНЫЕ РЕПО-ФАЙЛЫ
+────────────────────────────────────────────────────────────────────────────
+
+12.1. Что это.
+   **README** — пользовательская документация проекта.
+   **CHANGELOG** — история изменений.
+
+12.2. Где лежит.
+   `<project-root>/README.md`
+   `<project-root>/CHANGELOG.md`
+
+12.3. Когда использовать.
+   - **README** — всегда (must-have).
+   - **CHANGELOG** — для публичных/командных проектов.
+
+12.4. Hermes использует эти файлы?
+   - **НЕ auto-load** в system prompt.
+   - Читает через `read_file`, если вы попросите.
+   - Упоминается в `hermes doctor` для проверки структуры.
+
+12.5. Пример README.md.
+
+```
+# Photo Tools
+
+Python tools for EXIF reading and image transformations.
+
+## Install
+`uv sync`
+
+## Usage
+`uv run photo-tools exif photo.jpg`
+
+## License
+MIT
+```
+
+12.6. Пример CHANGELOG.md.
+
+```
+# Changelog
+
+## 0.3.0 (2026-07-04)
+- Added `exif orientation` command.
+
+## 0.2.0 (2026-06-12)
+- Fixed bug in transform pipeline.
+```
+
+────────────────────────────────────────────────────────────────────────────
+13. ОГРАНИЧЕНИЯ ПО РАЗМЕРУ И TRUNCATION
+────────────────────────────────────────────────────────────────────────────
+
+Из `tips.py:223`:
+
+> Context files are capped at 20,000 characters with smart head/tail
+> truncation.
+
+Это значит:
+- 0-20 КБ: грузится целиком.
+- > 20 КБ: head/tail truncation (теряется середина).
+
+Реальные рекомендации:
+- SOUL.md: 1-4 КБ идеал, до 8 КБ.
+- MEMORY.md: 0.5-8 КБ идеал, до 16 КБ.
+- USER.md: 0.5-4 КБ идеал, до 8 КБ.
+- AGENTS.md: 0.5-8 КБ идеал, до 16 КБ.
+- SKILL.md: 4-30 КБ (skill большой — ок).
+- README.md: не auto-load, размер не критичен.
+
+────────────────────────────────────────────────────────────────────────────
+14. КАК ПРОВЕРИТЬ, ЧТО .MD ГРУЗИТСЯ
+────────────────────────────────────────────────────────────────────────────
+
+14.1. Запустить Hermes с verbose / debug.
+   В verbose-режиме показывается, какие context-файлы загружены.
+
+14.2. Запустить через `hermes doctor`.
+   `hermes doctor` проверяет структуру профиля и доступность
+   контекст-файлов.
+
+14.3. Использовать --ignore-rules для сравнения.
+   ```bash
+   hermes chat --ignore-rules "Что ты знаешь о моих предпочтениях?"
+   # Если ответ НЕ содержит того, что в USER.md — файл не загружается.
+   ```
+
+14.4. Через web-dashboard.
+   `/api/skills`, `/api/memory`, `/api/agent/identity` показывают
+   текущие значения.
+
+────────────────────────────────────────────────────────────────────────────
+15. ЧАСТЫЕ ОШИБКИ С .MD ФАЙЛАМИ
+────────────────────────────────────────────────────────────────────────────
+
+15.1. **Дублирование SOUL.md в AGENTS.md**.
+   Универсальные правила → SOUL.md, проектные → AGENTS.md.
+   Не путайте.
+
+15.2. **MEMORY.md без дат**.
+   Каждая запись в MEMORY.md должна иметь дату.
+   `[2026-07-02] Правило X` — иначе через год не поймёте,
+   актуально ли.
+
+15.3. **AGENTS.md без Don'ts**.
+   «Что нельзя делать» — самое ценное в AGENTS.md.
+
+15.4. **SKILL.md без YAML frontmatter**.
+   Без `name:` Hermes выдаёт warning. Без `description:` skill
+   не загрузится (нет триггера).
+
+15.5. **README.md раздут до 100 КБ**.
+   Это нормально для README, но не для context-файлов.
+
+15.6. **Файл в неправильном каталоге**.
+   SOUL.md в `~/.hermes/`, а не `~/.hermes/profiles/<name>/`.
+   Проверяйте путь.
+
+15.7. **Имя в нижнем регистре (soul.md, memory.md)**.
+   Hermes ищет точно по имени. `soul.md` ≠ `SOUL.md`.
+
+15.8. **Секреты в любом .MD**.
+   Никогда. Секреты — в `.env` (mode 600) или в vault.
+
+15.9. **Путаница .md vs .txt**.
+   .md — markdown, рендерится. .txt — plain text, не рендерится.
+   README.md ≠ README.txt.
+
+15.10. **Mixed contents в SOUL.md**.
+    Не «всё что я хочу сказать агенту». SOUL.md — это про
+    identity. Факты → MEMORY.md, проекты → AGENTS.md, процедуры
+    → SKILL.md.
+
+────────────────────────────────────────────────────────────────────────────
+16. СВОДНАЯ ТАБЛИЦА — ГДЕ КАКОЙ ФАЙЛ ЛЕЖИТ
+────────────────────────────────────────────────────────────────────────────
+
+  ┌────────────────┬────────────────────────────────────────────┐
+  │ Файл           │ Путь                                         │
+  ├────────────────┼────────────────────────────────────────────┤
+  │ SOUL.md        │ ~/.hermes/profiles/<profile>/SOUL.md         │
+  │ MEMORY.md      │ ~/.hermes/profiles/<profile>/memories/MEMORY.md │
+  │ USER.md        │ ~/.hermes/profiles/<profile>/memories/USER.md │
+  │ SKILL.md       │ ~/.hermes/profiles/<profile>/skills/<name>/SKILL.md │
+  │ AGENTS.md      │ <cwd>/AGENTS.md  или  --workspace-target/AGENTS.md │
+  │ CLAUDE.md      │ <cwd>/CLAUDE.md  (то же, что AGENTS.md)    │
+  │ .cursorrules   │ <cwd>/.cursorrules                          │
+  │ .hermes.md     │ <cwd>/.hermes.md                            │
+  │ TODO.md        │ <claw-workspace>/TODO.md                    │
+  │ README.md      │ <project-root>/README.md                    │
+  │ CHANGELOG.md   │ <project-root>/CHANGELOG.md                 │
+  └────────────────┴────────────────────────────────────────────┘
+
+────────────────────────────────────────────────────────────────────────────
+17. ЗАКЛЮЧЕНИЕ
+────────────────────────────────────────────────────────────────────────────
+
+**Hermes читает 8 специальных .MD файлов** + стандартные
+репо-файлы. Каждый имеет свою роль:
+
+  • SOUL.md / MEMORY.md / USER.md — контекст профиля
+    (per-profile state).
+  • AGENTS.md / CLAUDE.md / .cursorrules / .hermes.md — контекст
+    проекта (cwd).
+  • SKILL.md — навык (per-skill state).
+  • README.md / CHANGELOG.md — стандартные репо-файлы.
+
+Priority-цепочка загрузки:
+
+  .hermes.md  →  AGENTS.md  →  CLAUDE.md  →  .cursorrules  →  SOUL.md
+
+Переопределяется через `HERMES_MD_NAMES`. Hard cap — 20 000
+символов (head/tail truncation).
+
+Если сомневаетесь:
+  - Личность агента → SOUL.md.
+  - Факты о мире → MEMORY.md.
+  - Факты о пользователе → USER.md.
+  - Архитектура проекта → AGENTS.md.
+  - Процедура «как делать» → SKILL.md.
+  - Документация → README.md.
+  - История изменений → CHANGELOG.md.

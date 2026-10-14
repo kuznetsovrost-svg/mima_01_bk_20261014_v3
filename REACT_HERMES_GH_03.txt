@@ -1,0 +1,928 @@
+================================================================================
+REACT_HERMES_GH_03.txt
+Разработка веб-UI на React под управлением агента Hermes
+с хранением кода в GitHub — полный операционный регламент
+Версия: 03 / 2026-06-16
+================================================================================
+
+
+0. НАЗНАЧЕНИЕ ДОКУМЕНТА
+-----------------------
+Документ описывает end-to-end конвейер разработки пользовательского
+интерфейса на React (SPA / SSR), в котором:
+
+  * исполнителем работ выступает AI-агент Hermes (с возможностью
+    делегирования подзадач Claude Code, Codex, OpenCode, дочерним Hermes);
+  * исходный код хранится в GitHub (origin — SSH, аккаунт kuznetsovrost-svg);
+  * каждое изменение проходит через Pull Request, CI, code review и merge;
+  * деплой автоматизирован (Vercel / Netlify / GitHub Pages / self-hosted).
+
+Документ рассчитан на инженера, который один раз настраивает проект
+и дальше управляет разработкой через Hermes в формате «постановка задачи
+в чате → готовый merged PR».
+
+
+1. ОБЩАЯ АРХИТЕКТУРА РЕШЕНИЯ
+----------------------------
+
+    ┌────────────────────┐      задача / уточнения      ┌─────────────────┐
+    │  Пользователь /   │ ───────────────────────────► │   Hermes        │
+    │  Product Owner    │ ◄─────────────────────────── │   (оркестратор) │
+    └────────────────────┘      отчёт / PR-ссылка       └────────┬────────┘
+                                                                  │
+                                              delegate_task(...)   │
+                                                                  ▼
+                                                  ┌───────────────────────────┐
+                                                  │  Под-агент (worker):      │
+                                                  │  • claude-code  (PR/фичи) │
+                                                  │  • codex        (PR/фичи) │
+                                                  │  • opencode     (review)  │
+                                                  │  • hermes       (utility) │
+                                                  └─────────────┬─────────────┘
+                                                                │ git push
+                                                                ▼
+    ┌────────────────────┐    pull request    ┌──────────────────────────────┐
+    │   GitHub Actions   │ ◄──────────────── │   GitHub Repo                │
+    │   (lint, type,     │   status checks   │   kuznetsovrost-svg/<repo>   │
+    │    test, build)    │ ────────────────► │   (branch: feat/*, fix/*)    │
+    └─────────┬──────────┘                   └──────────────┬───────────────┘
+              │ merge                                       │ webhook
+              ▼                                             ▼
+    ┌────────────────────┐                       ┌──────────────────────┐
+    │   main / release   │ ──── deploy trigger ──►│ Vercel/Netlify/      │
+    │   (защищён)        │                       │ GH Pages / Docker    │
+    └────────────────────┘                       └──────────────────────┘
+
+Ключевые принципы:
+
+  1. main ВСЕГДА зелёный. Прямые push в main запрещены branch-protection'ом.
+  2. Любое изменение — через feature-ветку + Pull Request.
+  3. Hermes не правит main сам; он открывает PR и ждёт CI + ревью.
+  4. Code review выполняет либо человек, либо второй под-агент (cross-review).
+  5. Деплой только из main (или release-ветки) после зелёного CI.
+
+
+2. ВЫБОР ТЕХНОЛОГИЧЕСКОГО СТЕКА REACT
+-------------------------------------
+
+Рекомендуемый стек (production-ready, AI-friendly):
+
+  * Сборщик:  Vite 5+ (SPA) или Next.js 14+ App Router (если нужен SSR/SEO).
+  * Язык:     TypeScript 5.x, strict: true, noUncheckedIndexedAccess: true.
+  * UI:       либо готовая система (shadcn/ui + Radix + Tailwind), либо
+              самописные компоненты на TailwindCSS.
+  * State:    Zustand или Redux Toolkit (для крупных стейтов),
+              React Query / TanStack Query (для server-state).
+  * Forms:    React Hook Form + Zod.
+  * Routing:  React Router 6+ (SPA) или встроенный в Next.js.
+  * Tests:    Vitest + React Testing Library, Playwright для e2e.
+  * Lint:     ESLint 9 (flat config) + Prettier + typescript-eslint.
+  * Hooks:    Husky + lint-staged + commitlint (conventional commits).
+
+Почему этот стек:
+  - TypeScript даёт Hermes строгую обратную связь по типам;
+  - Vite/Next.js быстро стартуют и быстро билдят (важно для CI);
+  - Vitest нативно работает с Vite — нет зоопарка конфигов;
+  - shadcn/ui — компоненты копируются в репо, Hermes может их дописывать.
+
+
+3. СТРУКТУРА РЕПОЗИТОРИЯ
+------------------------
+
+Корневая раскладка моно-репо с одним React-приложением (для мульти-пакетов
+переходите на pnpm workspaces / Turborepo, см. раздел 16):
+
+    react-app/
+    ├── .github/
+    │   ├── workflows/                # CI пайплайны
+    │   │   ├── ci.yml
+    │   │   ├── codeql.yml            # GitHub CodeQL (SAST)
+    │   │   └── dependency-review.yml
+    │   ├── CODEOWNERS                # обязательные ревьюеры
+    │   ├── ISSUE_TEMPLATE/
+    │   ├── PULL_REQUEST_TEMPLATE.md
+    │   └── dependabot.yml
+    ├── .husky/                       # git-хуки
+    ├── public/
+    ├── src/
+    │   ├── app/                      # корневой компонент, провайдеры
+    │   ├── pages/ или app/routes/    # маршруты
+    │   ├── widgets/                  # крупные самостоятельные блоки
+    │   ├── features/                 # пользовательские фичи
+    │   ├── entities/                 # бизнес-сущности
+    │   ├── shared/                   # утилиты, UI-kit, lib
+    │   │   ├── ui/                   # кнопки, инпуты, модалки
+    │   │   ├── api/                  # http-клиент, типы
+    │   │   ├── config/               # env, фичефлаги
+    │   │   └── lib/                  # хелперы
+    │   ├── main.tsx                  # bootstrap
+    │   └── vite-env.d.ts
+    ├── tests/
+    │   ├── e2e/                      # Playwright
+    │   └── visual/                   # Percy / Playwright snapshots
+    ├── .editorconfig
+    ├── .eslintrc.cjs (или eslint.config.js)
+    ├── .gitignore
+    ├── .nvmrc                        # Node 20.x
+    ├── .prettierrc
+    ├── index.html
+    ├── package.json
+    ├── package-lock.json (или pnpm-lock.yaml / bun.lockb)
+    ├── playwright.config.ts
+    ├── README.md
+    ├── tsconfig.json
+    ├── tsconfig.node.json
+    ├── vite.config.ts
+    └── vitest.config.ts
+
+Архитектура слоёв src/ — Feature-Sliced Design (https://feature-sliced.design).
+Это даёт Hermes чёткие границы: «допиши фичу в entities/user»,
+«добавь виджет в widgets/header» — меньше «магии» при навигации по коду.
+
+
+4. НАСТРОЙКА GITHUB: БЕЗОПАСНОСТЬ И BRANCH-PROTECTION
+-----------------------------------------------------
+
+4.1. Создание репозитория
+
+    # один раз
+    gh repo create kuznetsovrost-svg/react-app \
+        --public --description "React app managed by Hermes" \
+        --gitignore Node --license MIT
+
+    # приватный — то же самое с --private и пушем через SSH
+
+    # клон
+    git clone git@github.com:kuznetsovrost-svg/react-app.git
+    cd react-app
+
+На этом хосте уже работает глобальная подмена:
+  url.git@github.com:.insteadof https://github.com/
+То есть любые https://github.com/... URL в git-командах Hermes
+молча перепишутся в SSH — это желаемое поведение.
+
+4.2. Branch protection для main (через gh CLI)
+
+    gh api -X PUT \
+      repos/kuznetsovrost-svg/react-app/branches/main/protection \
+      -H "Accept: application/vnd.github+json" \
+      -f required_status_checks='{"strict":true,"contexts":["ci/lint","ci/test","ci/build"]}' \
+      -f enforce_admins=true \
+      -f required_pull_request_reviews='{"required_approving_review_count":1,"dismiss_stale_reviews":true}' \
+      -f restrictions='{"users":[],"teams":[]}' \
+      -f required_linear_history=true \
+      -f allow_force_pushes=false \
+      -f allow_deletions=false \
+      -f block_creations=false \
+      -f required_conversation_resolution=true
+
+Это даёт:
+  - PR обязателен, прямой push в main запрещён;
+  - нужны зелёные ci/lint, ci/test, ci/build;
+  - нужен как минимум 1 approving review;
+  - линейная история (только squash / rebase merge).
+
+4.3. CODEOWNERS
+
+    # .github/CODEOWNERS
+    *                       @kuznetsovrost-svg
+    /src/shared/ui/         @kuznetsovrost-svg
+    /.github/workflows/     @kuznetsovrost-svg
+    /package.json           @kuznetsovrost-svg
+
+4.4. Секреты
+
+Секреты (API-ключи, токены) храните ТОЛЬКО в:
+  - GitHub Actions Secrets (для CI);
+  - Vercel/Netlify Environment Variables (для деплоя);
+  - локально — в .env (через .env.local, в .gitignore).
+
+Hermes НИКОГДА не должен коммитить .env, .env.local, .env.production.
+
+
+5. CI/CD В GITHUB ACTIONS
+-------------------------
+
+5.1. ci.yml — основной конвейер
+
+    # .github/workflows/ci.yml
+    name: CI
+
+    on:
+      pull_request:
+        branches: [main]
+      push:
+        branches: [main]
+
+    concurrency:
+      group: ci-${{ github.ref }}
+      cancel-in-progress: true
+
+    jobs:
+      lint:
+        runs-on: ubuntu-latest
+        steps:
+          - uses: actions/checkout@v4
+          - uses: actions/setup-node@v4
+            with: { node-version-file: .nvmrc, cache: npm }
+          - run: npm ci
+          - run: npm run lint
+          - run: npm run typecheck
+
+      test:
+        runs-on: ubuntu-latest
+        steps:
+          - uses: actions/checkout@v4
+          - uses: actions/setup-node@v4
+            with: { node-version-file: .nvmrc, cache: npm }
+          - run: npm ci
+          - run: npm run test -- --reporter=verbose --coverage
+          - uses: actions/upload-artifact@v4
+            if: always()
+            with:
+              name: coverage
+              path: coverage/
+
+      build:
+        runs-on: ubuntu-latest
+        needs: [lint, test]
+        steps:
+          - uses: actions/checkout@v4
+          - uses: actions/setup-node@v4
+            with: { node-version-file: .nvmrc, cache: npm }
+          - run: npm ci
+          - run: npm run build
+          - uses: actions/upload-artifact@v4
+            with:
+              name: dist
+              path: dist/
+
+5.2. pr-title-check.yml — валидация conventional-commits
+
+    name: PR title
+    on: [pull_request]
+    jobs:
+      check:
+        runs-on: ubuntu-latest
+        steps:
+          - uses: amannn/action-semantic-pull-request@v5
+            env:
+              GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+5.3. dependency-review.yml
+
+    name: Dependency Review
+    on: [pull_request]
+    jobs:
+      review:
+        runs-on: ubuntu-latest
+        steps:
+          - uses: actions/checkout@v4
+          - uses: actions/dependency-review-action@v4
+
+5.4. deploy.yml — деплой (пример для Vercel)
+
+    name: Deploy
+    on:
+      push:
+        branches: [main]
+    jobs:
+      deploy:
+        runs-on: ubuntu-latest
+        steps:
+          - uses: actions/checkout@v4
+          - uses: actions/setup-node@v4
+            with: { node-version-file: .nvmrc, cache: npm }
+          - run: npm ci && npm run build
+          - uses: vercel/actions/prepare@v1
+          - uses: vercel/actions/deploy@v1
+            with:
+              vercel-token: ${{ secrets.VERCEL_TOKEN }}
+              vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+              vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+              vercel-args: '--prod'
+
+
+6. HERMES КАК ОРКЕСТРАТОР РАЗРАБОТКИ
+------------------------------------
+
+6.1. Какие инструменты Hermes использует
+
+Hermes в этой связке — старший инженер. Он сам:
+
+  * читает задачу (issue / сообщение в чате);
+  * декомпозирует её на подзадачи;
+  * делегирует реализацию одному из worker-агентов;
+  * контролирует результат (типы, тесты, билд, линтер);
+  * формирует PR и комментарий к нему;
+  * при необходимости сам пишет код через file-tools (write_file, patch).
+
+Доступные worker-агенты (delegate_task):
+
+  ┌──────────────┬──────────────────────────────────────────────────┐
+  │ Агент        │ Когда использовать                                │
+  ├──────────────┼──────────────────────────────────────────────────┤
+  │ claude-code  │ сложные фичи, рефакторинг, фикс багов;           │
+  │              │ хорош в многошаговых задачах с большим контекстом  │
+  │ codex        │ короткие точечные изменения, прототипы;           │
+  │              │ отлично генерирует unit-тесты                    │
+  │ opencode     │ ревью кода, security-аудит                        │
+  │ hermes       │ инфраструктура (CI, конфиги), docs                │
+  └──────────────┴──────────────────────────────────────────────────┘
+
+6.2. Промпт-шаблон для делегирования (пример)
+
+    delegate_task(
+      goal: """
+        Реализовать компонент <UserCard> в src/entities/user/ui/UserCard.tsx.
+        - TypeScript, strict.
+        - Props: { user: User; onSelect?: (id: string) => void }.
+        - Использовать shared/ui/Avatar и shared/ui/Button.
+        - Покрыть тестами в src/entities/user/ui/UserCard.test.tsx
+          (минимум: рендер, клик вызывает onSelect, fallback аватара).
+        - Не добавлять новых зависимостей в package.json.
+        - Все стили — Tailwind-классы в className.
+      """,
+      context: """
+        Рабочая директория: /root/projects/react-app
+        Ветка: feat/user-card
+        В конце: git add . && git commit -m "feat(user): UserCard component"
+                и git push -u origin HEAD. Вернуть ссылку на коммит
+                и список изменённых файлов.
+      """,
+      toolsets: ["terminal", "file"]
+    )
+
+6.3. Локальная среда Hermes
+
+Hermes работает в Linux-окружении. Для React-проекта должны быть
+установлены:
+
+  - Node.js 20.x (через nvm или Volta; зафиксировано в .nvmrc)
+  - npm 10+ или pnpm 9+ или bun 1.x
+  - git 2.40+ с настроенным user.name/user.email
+  - gh CLI (опционально, но рекомендуется)
+  - для Playwright-тестов: системные зависимости (apt install
+    libnss3 libatk1.0-0 libatk-bridge2.0-0 libxcomposite1 и т.д.)
+
+Если чего-то нет, Hermes сам поставит через apt / brew / corepack,
+либо сообщит о блокере.
+
+
+7. ЖИЗНЕННЫЙ ЦИКЛ ЗАДАЧИ
+------------------------
+
+Стандартный pipeline (T-prefix — тайминги для справки):
+
+  ┌────────────────────────────────────────────────────────────────────┐
+  │ Шаг │ Действие                                  │ Кто    │ T     │
+  ├─────┼───────────────────────────────────────────┼────────┼───────┤
+  │  1  │ Постановка задачи в чат / Issue на GitHub │ Юзер   │ 0мин  │
+  │  2  │ Уточняющие вопросы Hermes (если нужно)    │ Hermes │ 1-5м  │
+  │  3  │ Декомпозиция + создание issue + assign    │ Hermes │ 1м    │
+  │  4  │ Создание feature-ветки feat/<scope>-<id>  │ Hermes │ <1м   │
+  │  5  │ Реализация (worker-агент)                 │ CC/CX  │ 5-30м │
+  │  6  │ Локальная проверка (lint, type, test)      │ Hermes │ 1м    │
+  │  7  │ Коммит + push + открытие PR               │ Hermes │ 1м    │
+  │  8  │ CI: lint, test, build                     │ GH     │ 3-7м  │
+  │  9  │ Авто-фикс CI (если красный)               │ Hermes │ 5-15м │
+  │ 10  │ Code review (человек или opencode-агент)   │ Both   │ 5-30м │
+  │ 11  │ Approve + squash-merge                    │ Юзер   │ 1м    │
+  │ 12  │ Авто-деплой из main                       │ GH/Verc│ 2-5м  │
+  │ 13  │ Пост-деплой smoke-тест (опц.)             │ Hermes │ 1м    │
+  │ 14  │ Закрытие issue, ретроспектива             │ Hermes │ 1м    │
+  └─────┴───────────────────────────────────────────┴────────┴───────┘
+
+Полный цикл MVP-фичи: 20-60 минут. Большой фичи (5+ файлов,
+новая сущность, e2e): 1-3 часа.
+
+
+8. ДЕТАЛЬНЫЙ WORKFLOW — ОТ ЗАДАЧИ ДО MERGED PR
+---------------------------------------------
+
+8.1. Шаг 1. Постановка
+
+Пользователь пишет в чат (Matrix/Telegram/Hermes CLI):
+
+    «Сделай страницу /login с формой email/пароль, валидацией через Zod,
+     отправкой на POST /api/auth/login, сохранением токена в httpOnly cookie.
+     После успешного логина — редирект на /dashboard.»
+
+Хороший формат постановки (чем полнее — тем меньше итераций):
+
+  - Что: конкретный UI-элемент или поведение
+  - Где: маршрут, файл, виджет
+  - Контракт: API-эндпоинты, типы, состояния
+  - Acceptance: что должно работать после выполнения
+  - Скоуп: что НЕ нужно делать
+
+8.2. Шаг 2. Уточнения
+
+Hermes уточняет только то, что реально блокирует работу.
+Опционально — через `clarify()` с вариантами 1/2/3.
+
+8.3. Шаг 3-4. Issue + ветка
+
+    # Через gh CLI
+    gh issue create \
+      --title "feat(auth): login page with email/password" \
+      --body  "## Acceptance ...\n## API contract ...\n## Out of scope ..." \
+      --label "feature,frontend,P1" \
+      --assignee "@me"
+
+    # Ветка
+    git checkout main && git pull
+    git checkout -b feat/auth-login-page
+    git push -u origin feat/auth-login-page
+
+8.4. Шаг 5. Реализация
+
+  Вариант A — Hermes пишет код сам (предпочтительно для мелких правок).
+  Вариант B — delegate_task в claude-code / codex (для крупных задач).
+
+В обоих случаях код проходит один и тот же quality gate на шаге 6.
+
+8.5. Шаг 6. Локальный quality gate (Hermes запускает сам)
+
+    npm run lint
+    npm run typecheck           # tsc --noEmit
+    npm run test -- --run       # Vitest в CI-режиме
+    npm run build               # проверка production-билда
+
+Если что-то падает — фикс и повтор. Не открывать PR с красным gate.
+
+8.6. Шаг 7. Коммит + PR
+
+    git add -A
+    git commit -m "feat(auth): login page with email/password validation
+
+    - Email/password form with React Hook Form + Zod
+    - POST /api/auth/login, token via httpOnly cookie
+    - Redirect to /dashboard on success
+    - Error states: invalid creds, network, 5xx
+    - Tests: 6 cases (validation, submit, errors, redirect)
+
+    Closes #42"
+
+    git push -u origin HEAD
+
+    # PR через gh или curl (см. skill github-pr-workflow)
+    gh pr create \
+      --base main \
+      --head feat/auth-login-page \
+      --title "feat(auth): login page with email/password" \
+      --body  "Closes #42
+
+      ## Что сделано
+      ...
+
+      ## Как проверить
+      1. npm ci && npm run dev
+      2. открыть http://localhost:5173/login
+      3. ввести test@example.com / password
+      4. ...
+
+      ## Скриншоты / видео
+      ![](https://...)"
+
+8.7. Шаг 8-9. CI + авто-фикс
+
+Hermes опрашивает CI (skill github-pr-workflow, раздел 4).
+При failure:
+  1. Скачать логи.
+  2. Понять причину.
+  3. Починить локально.
+  4. git commit --amend (или новый fixup-коммит).
+  5. git push.
+  6. Дождаться повторного CI.
+
+Лимит: 3 попытки авто-фикса. Дальше — спросить пользователя.
+
+8.8. Шаг 10. Code review
+
+Варианты:
+
+  A. Человек (kuznetsovrost-svg) — основной путь.
+  B. opencode / claude-code как reviewer — для одиночных задач.
+  C. Оба — для production-кода (cross-review).
+
+Ревью проверяет:
+  - Корректность (соответствие acceptance).
+  - Edge cases (loading, error, empty, offline).
+  - Accessibility (ARIA, keyboard nav).
+  - Производительность (memo, list keys, bundle size).
+  - Безопасность (XSS, dangerouslySetInnerHTML, eval, secrets).
+  - Тесты (покрытие, устойчивость).
+  - Архитектурный fit (правильный ли слой FSD).
+
+8.9. Шаг 11. Merge
+
+    gh pr merge --squash --delete-branch --auto
+
+    # или вручную через API после approve
+
+8.10. Шаг 12-13. Деплой + smoke-test
+
+Vercel/Netlify/GH Pages деплоит автоматически.
+Hermes делает smoke-test:
+  - HTTP HEAD на production URL → 200.
+  - Базовая проверка через Playwright (опционально).
+  - Если сломалось — автоматический rollback (Vercel instant rollback).
+
+8.11. Шаг 14. Закрытие issue + ретроспектива
+
+    gh issue close 42 --comment "Delivered in #45. Deployed at https://..."
+
+    # Hermes пишет в чат короткий отчёт:
+    # - ссылка на PR
+    # - ссылка на деплой
+    # - что сделано / что не сделано
+    # - технический долг (если есть)
+
+
+9. КАЧЕСТВО КОДА: СТАНДАРТЫ ДЛЯ HERMES
+--------------------------------------
+
+9.1. Code style
+
+  - Prettier: printWidth 100, singleQuote true, trailingComma all.
+  - ESLint: typescript-eslint strict + react-hooks + jsx-a11y.
+  - Без any (только unknown + type narrowing).
+  - Без console.log в проде (правило no-console в src/, разрешён в tests/).
+  - Imports — алиасы (@app, @features, @shared), не относительные ../../.
+
+9.2. Тесты
+
+  - Unit-тесты: каждый компонент, каждая утилита, каждая reducer.
+  - Integration: ключевые пользовательские сценарии.
+  - e2e (Playwright): 5-10 критических путей (login, checkout, signup…).
+  - Coverage thresholds в vitest.config.ts:
+        coverage: { thresholds: { lines: 80, functions: 80,
+                                   statements: 80, branches: 75 } }
+
+9.3. TypeScript
+
+  - strict: true.
+  - noUncheckedIndexedAccess: true.
+  - exactOptionalPropertyTypes: true.
+  - Никаких // @ts-ignore без сопровождающего // reason: <почему>.
+
+9.4. Accessibility
+
+  - Все интерактивные элементы имеют ARIA-роль.
+  - Фокус-кольца видны (не убирать outline без замены).
+  - Контрастность ≥ WCAG AA.
+  - Все формы — с <label htmlFor>.
+
+9.5. Performance
+
+  - Bundle budget: gzipped main < 200 KB.
+  - Картинки через <img loading="lazy"> + width/height.
+  - Code splitting по маршрутам (React.lazy или Next.js automatic).
+  - Нет тяжёлых библиотек ради одной функции (moment → date-fns,
+    lodash → встроенные методы или ramda).
+
+9.6. Security
+
+  - Нет dangerouslySetInnerHTML без DOMPurify.
+  - Нет eval, Function(), setTimeout(string).
+  - Секреты только через process.env (Vite: import.meta.env).
+  - Зависимости сканируются dependabot + npm audit --omit=dev.
+
+
+10. УПРАВЛЕНИЕ ВЕТКАМИ И ВЕРСИОНИРОВАНИЕ
+----------------------------------------
+
+10.1. Стратегия
+
+  - Trunk-based с короткоживущими feature-ветками.
+  - main — trunk, всегда releasable.
+  - Опционально: release/v1.x — для долгоживущих релизов.
+
+10.2. Именование
+
+    feat/<scope>-<short-desc>     # новая фича
+    fix/<scope>-<short-desc>      # баг-фикс
+    refactor/<scope>-<short-desc> # рефакторинг без изменения поведения
+    docs/<scope>                  # только документация
+    chore/<scope>                 # конфиги, зависимости
+    hotfix/<scope>                # срочный фикс в main + cherry-pick
+
+Примеры:
+    feat/auth-login-page
+    fix/login-redirect-loop
+    refactor/extract-http-client
+    docs/update-readme
+    chore/bump-vite-5
+
+10.3. Conventional Commits
+
+    <type>(<scope>): <subject>      # imperative, ≤72 chars, no dot
+    <BLANK LINE>
+    <body>                          # wrap 72, explain why
+    <BLANK LINE>
+    <footer>                        # Closes #N, BREAKING CHANGE: ...
+
+Типы: feat, fix, refactor, perf, docs, test, chore, ci, build, style.
+
+10.4. Версионирование
+
+  - SemVer: MAJOR.MINOR.PATCH.
+  - MAJOR — breaking changes (CHANGELOG + migration guide).
+  - MINOR — фичи с обратной совместимостью.
+  - PATCH — bugfixes.
+  - Теги git: v1.4.0, draft через `npm version` + `git push --tags`.
+
+
+11. СТРАТЕГИИ СЛИЯНИЯ
+---------------------
+
+Для feature → main:
+  - Squash merge (по умолчанию) — main остаётся линейным, в истории 1 коммит.
+  - Rebase merge — если хочется сохранить все коммиты PR линейными.
+  - Merge commit — НЕ рекомендуется (ломает линейность, branch-protection
+    required_linear_history=true запретит).
+
+Для release-ветки → main:
+  - Merge commit с тегом (или fast-forward rebase).
+
+Конфликты:
+  - Если main уехал вперёд, Hermes делает:
+        git fetch origin
+        git rebase origin/main
+        # или merge origin/main (если rebase сложен)
+        # починить конфликты
+        git push --force-with-lease
+  - Если конфликт > 3 файлов — лучше merge + ручной разбор.
+
+
+12. ИНСТРУМЕНТЫ HERMES ДЛЯ РАБОТЫ С GITHUB
+------------------------------------------
+
+В Hermes есть готовый набор навыков, подключаемых по именам:
+
+  ┌────────────────────────┬────────────────────────────────────────┐
+  │ Skill                  │ Назначение                             │
+  ├────────────────────────┼────────────────────────────────────────┤
+  │ github-auth            │ Настройка HTTPS-токенов и SSH-ключей   │
+  │ github-repo-management │ Клонирование, форк, ремоут, релизы     │
+  │ github-issues          │ Создание / триаж / лейблы / ассайн      │
+  │ github-pr-workflow     │ Ветка → коммит → PR → CI → merge       │
+  │ github-code-review     │ Ревью PR: diff, инлайн-комментарии      │
+  │ codebase-inspection    │ Анализ кодовой базы (LOC, языки)        │
+  │ plan                   │ План-режим: записать план в .hermes/    │
+  │ spike                  │ Бросочный эксперимент (валидация идеи)  │
+  │ test-driven-development│ TDD: red-green-refactor                │
+  │ systematic-debugging   │ 4-фазный root-cause debug               │
+  │ simplify-code          │ Параллельная 3-агентная чистка кода     │
+  │ requesting-code-review │ Pre-commit security + quality gates     │
+  └────────────────────────┴────────────────────────────────────────┘
+
+Каждый skill загружается через skill_view(name='<id>') и подсказывает
+точные команды и подводные камни.
+
+
+13. ОПИСАНИЕ КОМАНД HERMES, КОТОРЫЕ ЮЗЕР МОЖЕТ ПРОСИТЬ
+-------------------------------------------------------
+
+Список типовых команд (Hermes понимает естественный язык, но эти формулировки
+работают особенно точно):
+
+  1. «Сделай задачу #N» — взять issue, реализовать, открыть PR.
+  2. «Проверь PR #M» — пройтись по diff, оставить инлайн-комментарии.
+  3. «Деплой на staging» — вручную дернуть deploy.yml с input staging.
+  4. «Откати последний деплой» — Vercel rollback / git revert.
+  5. «Обнови зависимости» — dependabot PR merge batch (после review).
+  6. «Покажи статус» — список открытых PR, свежие CI, последние деплои.
+  7. «Запусти e2e» — Playwright против preview URL.
+  8. «Сделай рефакторинг <что>» — delegate_task в claude-code/opencode.
+  9. «Допиши тесты к <файл>» — coverage-driven генерация тестов.
+ 10. «Подготовь релиз v1.x.0» — bump version, CHANGELOG, tag, release-notes.
+
+
+14. ДЕПЛОЙ
+----------
+
+14.1. Варианты
+
+  ┌─────────────────┬──────────────────────────────────────────────────┐
+  │ Хостинг         │ Когда выбирать                                    │
+  ├─────────────────┼──────────────────────────────────────────────────┤
+  │ Vercel          │ Next.js, edge-функции, превью-PR-ов, serverless   │
+  │ Netlify         │ SPA + Functions, формы, identity                   │
+  │ Cloudflare Pages│ Глобальный edge, дешёвый                           │
+  │ GitHub Pages    │ Чистая статика, бесплатно, без бэкенда            │
+  │ Self-host (nginx│ Полный контроль, on-prem, корпоративный          │
+  │  + Docker)      │                                                  │
+  └─────────────────┴──────────────────────────────────────────────────┘
+
+14.2. Preview deployments
+
+Каждый PR автоматически получает preview URL (Vercel/Netlify делают это
+из коробки). Hermes может:
+  - добавлять ссылку на preview в PR-комментарий;
+  - гонять Playwright e2e против preview URL;
+  - постить скриншоты в PR.
+
+14.3. Secrets management на деплое
+
+  - Все ключи — в настройках хостинга, не в репо.
+  - Разделение: dev / preview / production окружения.
+  - Ротация каждые 90 дней.
+  - Никаких service-account JSON в коде.
+
+
+15. МЕТРИКИ И НАБЛЮДАЕМОСТЬ
+---------------------------
+
+  - Sentry (или аналог) — фронт-ошибки и performance.
+  - Vercel Analytics / Lighthouse CI — Web Vitals.
+  - Uptime monitor (UptimeRobot, Better Stack) — аптайм.
+  - CI dashboard — время прогона, flaky tests.
+
+Hermes умеет:
+  - читать Sentry-issues → создавать bug-PR с фиксом;
+  - гонять Lighthouse CI в PR и блокировать merge при регрессии.
+
+
+16. МАСШТАБИРОВАНИЕ: МОНО-РЕПО С НЕСКОЛЬКИМИ ПРИЛОЖЕНИЯМИ
+---------------------------------------------------------
+
+Когда появятся admin / landing / docs / mobile-web:
+
+    apps/
+      web/             # основной SPA
+      admin/           # админка
+      landing/         # лендинг (Astro/Next)
+    packages/
+      ui/              # общий UI-kit
+      shared-types/    # общие TS-типы
+      config/          # общие eslint/tsconfig
+      eslint-config/
+      tsconfig/
+
+  - pnpm workspaces или Turborepo.
+  - Один корневой CI, build matrix по apps/*.
+  - Версионирование пакетов через Changesets.
+  - Ветка feat/<scope>-<id> — по-прежнему в корне моно-репо.
+
+
+17. БЕЗОПАСНОСТЬ
+----------------
+
+  - Dependabot: weekly, group patch updates, auto-merge для patch.
+  - CodeQL: на каждый push и PR.
+  - Secret scanning: GitHub native, push-protection ON.
+  - Branch protection (см. п. 4.2).
+  - 2FA на GitHub-аккаунте.
+  - SSH-ключ deploy-only (без write в master), опционально.
+  - NPM publish token — только у CI, не у разработчика.
+  - npm audit / yarn audit в CI как отдельный step.
+  - SBOM (Software Bill of Materials) — через anchore/sbom-action.
+
+
+18. КОММУНИКАЦИЯ HERMES ↔ ЮЗЕР
+------------------------------
+
+  - Юзер пишет задачу в чате (Matrix / Telegram).
+  - Hermes ведёт живой отчёт: «создал ветку», «CI зелёный»,
+    «жду ревью», «задеплоено на preview».
+  - При блокере — clarify() с 1-3 вариантами.
+  - Финальный отчёт — в одном сообщении со ссылками:
+      PR   https://github.com/.../pull/45
+      Demo https://app-pr-45.vercel.app
+      Issue https://github.com/.../issues/42 (closed)
+  - Настройки Hermes (треды, язык, формат отчётов) — в user-profile.
+    В текущей конфигурации:
+      * не отвечать в тредах, слать top-level в комнату;
+      * терc-стиль, опции 1/2/3 при уточнениях.
+
+
+19. ЧЕК-ЛИСТ «ПРОЕКТ ГОТОВ К РАБОТЕ С HERMES»
+---------------------------------------------
+
+Подтвердите перед началом первой задачи:
+
+  [ ] Репо создан (public или private) с README, .gitignore, LICENSE.
+  [ ] main защищён branch-protection'ом (см. п. 4.2).
+  [ ] CI workflow (lint, typecheck, test, build) зелёный на пустом main.
+  [ ] Conventional Commits PR-title check активен.
+  [ ] Dependabot настроен.
+  [ ] CodeQL включён.
+  [ ] Секреты добавлены в GitHub Secrets (для деплоя).
+  [ ] Vercel/Netlify проект создан и залинкован.
+  [ ] Branch feat/setup-ci — смёржен.
+  [ ] Hermes авторизован: gh auth status или SSH-ключ в ~/.ssh/.
+  [ ] Git config user.name/email настроен на этом хосте.
+  [ ] В user-profile указаны: язык, стиль ответа, формат отчёта.
+
+
+20. ТИПИЧНЫЕ ОШИБКИ И КАК ИХ ИЗБЕЖАТЬ
+--------------------------------------
+
+  ✗ Push в main напрямую.
+    ✓ Только через PR с зелёным CI.
+
+  ✗ Коммит .env / API-ключей.
+    ✓ .gitignore + git-secrets pre-commit hook + push-protection.
+
+  ✗ Сломали типы в shared/, задеплоили.
+    ✓ Strict TS, tsc в CI как обязательный check, CODEOWNERS на shared/.
+
+  ✗ Цикл «CI красный → фикс → ещё красный».
+    ✓ Сначала воспроизвести локально (npm ci), потом чинить.
+
+  ✗ Merge PR с 5 force-push'ами и 50 коммитами.
+    ✓ Squash merge одной кнопкой, история main чистая.
+
+  ✗ Огромный PR на 2000 строк.
+    ✓ Дробить: feature-sliced design, подзадачи через sub-issues.
+
+  ✗ Тесты не запускались в CI, а разработчик говорит «у меня работает».
+    ✓ CI — единственный источник правды; merge возможен только при зелёном.
+
+  ✗ Забыли обновить CHANGELOG / README.
+    ✓ В PR-template обязательный чекбокс «docs updated».
+
+  ✗ PR-ревью без контекста.
+    ✓ PR-body со скриншотами / видео / ссылкой на issue / шагами проверки.
+
+  ✗ Hermes «забыл» контекст между сессиями.
+    ✓ Навыки github-pr-workflow, plan, memory (только долгосрочные факты).
+
+  ✗ Авто-merge dependabot-PR с breaking-изменением.
+    ✓ Группировка по patch/minor, но major — только ручной review.
+
+  ✗ Один и тот же секрет в 5 местах.
+    ✓ GitHub Secrets ↔ хостинг один раз, дальше только ${{ secrets.X }}.
+
+
+21. ПРИМЕР ОДНОЙ ИТЕРАЦИИ (CONCRETE)
+------------------------------------
+
+Задача в чате:
+    «Добавь dark mode toggle в Header, сохраняй выбор в localStorage,
+     слушай prefers-color-scheme при первом визите.»
+
+Что делает Hermes (конспект):
+
+  1. Уточняет: «Только кнопка, или ещё и авто-применение темы к <html>?» —
+     (если юзер не уточнил, берёт разумный дефолт).
+  2. Создаёт issue #88 с лейблом feature,P2.
+  3. Ветка: feat/dark-mode-toggle.
+  4. delegate_task в claude-code: «реализовать useTheme + ThemeToggle
+     в shared/lib/theme и shared/ui/ThemeToggle; покрыть тестами; не
+     трогать entities/».
+  5. По завершении — локально гоняет lint/typecheck/test/build.
+  6. Коммит feat(theme): dark mode toggle. Push.
+  7. Открывает PR с шагами проверки и скриншотом.
+  8. CI проходит зелёным.
+  9. Человек approve (или opencode оставляет ревью).
+  10. Squash-merge в main.
+  11. Vercel автодеплоит, постит preview URL.
+  12. Hermes шлёт в чат итог:
+       PR:   github.com/kuznetsovrost-svg/react-app/pull/89
+       Live: react-app-vert.vercel.app
+       Issue #88 closed.
+  13. Hermes сохраняет в plan/.hermes факт, если возникла неочевидная
+       архитектурная развилка (в memory — только долгосрочное).
+
+
+22. ГДЕ ЭТО ХРАНИТСЯ В HERMES
+-----------------------------
+
+  ~/.hermes/skills/                  # все skills (включая этот регламент
+                                     # может быть сохранён как skill)
+  ~/.hermes/memories/MEMORY.md       # долгосрочные факты окружения
+  ~/.hermes/plans/                   # планы на многошаговые задачи
+  ~/.hermes/cron/                    # расписание (ночные тесты, отчёты)
+  ~/.hermes/config.yaml              # модели, тулсеты, профили
+
+Сам этот документ рекомендуется сохранить:
+  - как файл в репо: docs/REACT_HERMES_GH.md (для команды);
+  - как skill: skill_manage create с name=react-hermes-workflow,
+    чтобы Hermes автоматически подгружал его при задачах про React.
+
+
+23. КРАТКО — TL;DR ДЛЯ ЗАПУСКА
+------------------------------
+
+1. Один раз: создать репо, настроить branch-protection, CI, CodeQL,
+   Dependabot, Vercel-link. ~30 минут.
+2. Для каждой фичи:
+     - задача в чат → issue → ветка → код (Hermes или sub-agent)
+     → quality-gate → commit → push → PR → CI → review → merge
+     → deploy → отчёт.
+3. Код ВСЕГДА в GitHub. Hermes ВСЕГДА работает через git и gh CLI.
+   Локальная разработка только как staging перед коммитом.
+4. Стандарты: TS strict, conventional commits, feature-sliced design,
+   Vitest + Playwright, ESLint + Prettier.
+5. Деплой — из main, после зелёного CI, через Vercel/Netlify.
+6. Безопасность — секреты в GitHub Secrets + хостинг-env, 2FA,
+   Dependabot + CodeQL.
+7. Коммуникация — отчёты в чате со ссылками на PR, demo, issue.
+
+
+================================================================================
+Конец документа REACT_HERMES_GH_03.txt
+================================================================================

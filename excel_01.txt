@@ -1,0 +1,339 @@
+==============================================================================
+ЧТЕНИЕ EXCEL-ФАЙЛА ИЗ GITHUB И ПЕРЕДАЧА ДАННЫХ В LLM — ПОЛНЫЙ ГАЙД
+==============================================================================
+
+ЦЕЛЬ
+----
+Показать пошагово, как я (Hermes / LLM-агент) могу:
+  1) достать .xlsx/.xls/.csv-файл из репозитория GitHub;
+  2) распарсить его в Python (листы, колонки, типы);
+  3) превратить в удобную для LLM форму (CSV / JSON / Markdown-таблица / сводка);
+  4) отдать в контекст модели и получить аналитический ответ.
+
+Ниже — несколько способов на выбор, от простого к продвинутому.
+
+
+------------------------------------------------------------------------------
+1. КАК ВООБЩЕ ДОСТАТЬ ФАЙЛ ИЗ GITHUB — 3 СПОСОБА
+------------------------------------------------------------------------------
+
+СПОСОБ A. Прямой raw-URL (самый быстрый, без авторизации для публичных репо)
+------------------------------------------------------------------------------
+GitHub отдаёт сырое содержимое файла по адресу:
+    https://raw.githubusercontent.com/<owner>/<repo>/<branch>/<path/to/file.xlsx>
+
+Пример:
+    https://raw.githubusercontent.com/pandas-dev/pandas/main/doc/data/iris.csv
+
+Для скачивания используется curl / wget / Python requests:
+
+    # через curl
+    curl -L -o iris.csv \
+      "https://raw.githubusercontent.com/pandas-dev/pandas/main/doc/data/iris.csv"
+
+    # через Python
+    import urllib.request
+    url = "https://raw.githubusercontent.com/<owner>/<repo>/main/data.xlsx"
+    urllib.request.urlretrieve(url, "data.xlsx")
+
+Плюсы: просто, без токенов.
+Минусы: только публичные репо, файл ≤ ~100 МБ.
+
+
+СПОСОБ B. Contents API (умеет читать, писать, обходить большие файлы)
+------------------------------------------------------------------------------
+REST-endpoint:
+    GET https://api.github.com/repos/<owner>/<repo>/contents/<path>?ref=<branch>
+
+Возвращает JSON с полем "download_url" — это и есть raw-ссылка (та же, что в способе A).
+Плюс: можно листить папки, читать README, получать метаданные (size, sha).
+
+    curl -H "Accept: application/vnd.github+json" \
+         https://api.github.com/repos/octocat/Hello-World/contents/README
+
+Для приватных репозиториев нужен заголовок:
+    Authorization: Bearer <GITHUB_TOKEN>
+
+
+СПОСОБ C. git clone (если нужен весь репо или большая выборка файлов)
+------------------------------------------------------------------------------
+    git clone https://github.com/<owner>/<repo>.git
+    cd repo
+    python load_excel.py
+
+Плюсы: оффлайн-работа, доступ к .git-истории, быстро для многих файлов.
+Минусы: качается весь репо.
+
+
+------------------------------------------------------------------------------
+2. ЧТЕНИЕ EXCEL В PYTHON — БИБЛИОТЕКИ
+------------------------------------------------------------------------------
+
+Главная библиотека: openpyxl (новые .xlsx) и xlrd (старые .xls).
+Удобнее всего — pandas.read_excel, под капотом использует openpyxl/xlrd.
+
+Установка:
+    pip install pandas openpyxl xlrd        # для .xlsx + .xls
+
+Для очень больших файлов (>200 МБ):
+    pip install pyarrow fastparquet polars
+
+
+------------------------------------------------------------------------------
+3. БАЗОВЫЙ ПРИМЕР: ОДИН ЛИСТ В DATAFRAME
+------------------------------------------------------------------------------
+
+    import pandas as pd
+
+    # 3.1. Скачиваем (если ещё не скачан)
+    url = "https://raw.githubusercontent.com/<owner>/<repo>/main/sales_2025.xlsx"
+    df = pd.read_excel(url)               # pandas сам скачает по HTTP
+
+    # 3.2. Быстрый осмотр
+    print(df.shape)        # (строки, колонки)
+    print(df.columns.tolist())
+    print(df.head(5))      # первые 5 строк
+    print(df.dtypes)       # типы колонок
+    print(df.describe())   # числовая сводка
+
+    # 3.3. Если нужны конкретные колонки
+    df = pd.read_excel(url, usecols=["Дата", "Сумма", "Менеджер"])
+
+    # 3.4. Если нужна конкретная страница книги
+    df = pd.read_excel(url, sheet_name="Январь")        # по имени
+    df = pd.read_excel(url, sheet_name=0)               # по индексу (0 = первая)
+
+
+------------------------------------------------------------------------------
+4. ЧТЕНИЕ НЕСКОЛЬКИХ ЛИСТОВ
+------------------------------------------------------------------------------
+
+    xls = pd.ExcelFile(url)
+    print(xls.sheet_names)                # ['Январь', 'Февраль', 'Март']
+
+    # Все листы разом — dict[str, DataFrame]
+    sheets = pd.read_excel(url, sheet_name=None)
+
+    for name, sheet in sheets.items():
+        print(f"\n=== Лист: {name} ({sheet.shape[0]} строк) ===")
+        print(sheet.head(3))
+
+
+------------------------------------------------------------------------------
+5. ПРЕВРАЩЕНИЕ EXCEL В ФОРМАТ, УДОБНЫЙ ДЛЯ LLM
+------------------------------------------------------------------------------
+
+LLM лучше всего "понимают" таблицы в одном из трёх форматов:
+
+ФОРМАТ A. Markdown-таблица  (идеально для чат-LLM)
+------------------------------------------
+    print(df.to_markdown(index=False))
+
+Пример вывода:
+    | Дата       | Менеджер   | Сумма |
+    |:-----------|:-----------|------:|
+    | 2025-01-05 | Иванова А. | 12400 |
+    | 2025-01-06 | Петров Б.  |  8700 |
+
+ФОРМАТ B. CSV  (компактно, универсально)
+------------------------------------------
+    csv_text = df.to_csv(index=False)
+
+ФОРМАТ C. JSON  (для структурированных данных, вложенности)
+------------------------------------------
+    json_text = df.to_json(orient="records", force_ascii=False, indent=2)
+
+ФОРМАТ D. Простая текстовая сводка (для очень больших таблиц)
+------------------------------------------
+    summary = f"""
+    Файл: {filename}
+    Строк: {len(df)}, колонок: {len(df.columns)}
+    Колонки: {', '.join(df.columns)}
+    Типы: {df.dtypes.to_dict()}
+    Пропуски по колонкам: {df.isna().sum().to_dict()}
+    Числовая сводка: {df.describe().to_dict()}
+    """
+
+
+------------------------------------------------------------------------------
+6. ОТПРАВКА ДАННЫХ В LLM — КАК ЭТО ВЫГЛЯДИТ НА ПРАКТИКЕ
+------------------------------------------------------------------------------
+
+ВАРИАНТ 1. Таблица небольшая (<200 строк) — кидаем её прямо в промпт
+-------------------------------------------------------------------
+    import pandas as pd, subprocess, json
+
+    df = pd.read_excel("sales.xlsx")
+    table_md = df.to_markdown(index=False)
+
+    prompt = f"""
+    Проанализируй таблицу продаж за январь 2025.
+    Найди топ-3 менеджера по выручке и аномалии в данных.
+
+    Данные (Markdown):
+    {table_md}
+    """
+    # дальше prompt отправляется в LLM (через API или в Hermes-сессии)
+
+
+ВАРИАНТ 2. Таблица большая — сначала агрегируем, потом отправляем сводку
+-----------------------------------------------------------------------
+    agg = (df.groupby("Менеджер")
+             .agg(orders=("Сумма", "count"),
+                  revenue=("Сумма", "sum"),
+                  avg_check=("Сумма", "mean"))
+             .sort_values("revenue", ascending=False)
+             .round(2))
+    summary_md = agg.to_markdown()
+
+    prompt = f"Вот агрегированная выручка по менеджерам:\n{summary_md}\nСделай выводы."
+
+
+ВАРИАНТ 3. Файл Excel целиком, без предагрегации — через "дайджест по колонкам"
+-------------------------------------------------------------------------------
+    def digest_for_llm(df, max_rows=10):
+        parts = [
+            f"Файл: {len(df)} строк × {len(df.columns)} колонок.",
+            f"Колонки: {list(df.columns)}",
+            f"Типы: {df.dtypes.astype(str).to_dict()}",
+            f"Пропуски: {df.isna().sum().to_dict()}",
+            f"Первые {max_rows} строк:\n{df.head(max_rows).to_markdown()}",
+            f"Описательная статистика (числовые):\n{df.describe().to_markdown()}",
+        ]
+        return "\n\n".join(parts)
+
+    prompt = "Проанализируй структуру данных и предложи гипотезы.\n\n" + digest_for_llm(df)
+
+
+ВАРИАНТ 4. Когда данные НЕ ВЛЕЗАЮТ В КОНТЕКСТ — используем RAG-подход
+--------------------------------------------------------------------
+  1) читаем Excel частями (chunksize) или батчами по строкам;
+  2) для каждой части считаем эмбеддинги (OpenAI / локальная модель);
+  3) кладём в векторную БД (FAISS / Chroma / LanceDB);
+  4) при вопросе достаём top-K релевантных чанков и кладём в промпт.
+
+
+------------------------------------------------------------------------------
+7. ПОЛНЫЙ РАБОЧИЙ СКРИПТ — "ОТ ССЫЛКИ GITHUB ДО ОТВЕТА LLM"
+------------------------------------------------------------------------------
+
+    #!/usr/bin/env python3
+    """
+    Скачать Excel из GitHub → распарсить → сделать сводку → отправить в LLM.
+    """
+    import os, sys, tempfile
+    import pandas as pd
+    import urllib.request
+
+    GITHUB_RAW_URL = (
+        "https://raw.githubusercontent.com/<owner>/<repo>/main/<file>.xlsx"
+    )
+
+    def download(url: str) -> str:
+        tmp = tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False)
+        urllib.request.urlretrieve(url, tmp.name)
+        return tmp.name
+
+    def load_excel(path: str) -> dict[str, pd.DataFrame]:
+        return pd.read_excel(path, sheet_name=None)
+
+    def digest_for_llm(sheets: dict[str, pd.DataFrame]) -> str:
+        out = []
+        for name, df in sheets.items():
+            out.append(
+                f"### Лист: {name}\n"
+                f"Размер: {df.shape[0]} × {df.shape[1]}\n"
+                f"Колонки: {list(df.columns)}\n\n"
+                f"Первые 8 строк:\n{df.head(8).to_markdown(index=False)}\n\n"
+                f"Статистика:\n{df.describe(include='all').to_markdown()}"
+            )
+        return "\n\n---\n\n".join(out)
+
+    def main():
+        path = download(GITHUB_RAW_URL)
+        sheets = load_excel(path)
+        digest = digest_for_llm(sheets)
+        prompt = (
+            "Ниже — сжатое представление Excel-файла из GitHub.\n"
+            "Проанализируй данные, найди закономерности и аномалии, "
+            "дай 3-5 практических рекомендаций.\n\n"
+            f"{digest}"
+        )
+        # --- дальше prompt уходит в LLM ---
+        # openai.ChatCompletion.create(...) или локальный llama.cpp / Ollama
+        print(prompt[:2000] + "\n... [далее порезано для превью]")
+
+    if __name__ == "__main__":
+        main()
+
+
+------------------------------------------------------------------------------
+8. КАК ЭТО ДЕЛАЮ Я (HERMES) КОГДА ПОЛЬЗОВАТЕЛЬ ПРОСИТ
+------------------------------------------------------------------------------
+
+Когда ты говоришь "прочитай файл X из репо Y и проанализируй", я внутри
+прохожу примерно такой путь:
+
+  1) terminal: git clone / curl raw-url  → получаю .xlsx локально.
+  2) execute_code или terminal:
+        python -c "import pandas as pd; print(pd.read_excel('X.xlsx').head())"
+  3) превращаю в Markdown-таблицу / dict-сводку / JSON.
+  4) кладу результат в свой контекст и пишу аналитический ответ.
+
+Инструменты, которые я использую на этом пути:
+  • terminal()        — клонировать репо, скачать файл, поставить pip-пакет
+  • execute_code()    — Python-скрипт pandas/openpyxl в одной обёртке
+  • read_file()       — прочитать уже скачанный .xlsx как текст (если CSV внутри)
+  • browser_navigate() — открыть HTML-превью Excel на github.com
+  • search_files()    — найти .xlsx в локальной копии репо
+  • vision_analyze()  — если ты прислал скриншот таблицы, я "вижу" её
+
+Типовые подводные камни и как я их обхожу:
+  • Private repo  → нужен GITHUB_TOKEN в Authorization header.
+  • Файл > 50 МБ  → читаю чанками или сначала смотрю метаданные через API.
+  • Несколько листов → спрашиваю у пользователя, какой нужен, или гружу все.
+  • Битый .xlsx   → пробую xlrd для .xls, libreoffice --headless --convert-to
+    для восстановления.
+  • Кириллица в колонках → читаю как есть, для LLM привожу к UTF-8.
+  • Дубли заголовков / merged cells → нормализую: header=N, skiprows=….
+
+
+------------------------------------------------------------------------------
+9. ШПАРГАЛКА — 5 КОРОТКИХ КОМАНД
+------------------------------------------------------------------------------
+
+  # скачать
+  curl -L -O "https://raw.githubusercontent.com/owner/repo/main/data.xlsx"
+
+  # прочитать и показать первые 10 строк
+  python -c "import pandas as pd; print(pd.read_excel('data.xlsx').head(10))"
+
+  # прочитать конкретный лист
+  python -c "import pandas as pd; print(pd.read_excel('data.xlsx', sheet_name='Sales'))"
+
+  # сконвертировать в CSV
+  python -c "import pandas as pd; pd.read_excel('data.xlsx').to_csv('out.csv', index=False)"
+
+  # отправить таблицу в LLM (через Hermes API)
+  python -c "
+  import pandas as pd
+  df = pd.read_excel('data.xlsx')
+  print(df.to_markdown(index=False))
+  " | hermes chat "Проанализируй эту таблицу"
+
+
+------------------------------------------------------------------------------
+10. ИТОГО — МИНИМАЛЬНЫЙ РЕЦЕПТ
+------------------------------------------------------------------------------
+
+   URL_GH   = "https://raw.githubusercontent.com/<owner>/<repo>/main/<file>.xlsx"
+   таблица   = pandas.read_excel(URL_GH)            # шаг 1: достать данные
+   дайджест  = таблица.to_markdown(index=False)      # шаг 2: формат для LLM
+   промпт    = f"Вот данные:\n{дайджест}\nВопрос: …" # шаг 3: скормить LLM
+   ответ     = llm.ask(промпт)                      # шаг 4: получить анализ
+
+Всё. Дальше начинается аналитика.
+
+==============================================================================
+Конец файла. Автор: Hermes (агент MiniMax-M3, Hermes Agent by Nous Research).
+==============================================================================

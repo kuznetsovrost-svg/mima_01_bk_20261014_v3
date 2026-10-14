@@ -1,0 +1,310 @@
+═══════════════════════════════════════════════════════════════════════════
+СИНХРОНИЗАЦИЯ РЕЛИЗОВ mima_01_bk С GITHUB ЧЕРЕЗ GITHUB DESKTOP
+Окружение: Windows 10/11, локальная машина
+Аккаунт:   kuznetsovrost-svg (владелец приватного репо)
+Документ актуален на 2026-06-19, проверено через GitHub API.
+═══════════════════════════════════════════════════════════════════════════
+
+
+1. ВАЖНАЯ ОГОВОРКА
+────────────────────────────────────────────────────────────────────────
+
+GitHub Desktop — это Git-клиент (клонирование, коммиты, ветки, история,
+PR, теги). Он НЕ УМЕЕТ синхронизировать файлы ассетов из раздела
+Releases (те самые .zip, .tar.gz, .exe, бэкапы, прикреплённые к релизу
+на странице https://github.com/<owner>/<repo>/releases).
+
+Поэтому «синхронизация файлов релиза» в связке с GitHub Desktop —
+это комбинация двух действий:
+
+  (A) Клонировать репозиторий в GitHub Desktop (получить код и теги)
+  (B) Отдельно скачать ассет релиза (через gh / PowerShell / браузер)
+
+Ниже — три пути: рекомендуемый (A + gh), запасной (PowerShell + PAT) и
+разовый (браузер).
+
+
+2. ДАННЫЕ РЕПОЗИТОРИЯ (проверено через GitHub API)
+────────────────────────────────────────────────────────────────────────
+
+  Repo URL:    https://github.com/kuznetsovrost-svg/mima_01_bk
+  Visibility:  private
+  Branch:      main
+  Auth:        GitHub Desktop + gh (OAuth под kuznetsovrost-svg)
+
+  Текущий релиз:
+    Tag:        backup-20260618-175757
+    Name:       Server backup 20260618-175757
+    Published:  2026-06-18T17:58:52Z
+    Ассеты:
+      1) mima_01_bk-root-20260618-175757.tar.gz        2 235 630 байт
+      2) mima_01_bk-root-20260618-175757.tar.gz.sha256           105 байт
+
+  Контрольная сумма архива лежит рядом в файле .sha256 — после
+  скачивания ОБЯЗАТЕЛЬНО сверяйте.
+
+
+3. ПУТЬ A (рекомендуемый) — GITHUB DESKTOP + gh CLI
+────────────────────────────────────────────────────────────────────────
+
+3.1. Установка gh (один раз)
+
+    1. Откройте https://cli.github.com/
+    2. Скачайте gh_*_windows_amd64.msi
+    3. Запустите установщик, Next → Next → Install
+    4. Откройте PowerShell (Win+X → «Терминал» / «Windows PowerShell»)
+    5. Проверка:
+         PS> gh --version
+         gh version 2.x.x (...)
+
+    Если «не найден» — закройте и заново откройте PowerShell
+    (не подхватил PATH).
+
+3.2. Авторизация gh
+
+    PS> gh auth login
+
+    What account?               -> GitHub.com
+    Protocol?                   -> HTTPS (или SSH — что уже настроено)
+    Authenticate Git?           -> Yes
+    How authenticate?           -> Login with a web browser
+
+    gh покажет одноразовый код XXXX-XXXX, откроется браузер —
+    введите код, подтвердите. Логиниться под kuznetsovrost-svg
+    (тем же аккаунтом, что в GitHub Desktop, иначе mima_01_bk
+    не будет виден — он приватный).
+
+    Проверка:
+         PS> gh auth status
+         Logged in to github.com as kuznetsovrost-svg
+
+3.3. Клонировать репозиторий в GitHub Desktop
+
+    1. Запустите GitHub Desktop
+    2. Убедитесь, что сверху-справа выбран аккаунт kuznetsovrost-svg
+       (если нет: File → Options → Accounts → Sign in)
+    3. File → Clone repository…  (Ctrl+Shift+O)
+    4. Вкладка GitHub.com → поиск «mima_01_bk» →
+       выбрать «kuznetsovrost-svg / mima_01_bk»
+    5. Local path:  D:\Projects\mima_01_bk
+    6. Clone
+
+    После клона: вкладки History (коммиты), Branches (ветки).
+    Тег релиза появится в Branch → Tags.
+
+    ⚠ Ассет релиза (mima_01_bk-root-20260618-175757.tar.gz)
+    НЕ ПОПАДАЕТ в D:\Projects\mima_01_bk\ — он лежит только
+    на странице Releases. Скачиваем отдельно.
+
+3.4. Скачать ассеты последнего релиза
+
+    PS> New-Item -ItemType Directory -Force -Path "D:\Projects\mima_01_bk\releases" | Out-Null
+    PS> gh release download backup-20260618-175757 `
+            --repo kuznetsovrost-svg/mima_01_bk `
+            --dir "D:\Projects\mima_01_bk\releases"
+
+    Ожидаемый вывод:
+        Downloading mima_01_bk-root-20260618-175757.tar.gz
+        Downloading mima_01_bk-root-20260618-175757.tar.gz.sha256
+        OK
+
+    В D:\Projects\mima_01_bk\releases\ окажутся два файла.
+
+3.5. Проверка целостности архива
+
+    PS> cd "D:\Projects\mima_01_bk\releases"
+    PS> Get-FileHash .\mima_01_bk-root-20260618-175757.tar.gz -Algorithm SHA256
+    PS> Get-Content .\mima_01_bk-root-20260618-175757.tar.gz.sha256
+
+    Хеш из Get-FileHash должен совпасть с первым полем в .sha256.
+    Если не совпал — удалите .tar.gz и повторите шаг 3.4
+    с ключом --clobber.
+
+3.6. Распаковка (когда понадобится)
+
+    PS> cd D:\Projects\mima_01_bk\releases
+    PS> tar -xzf mima_01_bk-root-20260618-175757.tar.gz `
+             -C D:\Projects\mima_01_bk\restore-test
+
+    Или в проводнике: ПКМ по .tar.gz → 7-Zip → Extract to ...
+    (если установлен 7-Zip).
+
+
+4. ПУТЬ B (запасной) — POWERSHELL + PERSONAL ACCESS TOKEN
+────────────────────────────────────────────────────────────────────────
+
+Подходит, если не хочется ставить gh CLI.
+
+4.1. Создать PAT
+
+    1. Браузер: https://github.com/settings/tokens
+    2. Generate new token → Generate new token (classic)
+    3. Note:        mima_01_bk asset download
+    4. Expiration:  90 days
+    5. Scopes:      repo (только этот)
+    6. Generate token → СКОПИРОВАТЬ токен ghp_... сразу.
+
+4.2. Узнать тег и имя ассета
+
+    PS> $h = @{ Authorization = "Bearer ghp_ВАШ_ТОКЕН" }
+    PS> $rel = Invoke-RestMethod -Headers $h `
+              -Uri "https://api.github.com/repos/kuznetsovrost-svg/mima_01_bk/releases/latest"
+    PS> "Tag:    " + $rel.tag_name
+    PS> "Assets: " + (($rel.assets | ForEach-Object name) -join ", ")
+
+4.3. Скачать ассет
+
+    PS> $h["Accept"] = "application/octet-stream"
+    PS> $a = $rel.assets | Where-Object { $_.name -like "*.tar.gz" } | Select-Object -First 1
+    PS> $dst = "D:\Projects\mima_01_bk\releases\" + $a.name
+    PS> New-Item -ItemType Directory -Force -Path (Split-Path $dst) | Out-Null
+    PS> Invoke-WebRequest -Uri $a.url -Headers $h -OutFile $dst
+
+    ⚠ Без заголовка Accept: application/octet-stream GitHub отдаст
+       JSON с метаданными вместо самого файла.
+
+4.4. Сверить SHA-256
+
+    PS> cd "D:\Projects\mima_01_bk\releases"
+    PS> Get-FileHash .\mima_01_bk-root-20260618-175757.tar.gz -Algorithm SHA256
+
+
+5. ПУТЬ C (разовый) — БРАУЗЕР
+────────────────────────────────────────────────────────────────────────
+
+    1. Откройте https://github.com/kuznetsovrost-svg/mima_01_bk/releases
+       (должны быть залогинены под владельцем, иначе для приватного
+       репа получите 404)
+    2. Под ассетом mima_01_bk-root-20260618-175757.tar.gz нажмите
+       «···» → Download
+    3. Файл сохранится в C:\Users\<you>\Downloads\
+
+    Минусы: руками, не автоматизируется.
+
+
+6. АВТОМАТИЗАЦИЯ — ГОТОВЫЙ POWERSHELL-СКРИПТ
+────────────────────────────────────────────────────────────────────────
+
+Файл:  C:\Tools\fetch-mima-release.ps1
+
+    $ErrorActionPreference = 'Stop'
+    $repo = 'kuznetsovrost-svg/mima_01_bk'
+    $dst  = 'D:\Projects\mima_01_bk\releases'
+
+    New-Item -ItemType Directory -Force -Path $dst | Out-Null
+
+    # тег последнего релиза
+    $tag = gh release list --repo $repo --limit 1 --json tagName `
+           --jq '.[0].tagName'
+    Write-Host "Latest release: $tag"
+
+    # скачать все ассеты этого тега (перезаписать, если уже есть)
+    gh release download $tag --repo $repo --dir $dst --clobber
+
+    # (опционально) обновить git-checkout
+    Push-Location (Split-Path $dst -Parent)
+    try {
+        git fetch origin
+        $branch = git rev-parse --abbrev-ref HEAD
+        git pull --ff-only origin $branch
+    }
+    finally { Pop-Location }
+
+    Write-Host "[$tag] synced to $dst"
+
+Запуск:
+
+    powershell -ExecutionPolicy Bypass -File C:\Tools\fetch-mima-release.ps1
+
+Что делает за один вызов:
+  1. Берёт тег последнего релиза (gh release list)
+  2. Скачивает все ассеты в D:\Projects\mima_01_bk\releases\,
+     перезаписывая старые (--clobber)
+  3. git fetch + pull --ff-only — подтягивает свежие коммиты
+     в текущую ветку
+
+--ff-only важен: если в GitHub Desktop у вас локальные незапушенные
+коммиты, скрипт не сделает merge и не сломает историю — просто
+откажется. Сначала закоммитьте/запушьте вручную.
+
+
+7. КАК ПОЛЬЗОВАТЬСЯ ДАЛЬШЕ
+────────────────────────────────────────────────────────────────────────
+
+  Что случилось на GitHub       |  Что делать на Windows
+  ─────────────────────────────────────────────────────────
+  Вышел новый релиз             |  Запустить fetch-mima-release.ps1
+  Хотите поработать с кодом     |  GitHub Desktop → Fetch origin →
+                                |  Pull origin, потом редактируйте
+  Переключиться на тег          |  Branch → Tags → <имя_тега>
+  Скачать только один ассет    |  gh release download <tag>
+                                |    --repo kuznetsovrost-svg/mima_01_bk
+                                |    --pattern "backup-*"
+                                |    --dir "D:\Projects\mima_01_bk\releases"
+                                |    --clobber
+
+
+8. ЧАСТЫЕ ГРАБЛИ
+────────────────────────────────────────────────────────────────────────
+
+  Симптом                                  | Причина и фикс
+  ─────────────────────────────────────────────────────────────────
+  В GitHub Desktop не виден mima_01_bk     | В нём залогинен другой аккаунт.
+                                          | File → Options → Accounts →
+                                          | Sign out → войти под
+                                          | kuznetsovrost-svg.
+  ─────────────────────────────────────────────────────────────────
+  gh release download → 404 Not Found      | gh залогинен не под владельцем.
+                                          | gh auth logout → gh auth login
+                                          | под kuznetsovrost-svg.
+  ─────────────────────────────────────────────────────────────────
+  gh: command not found                    | gh не в PATH. Закрыть и заново
+                                          | открыть PowerShell, либо
+                                          | полный путь
+                                          | C:\Program Files\GitHub CLI\
+                                          | gh.exe
+  ─────────────────────────────────────────────────────────────────
+  Ассет скачался, но это JSON              | Invoke-WebRequest без
+                                          | Accept: application/octet-stream
+                                          | (только путь B). Скачать заново
+                                          | через gh.
+  ─────────────────────────────────────────────────────────────────
+  Папка releases создалась, но пустая      | Запустили не в той папке.
+                                          | Проверить: Get-ChildItem $dst.
+  ─────────────────────────────────────────────────────────────────
+  Get-FileHash ошибка / tar не найден      | Старая Windows (< 1903).
+                                          | Обновить Windows либо
+                                          | использовать 7-Zip:
+                                          |   7z h -sha256 file.tar.gz
+                                          |   7z x file.tar.gz
+  ─────────────────────────────────────────────────────────────────
+  Файл ассета не появляется в              | И не должен: ассеты живут
+  D:\Projects\mima_01_bk\ после git pull   | только в Releases, не в git.
+                                          | Для скачивания — отдельная
+                                          | команда gh release download.
+  ─────────────────────────────────────────────────────────────────
+  PAT не нужен при использовании gh        | gh использует свой OAuth-токен,
+                                          | он не пересекается с токеном
+                                          | GitHub Desktop в Windows
+                                          | Credential Manager.
+  ─────────────────────────────────────────────────────────────────
+  В Release имя тега = «Server backup...»  | Это title, не tag. Реальный
+  а не «backup-20260618-175757»            | tag — backup-20260618-175757.
+                                          | Сверяйте по:
+                                          |   gh release list --repo
+                                          |     kuznetsovrost-svg/mima_01_bk
+
+
+9. ШПАРГАЛКА ВЫБОРА ПУТИ
+────────────────────────────────────────────────────────────────────────
+
+  Хочу и код, и ассет, и повторяемо   →  Путь A (GitHub Desktop + gh)
+  Только ассет, gh не хочу           →  Путь B (PowerShell + PAT)
+  Раз в месяц скачать руками          →  Путь C (браузер)
+  Каждый день автоматически           →  Путь A + планировщик Windows →
+                                         fetch-mima-release.ps1
+
+
+═══════════════════════════════════════════════════════════════════════════
+Конец документа. Актуально на 2026-06-19, проверено через GitHub API.
+═══════════════════════════════════════════════════════════════════════════

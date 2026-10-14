@@ -1,0 +1,133 @@
+═══════════════════════════════════════════════════════════════════
+  КАК УЗНАТЬ ТЕКУЩИЙ ПРОФИЛЬ HERMES AGENT
+  (Hermes Agent v0.16.0 · 2026-06-29, Matrix session)
+═══════════════════════════════════════════════════════════════════
+
+ОТВЕТ В ОДНОЙ СТРОКЕ
+───────────────────
+  $ hermes profile list
+
+В таблице строка, отмеченная символом ◆ — это и есть текущий
+(sticky) профиль. В этой сессии:  ◆default
+
+Если хочешь развёрнутую информацию по конкретному профилю:
+  $ hermes profile show default
+
+
+ЧТО ТАКОЕ «ПРОФИЛЬ» В HERMES
+────────────────────────────
+Профиль = изолированный конфиг-бандл Hermes. У каждого профиля
+свой HERMES_HOME-каталог со своим .env, config.yaml, SOUL.md,
+skills/, cron/, memories/, plugins/ и т. д.
+
+  • Корневой (default) профиль лежит в  ~/.hermes/
+  • Дополнительные профили лежат в   ~/.hermes/profiles/<name>/
+  • Профилей может быть несколько; «текущий» — это тот, который
+    подхватится при следующем запуске Hermes.
+
+
+ИСТОЧНИК ИСТИНЫ (как Hermes внутри себя определяет профиль)
+──────────────────────────────────────────────────────────
+Реализация — файл hermes_cli/profiles.py, функция
+get_active_profile_name() (строка 1285):
+
+    resolved = HERMES_HOME.resolve()
+    if resolved == ~/.hermes  →  return "default"
+    if resolved inside ~/.hermes/profiles/<name>  →  return <name>
+    else  →  return "custom"
+
+То есть Hermes смотрит исключительно на переменную окружения
+HERMES_HOME:
+  • HERMES_HOME = ~/.hermes                  → профиль "default"
+  • HERMES_HOME = ~/.hermes/profiles/work    → профиль "work"
+  • HERMES_HOME = /любой/другой/путь         → профиль "custom"
+
+Дополнительно (см. main.py:378–390) при запуске также
+учитывается файл-маркер  ~/.hermes/active_profile, если он
+существует и в нём имя, отличное от "default" — это sticky-
+выбор, сделанный через `hermes profile use <name>`.
+
+
+ВСЕ СПОСОБЫ УЗНАТЬ ТЕКУЩИЙ ПРОФИЛЬ
+──────────────────────────────────
+
+1) CLI — самый прямой способ
+   $ hermes profile list
+       В таблице строка с маркером ◆ — текущая.
+   $ hermes profile show default
+       Покажет путь, модель, статус gateway, число skills и т. д.
+
+2) Переменные окружения текущего процесса
+   $ env | grep -E "HERMES_HOME|HERMES_PROFILE"
+       HERMES_HOME=/root/.hermes          ← корень default-профиля
+       HERMES_PROFILE=                    ← обычно пусто
+
+3) Изнутри запущенного процесса (читаем environ через /proc)
+   $ tr '\0' '\n' < /proc/$(pgrep -f 'hermes_cli.main')/environ \
+       | grep HERMES_HOME
+       Даст HERMES_HOME того процесса, на котором крутится
+       конкретный инстанс (gateway / REPL / cron).
+
+4) Через Python-API Hermes (если пишешь свой скрипт)
+       from hermes_cli.profiles import get_active_profile_name
+       print(get_active_profile_name())
+       # → 'default' в этой сессии
+
+5) Косвенные признаки
+   • Символ ◆ в выводе `hermes profile list`
+   • HERMES_HOME не содержит "/profiles/" → default
+   • Нет файла ~/.hermes/active_profile → sticky не переопределён
+
+
+РЕЗУЛЬТАТ ДЛЯ ЭТОЙ СЕССИИ (2026-06-29, Matrix-thread)
+─────────────────────────────────────────────────────
+  $ hermes profile list
+  ───────────────  ───────────────────────────  ───────────  ────────
+   Profile          Model                        Gateway      Alias
+  ───────────────  ───────────────────────────  ───────────  ────────
+   ◆default         MiniMax-M3                   running      —
+  ───────────────  ───────────────────────────  ───────────  ────────
+
+  $ hermes profile show default
+  Profile: default
+  Path:    /root/.hermes
+  Model:   MiniMax-M3 (minimax)
+  Gateway: running
+  Skills:  72
+  .env:    exists
+  SOUL.md: exists
+
+  $ env | grep HERMES_HOME
+  HERMES_HOME=/root/.hermes       ← НЕ содержит /profiles/ → default
+
+  $ ls /root/.hermes/profiles/
+  ls: cannot access ...: No such file or directory
+                                  ← других профилей не создано
+
+  $ cat /root/.hermes/active_profile
+  cat: ...: No such file or directory
+                                  ← sticky-маркер не задан
+
+  ► ТЕКУЩИЙ ПРОФИЛЬ = default
+  ► HERMES_HOME     = /root/.hermes
+  ► Модель          = MiniMax-M3 (provider: minimax)
+  ► Профилей        = 1 (создан только default; других пока нет)
+
+
+КАК ПЕРЕКЛЮЧИТЬ ПРОФИЛЬ (на будущее)
+────────────────────────────────────
+  $ hermes profile create work          # создать новый
+  $ hermes profile use work             # сделать его sticky
+  $ hermes profile list                 # проверить (◆ переедет)
+
+После `hermes profile use` будет создан файл
+~/.hermes/active_profile с именем "work", и следующий запуск
+Hermes подхватит именно его (см. main.py:378–390).
+
+
+КРАТКО
+──────
+  Текущий профиль  = default
+  Где смотреть     = `hermes profile list` (строка с ◆)
+  Откуда Hermes знает = из HERMES_HOME + ~/.hermes/active_profile
+═══════════════════════════════════════════════════════════════════

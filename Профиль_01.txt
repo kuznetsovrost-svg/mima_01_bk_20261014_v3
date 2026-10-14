@@ -1,0 +1,487 @@
+# Профиль Hermes Agent — полный гайд по настройке нового профиля
+
+Документ написан после практической работы на этом сервере (mima-g-01 / twc1.net,
+Hermes Agent v0.x, /usr/local/lib/hermes-agent/, /usr/local/bin/hermes).
+Все команды выполнялись и проверялись здесь же — то есть гайд не теоретический,
+а подтверждён реальным поведением CLI.
+
+────────────────────────────────────────────────────────────────────────────
+1. ЧТО ТАКОЕ ПРОФИЛЬ
+────────────────────────────────────────────────────────────────────────────
+
+Профиль — это **изолированная рабочая директория** Hermes Agent со своим:
+
+  • ~/.hermes/profiles/<имя>/         — конфиг, память, логи, состояние
+  • ~/.hermes/profiles/<имя>/.env     — секреты (токены, API-ключи)
+  • ~/.hermes/profiles/<имя>/config.yaml — главный конфиг
+  • ~/.hermes/profiles/<имя>/SOUL.md   — системные инструкции/личность
+  • ~/.hermes/profiles/<имя>/memory/   — долговременная память
+  • ~/.hermes/profiles/<имя>/skills/, plugins/, cron/, hooks/ — кастомизация
+  • свой gateway (мессенджер-шлюз), свои настройки модели, свои каналы
+
+Профили НЕ делят между собой: токены, память, навыки, cron-задачи, состояние
+шлюза, активные сессии. Один профиль можно снести — другие не пострадают.
+
+Где живут команды:
+
+  $ hermes profile <sub>                ← управление профилями
+  $ hermes config  <sub>                ← настройка текущего (активного) профиля
+  $ hermes model                        ← выбор модели / провайдера
+  $ hermes auth     <sub>               ← логины к провайдерам
+  $ hermes gateway  <sub>               ← мессенджер-шлюз (Telegram/Matrix/…)
+  $ hermes cron     <sub>               ← расписание задач
+  $ hermes setup                        ← интерактивный визард (пошаговый)
+
+Пример реального списка на этом хосте:
+
+  $ hermes profile list
+  Profile              Model          Gateway   Alias
+  ──────────────────    ──────────     ───────   ───────
+  ◆ default            MiniMax-M3     running   —
+    analyst_training   —              stopped   analyst_training
+
+◆ — текущий активный (sticky default).
+
+
+────────────────────────────────────────────────────────────────────────────
+2. МИНИМАЛЬНЫЙ ПЛАН ДЕЙСТВИЙ (7 ШАГОВ)
+────────────────────────────────────────────────────────────────────────────
+
+Шаг 1. Создать профиль
+Шаг 2. Настроить модель и провайдера
+Шаг 3. Задать секреты (.env)
+Шаг 4. Заполнить config.yaml (каналы, тулсеты, лимиты)
+Шаг 5. По желанию — кастомизировать SOUL.md (личность/инструкции)
+Шаг 6. Запустить и проверить gateway
+Шаг 7. Зарегистрировать systemd-юнит для авто-старта
+
+Ниже — каждый шаг с командами и пояснениями. Все команды — от пользователя,
+под которым уже установлен Hermes (по умолчанию root).
+
+
+────────────────────────────────────────────────────────────────────────────
+ШАГ 1. СОЗДАТЬ ПРОФИЛЬ
+────────────────────────────────────────────────────────────────────────────
+
+# Интерактивный мастер (быстрый способ)
+hermes profile create my_profile
+→ спросит имя, описание, опционально дистрибутив. По умолчанию пустой профиль.
+
+# Минимальный create без вопросов (если хотите сразу):
+hermes profile create my_profile --description "Рабочий профиль для X"
+
+# Посмотреть, что получилось:
+hermes profile list
+hermes profile show my_profile
+hermes profile info my_profile         # если установлен из дистрибутива
+
+# Переключиться на новый профиль:
+hermes profile use my_profile
+
+После `use` все команды `hermes` (chat, gateway, cron, config, model) будут
+работать в контексте профиля my_profile. Чтобы вернуться — `hermes profile
+use default`.
+
+Каталог созданной директории:
+  ~/.hermes/profiles/my_profile/
+
+Внутри будет пустой config.yaml, .env (копия дефолта или пустой), SOUL.md,
+пустые skills/, plugins/, cron/, hooks/, memory/, cache/, logs/.
+
+Если хотите «с чистого листа» — просто подтвердите create без импорта.
+Если хотите «форкнуть» существующий профиль — см. шаг 1б.
+
+
+────────────────────────────────────────────────────────────────────────────
+ШАГ 1б. КЛОНИРОВАТЬ СУЩЕСТВУЮЩИЙ ПРОФИЛЬ (опционально)
+────────────────────────────────────────────────────────────────────────────
+
+# Экспорт существующего профиля в архив
+hermes profile export default -o /tmp/default.tar.gz
+
+# Импорт в новый
+hermes profile import /tmp/default.tar.gz --name my_profile
+
+# Или, если хотите именно «рабочую копию default»:
+cp -a ~/.hermes/profiles/default/. ~/.hermes/profiles/my_profile/
+# а затем отредактировать секреты/токены под новые цели.
+
+
+────────────────────────────────────────────────────────────────────────────
+ШАГ 2. НАСТРОИТЬ МОДЕЛЬ И ПРОВАЙДЕРА
+────────────────────────────────────────────────────────────────────────────
+
+Hermes поддерживает много провайдеров (OpenAI, Anthropic, Nous Portal,
+Ollama, OpenRouter, кастомные). На этом хосте уже настроен `minimax`:
+
+  $ hermes config show | head -20
+  model:
+    default: MiniMax-M3
+    provider: minimax
+    base_url: https://api.minimax.io/anthropic
+
+Чтобы настроить для нового профиля:
+
+# 2.1 Выбрать провайдера. Запустится визард:
+hermes model
+
+# 2.2 Или напрямую (неинтерактивно):
+hermes model set minimax --model MiniMax-M3
+
+# 2.3 Кастомный провайдер (через config set):
+hermes config set model.provider openai
+hermes config set model.default gpt-4o
+hermes config set model.base_url https://api.openai.com/v1
+
+# 2.4 Войти в провайдера (ввести API-ключ):
+hermes auth login openai
+hermes auth login anthropic
+hermes auth login minimax       # сохранит ключ в auth.json
+
+# 2.5 Посмотреть, что в итоге получилось:
+hermes config show | head -30
+hermes auth status
+
+Рекомендация: используйте только ОДИН основной провайдер и ОДИН fallback.
+Микс из 3-4 провайдеров усложняет отладку.
+
+
+────────────────────────────────────────────────────────────────────────────
+ШАГ 3. СЕКРЕТЫ (.env)
+────────────────────────────────────────────────────────────────────────────
+
+Файл: ~/.hermes/profiles/my_profile/.env (mode 600!)
+
+Минимально нужные переменные:
+
+  # ---- Основной провайдер (Anthropic-совместимое API) ----
+  ANTHROPIC_API_KEY=sk-ant-...
+  ANTHROPIC_BASE_URL=https://api.minimax.io/anthropic
+  ANTHROPIC_MODEL=MiniMax-M3
+
+  # ---- Telegram-бот (если будете использовать Telegram-канал) ----
+  TELEGRAM_BOT_TOKEN=*** # см. @BotFather
+  TELEGRAM_HOME_CHAT=123456789          # ваш личный chat_id
+  TELEGRAM_ALLOWED_USERS=123456789      # whitelist, через запятую
+
+  # ---- Matrix-бот (опционально) ----
+  MATRIX_HOMESERVER=https://matrix.example.com
+  MATRIX_USER_ID=@bot:matrix.example.com
+  MATRIX_ACCESS_TOKEN=syt_...
+  MATRIX_DEVICE_ID=ABCD1234
+  MATRIX_HOME_ROOM=!abcdef:matrix.example.com
+  MATRIX_HOME_ROOM_THREAD_ID=$thread      # или пусто для top-level
+  MATRIX_ALLOWED_USERS=@you:matrix.example.com
+
+  # ---- Anthropic/дополнительные ----
+  HERMES_MODEL=MiniMax-M3
+  AGENT_NAME=hermes
+  LOG_LEVEL=INFO
+
+Полный список переменных с комментариями — в шаблоне:
+
+  ~/.hermes/profiles/default/.env
+  или референсный /usr/local/lib/hermes-agent/hermes_cli/templates/.env.example
+
+Важно:
+  • chmod 600 .env       — иначе Hermes откажется работать
+  • не коммитить .env в git
+  • если используется Hermes из нескольких профилей — токены Telegram/Matrix
+    должны быть РАЗНЫЕ (один бот = один профиль, иначе polling conflict).
+
+
+────────────────────────────────────────────────────────────────────────────
+ШАГ 4. CONFIG.YAML — ГЛАВНЫЙ КОНФИГ ПРОФИЛЯ
+────────────────────────────────────────────────────────────────────────────
+
+Файл: ~/.hermes/profiles/my_profile/config.yaml
+
+Открыть в редакторе:
+  hermes config edit            (запустит $EDITOR)
+  # или напрямую:
+  vim ~/.hermes/profiles/my_profile/config.yaml
+
+Ключевые секции:
+
+  model:
+    default: MiniMax-M3
+    provider: minimax
+    base_url: https://api.minimax.io/anthropic
+
+  providers:
+    minimax:
+      api_key_env: ANTHROPIC_API_KEY
+      base_url: https://api.minimax.io/anthropic
+      model: MiniMax-M3
+
+  fallback_providers:
+    - provider: openai
+      model: gpt-4o-mini
+
+  toolsets:
+    - hermes-cli                # базовые cli-тулсеты
+
+  agent:
+    max_turns: 150
+    gateway_timeout: 1800
+    restart_drain_timeout: 180
+    api_max_retries: 3
+    gateway_timeout_warning: 900
+    clarify_timeout: 600
+    gateway_notify_interval: 180
+    image_input_mode: auto
+    verbose: false
+    reasoning_effort: medium
+    personalities: { ... }      # готовые пресеты личностей
+
+  messaging:                     # см. секцию про gateway ниже
+    telegram:
+      enabled: true
+      home_chat: 123456789
+      allowed_users: [123456789]
+      poll_interval: 1.0
+    matrix:
+      enabled: true
+      homeserver: https://matrix.example.com
+      allowed_users: ["@you:matrix.example.com"]
+      home_room: "!abcdef:matrix.example.com"
+
+После правок — проверка:
+  hermes config check         # missing/outdated
+  hermes config migrate       # добавит новые опции в старый конфиг
+
+
+────────────────────────────────────────────────────────────────────────────
+ШАГ 5. SOUL.MD — ЛИЧНОСТЬ И ИНСТРУКЦИИ (опционально)
+────────────────────────────────────────────────────────────────────────────
+
+Файл: ~/.hermes/profiles/my_profile/SOUL.md
+
+Содержимое этого файла подмешивается в system prompt каждой сессии этого
+профиля. Можно:
+
+  • задать имя и тон ("ты — ассистент по имени X, разговариваешь коротко")
+  • зафиксировать правила ("не отвечай в треды Matrix", "используй venv для python")
+  • прописать предпочтения ("короткие ответы, без markdown-таблиц")
+
+Пример SOUL.md:
+
+  Ты — Hermes, ассистент по работе с инфраструктурой.
+  Отвечай кратко, по делу. Используй markdown умеренно.
+  Для отладки всегда показывай фактический вывод команд, а не пересказ.
+
+Размер SOUL.md ограничен ~8-16 КБ; большие тексты Hermes молча обрежет.
+
+
+────────────────────────────────────────────────────────────────────────────
+ШАГ 6. GATEWAY (МЕССЕНДЖЕР-ШЛЮЗ)
+────────────────────────────────────────────────────────────────────────────
+
+Hermes gateway — это НЕ HTTP-сервер. Это long-polling клиент к Telegram,
+Matrix и т.д., который принимает сообщения и шлёт ответы. TCP-порты наружу
+он не открывает.
+
+Команды:
+
+  hermes gateway status                     # статус текущего профиля
+  hermes gateway list                       # каналы
+  hermes gateway run                        # запустить в foreground (отладка)
+  hermes gateway start                      # запустить как daemon
+  hermes gateway stop
+  hermes gateway restart
+  hermes gateway install                    # установить systemd unit
+  hermes gateway uninstall                  # снять systemd unit
+  hermes gateway setup                      # интерактивная настройка каналов
+  hermes gateway migrate-legacy             # миграция из старого формата
+
+Перед запуском gateway убедитесь, что:
+  • TELEGRAM_BOT_TOKEN / MATRIX_ACCESS_TOKEN записаны в .env
+  • TELEGRAM_ALLOWED_USERS содержит ваш chat_id (иначе бот будет
+    отвечать только тем, кого нет в whitelist — то есть никому)
+  • webhook не залип на этом боте:
+      curl "https://api.telegram.org/bot<TOKEN>/deleteWebhook"
+      curl "https://api.telegram.org/bot<TOKEN>/getWebhookInfo"
+    ответ должен быть url: "".
+
+Быстрая проверка вручную:
+
+  # Тест токена
+  curl -s "https://api.telegram.org/bot<TOKEN>/getMe"
+  # Должен вернуть {"ok":true,...}
+
+  # Тест «здорово ли живой бот»
+  curl -s "https://api.telegram.org/bot<TOKEN>/getUpdates?timeout=0"
+  # Должен вернуть {"ok":true,"result":[]} — пусто, потому что бот
+  # ничего ещё не забрал.
+
+  # Запустить gateway в foreground (Ctrl+C — остановить):
+  hermes gateway run
+
+  # В другом терминале — написать боту /start. Hermes ответит.
+
+Когда всё работает — переходим к автозапуску (шаг 7).
+
+
+────────────────────────────────────────────────────────────────────────────
+ШАГ 7. SYSTEMD-ЮНИТ ДЛЯ АВТО-СТАРТА
+────────────────────────────────────────────────────────────────────────────
+
+# 7.1 Установить user-юнит (рекомендуемый способ)
+hermes gateway install
+# Эта команда:
+  • создаст ~/.config/systemd/user/hermes-gateway.service
+  • положит symlink в ~/.config/systemd/user/default.target.wants/
+  • включит linger для текущего пользователя (loginctl enable-linger $USER)
+
+# 7.2 Включить linger (если install не сделал этого сам)
+sudo loginctl enable-linger $USER
+# Без linger'а user-systemd умирает при logout'е, и после ребута хоста
+# gateway не поднимется.
+
+# 7.3 Запустить и проверить
+systemctl --user daemon-reload         # если правили юнит вручную
+systemctl --user enable hermes-gateway.service
+systemctl --user start  hermes-gateway.service
+systemctl --user status hermes-gateway.service --no-pager
+
+# 7.4 Альтернатива: system-level юнит (если хочется без linger)
+sudo tee /etc/systemd/system/hermes-gateway.service >/dev/null <<'UNIT'
+[Unit]
+Description=Hermes Agent Gateway
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/.hermes/profiles/my_profile
+Environment="PATH=/usr/local/lib/hermes-agent/venv/bin:/usr/local/bin:/usr/bin:/bin"
+Environment="VIRTUAL_ENV=/usr/local/lib/hermes-agent/venv"
+Environment="HERMES_HOME=/root/.hermes"
+ExecStart=/usr/local/lib/hermes-agent/venv/bin/hermes gateway run
+Restart=always
+RestartSec=5
+RestartForceExitStatus=75
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=210
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+sudo systemctl daemon-reload
+sudo systemctl enable --now hermes-gateway.service
+sudo systemctl status hermes-gateway.service --no-pager
+
+
+────────────────────────────────────────────────────────────────────────────
+КАК ПЕРЕКЛЮЧАТЬСЯ МЕЖДУ ПРОФИЛЯМИ
+────────────────────────────────────────────────────────────────────────────
+
+  hermes profile use default           # sticky default = текущий
+  hermes profile use my_profile        # переключиться
+
+  # Sticky default = сохраняется на диск; следующая команда hermes
+  # в любой оболочке будет работать в этом профиле.
+
+  # Разовая команда в другом профиле БЕЗ смены sticky:
+  hermes --profile=my_profile chat
+
+  # Посмотреть, в каком профиле вы сейчас:
+  hermes profile list        # ◆ — текущий
+
+
+────────────────────────────────────────────────────────────────────────────
+ТИПОВЫЕ ПРОБЛЕМЫ И ЧТО ДЕЛАТЬ
+────────────────────────────────────────────────────────────────────────────
+
+1. «hermes: command not found»
+   — Hermes ещё не установлен, либо /usr/local/bin не в PATH.
+   — Проверьте: ls -la /usr/local/bin/hermes
+   — Либо добавьте PATH, либо активируйте venv напрямую:
+       source /usr/local/lib/hermes-agent/venv/bin/activate
+
+2. «Permission denied» при запуске gateway
+   — .env должен быть mode 600 и принадлежать пользователю,
+     под которым запускается gateway.
+
+3. Telegram-бот молчит
+   — Проверьте: curl https://api.telegram.org/bot<TOKEN>/getMe
+   — Проверьте webhook: curl https://api.telegram.org/bot<TOKEN>/getWebhookInfo
+     если url != "", сделайте deleteWebhook?drop_pending_updates=false
+   — Проверьте, что TELEGRAM_ALLOWED_USERS содержит ваш chat_id.
+   — Проверьте, что gateway запущен и не падает:
+       hermes gateway status
+       journalctl --user -u hermes-gateway.service -n 50
+
+4. Matrix «terminated by other getUpdates request»
+   — На один бот нельзя запустить >1 gateway одновременно.
+   — Остановите второй профиль: hermes profile use other && hermes gateway stop
+
+5. Telegram «polling conflict (1/5)»
+   — Это нормальный backoff при перезапуске (предыдущий long-poll
+     живёт ~20s на стороне Telegram). Если 1-2 таких итерации и gateway
+     восстанавливается — НЕ трогайте.
+   — Если зацикливается — перезапустите: hermes gateway restart
+
+6. Не приходят ответы в Telegram
+   — Скорее всего TELEGRAM_ALLOWED_USERS пуст или неверный.
+     Hermes для безопасности игнорирует сообщения от неизвестных user'ов.
+
+7. «Tool X returned error: Background review denied»
+   — Некоторые опасные тулы требуют явного подтверждения. Нажмите
+     кнопку «approve» в Telegram или выполните действие через
+     `hermes --yolo` (осторожно!).
+
+
+────────────────────────────────────────────────────────────────────────────
+ЧТО ПОМНИТЬ ПРИ РАБОТЕ С НЕСКОЛЬКИМИ ПРОФИЛЯМИ
+────────────────────────────────────────────────────────────────────────────
+
+• Один бот (Telegram/Matrix) = один активный gateway.
+  Если у вас 2 профиля и оба хотят того же бота — будет polling conflict.
+  Решение: либо разные боты, либо останавливать один профиль перед
+  запуском другого.
+
+• Память (`memory/`) и навыки (`skills/`) НЕ пересекаются между
+  профилями. Это фича, а не баг — но если вы хотите делиться навыками,
+  используйте симлинки или `hermes curator`.
+
+• cron-задачи тоже привязаны к профилю. Чтобы доставить результат в
+  конкретный чат, используйте `--deliver` или `home` в профиле.
+
+• systemd unit тоже per-profile (создаётся через `gateway install`
+  в контексте того профиля, в котором вы сейчас).
+
+• Апдейты Hermes (`hermes update`) применяются ко всем профилям сразу —
+  это глобальная операция.
+
+• При удалении профиля (`hermes profile delete my_profile`) данные
+  удаляются безвозвратно. Сначала export'ните.
+
+
+────────────────────────────────────────────────────────────────────────────
+ПОЛНЫЙ ЧЕКЛИСТ «ПОДНЯТЬ НОВЫЙ ПРОФИЛЬ ЗА 10 МИНУТ»
+────────────────────────────────────────────────────────────────────────────
+
+  □ 1. hermes profile create my_profile
+  □ 2. hermes profile use my_profile
+  □ 3. hermes model
+         (или: hermes model set <provider> --model <model>)
+  □ 4. hermes auth login <provider>
+  □ 5. vim ~/.hermes/profiles/my_profile/.env
+         (TELEGRAM_*, MATRIX_*, ANTHROPIC_* — заполнить, chmod 600)
+  □ 6. hermes config edit
+         (messaging: telegram/matrix — enabled, allowed_users, home_chat)
+  □ 7. curl "https://api.telegram.org/bot<TOKEN>/deleteWebhook"
+  □ 8. hermes gateway run        ← проверка вручную (Ctrl+C — стоп)
+  □ 9. (в другом терминале) написать боту /start — должен ответить
+  □ 10. Ctrl+C в foreground-сессии
+  □ 11. hermes gateway install   ← установить systemd unit
+  □ 12. loginctl enable-linger $USER  ← если ещё не включён
+  □ 13. systemctl --user status hermes-gateway.service --no-pager
+  □ 14. hermes gateway status
+
+Готово. Профиль живёт, общается, авто-стартует после ребута.

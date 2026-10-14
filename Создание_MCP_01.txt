@@ -1,0 +1,181 @@
+Создание tools для работы с MCP сервером в Hermes Agent
+========================================================
+
+1. Общая архитектура
+--------------------
+
+Hermes Agent (профиль: fst-control)
+  -> MCP Plugin (Python, встроенный в Hermes)
+     - Подключается к MCP серверу по stdio/SSE
+     - Обнаруживает tools, resources, prompts
+     - Регистрирует их как Hermes tools
+  -> SKILL (SKILL.md)
+     - Загружается по имени через skill_view()
+     - Описывает, КАК использовать MCP tools
+     - Может принимать параметры запуска MCP сервера
+
+
+2. Шаг 1: Создать MCP plugin
+----------------------------
+
+MCP плагин - это Python-класс, который говорит Hermes, как подключиться
+к MCP серверу. Создать файл:
+~/.hermes/profiles/fst-control/plugins/my_mcp_server.py
+
+    """
+    MCP плагин для подключения к <имя твоего> MCP серверу.
+    Предполагается, что MCP сервер запускается как подпроцесс
+    по команде, например: `npx -y some-mcp-server` или `python -m my_mcp_server`.
+    """
+    from hermes.plugins import MCPServerPlugin  # встроенный базовый класс
+
+
+    class MyMCPServerPlugin(MCPServerPlugin):
+        name = "my_mcp_server"  # короткое имя, префикс для tools
+        description = "Подключение к моему MCP серверу"
+
+        # Команда запуска MCP сервера (stdio transport)
+        command = ["python", "-m", "my_mcp_server"]
+
+        # Переменные окружения для сервера
+        env = {
+            "API_KEY": "***",
+        }
+
+        # Для удалённого SSE endpoint:
+        # transport = "sse"
+        # url = "https://example.com/mcp"
+
+        # Whitelist tools
+        # allowed_tools = ["tool_name_1", "tool_name_2"]
+
+        # Blacklist tools (опасные)
+        # blocked_tools = ["delete_everything"]
+
+
+Ключевые поля плагина:
+  command        - список строк, команда и аргументы для subprocess
+  env            - переменные окружения, передаваемые серверу
+  transport      - "stdio" (по умолчанию) или "sse"
+  url            - URL SSE endpoint, если transport="sse"
+  allowed_tools  - whitelist, только эти tools будут зарегистрированы
+  blocked_tools  - blacklist, эти tools будут скрыты
+
+
+3. Шаг 2: Включить плагин
+--------------------------
+
+В ~/.hermes/profiles/fst-control/config.yaml добавить:
+
+    plugins:
+      enabled:
+        - my_mcp_server
+
+После перезапуска сессии Hermes подключится к MCP серверу и tools
+станут доступны как обычные Hermes tools.
+
+Для отложенного старта (lazy):
+
+    plugins:
+      enabled:
+        - my_mcp_server:
+            lazy: true  # подключаться только когда tool вызван впервые
+
+
+4. Шаг 3: Создать SKILL, использующий MCP tools
+------------------------------------------------
+
+SKILL - это markdown-файл с инструкциями для агента.
+Создать: ~/.hermes/profiles/fst-control/skills/using-my-server/SKILL.md
+
+    ---
+    name: using-my-server
+    description: Использует My MCP Server для <краткое описание задачи>.
+                  Загружай когда пользователь просит <триггерные фразы>.
+    ---
+
+    # Использование My MCP Server
+
+    ## Когда загружать
+    Загружай этот скилл, когда пользователь просит:
+    - "<триггерная фраза 1>"
+    - "<триггерная фраза 2>"
+    - явные ссылки на <что делает сервер>
+
+    ## Доступные tools
+    После подключения MCP плагина my_mcp_server доступны:
+    - mcp__my_mcp_server__tool_name_1 - что делает
+    - mcp__my_mcp_server__tool_name_2 - что делает
+    - mcp__my_mcp_server__tool_name_3 - что делает
+    Все MCP tools имеют префикс mcp__<plugin_name>__<tool_name>.
+
+    ## Рабочий процесс
+    1. Определи, какой tool подходит под задачу.
+    2. Вызови его через обычный вызов tool в Hermes.
+    3. Если результат - список, представь пользователю в виде таблицы.
+    4. Если результат содержит ошибку, проверь секцию Troubleshooting.
+
+    ## Примеры вызовов
+    ### Пример 1: <типичный сценарий>
+    mcp__my_mcp_server__tool_name_1 с параметрами {"key": "value"}
+
+    ### Пример 2: <другой сценарий>
+    mcp__my_mcp_server__tool_name_2 с параметрами {"query": "..."}
+
+    ## Параметры и формат ответов
+    Опиши формат данных, которые возвращает каждый tool.
+
+    ## Troubleshooting
+    - Tool не появляется -> проверить config.yaml и запуск command вручную
+    - Connection timeout -> увеличить таймаут или проверить сеть
+    - Auth error -> проверить env в плагине
+
+Структура каталогов:
+
+    skills/
+    └── using-my-server/
+        └── SKILL.md
+
+
+5. Шаг 4: Загрузка скилла
+-------------------------
+
+SKILL.md загружается автоматически по триггерам из description,
+либо явно через:
+
+    skill_view(name="using-my-server")
+
+После загрузки агент знает, какие MCP tools доступны и как их использовать.
+
+
+6. Проверка работоспособности
+-----------------------------
+
+1. Перезапустить Hermes (новый сеанс).
+2. Проверить логи: "mcp plugin my_mcp_server connected, N tools discovered".
+3. Попробовать вызвать любой mcp__my_mcp_server__* tool.
+4. Загрузить скилл skill_view(name="using-my-server") и попросить агента
+   выполнить сценарий из SKILL.md.
+
+
+7. Частые вопросы
+-----------------
+
+Q: Что если MCP сервер уже работает как remote SSE endpoint?
+A: Использовать transport = "sse" и url = "https://..."
+   вместо command.
+
+Q: Можно ли подключить несколько MCP серверов?
+A: Да, создать несколько плагинов с разными name и добавить
+   в plugins.enabled. Tools будут с разными префиксами
+   mcp__<name>__...
+
+Q: Как защититься от опасных tools сервера?
+A: Использовать blocked_tools в плагине - эти tools не будут
+   зарегистрированы в Hermes.
+
+Q: Где взять список tools конкретного MCP сервера заранее?
+A: Запустить команду из command вручную - многие серверы
+   печатают JSON со списком tools при старте. Описать этот
+   список в SKILL.md, чтобы агенту не приходилось обнаруживать
+   их каждый раз.

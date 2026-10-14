@@ -1,0 +1,530 @@
+# TASKS.md — назначение, порядок заполнения, примеры
+## Практический гайд на основе проверки исходного кода Hermes Agent
+
+────────────────────────────────────────────────────────────────────────────
+0. КОРОТКО: ЧТО Я ВЫЯСНИЛ ПРО TASKS.MD В HERMES
+────────────────────────────────────────────────────────────────────────────
+
+Проверил исходный код Hermes Agent на этом сервере
+(`/usr/local/lib/hermes-agent/`). **TASKS.md как встроенная
+Hermes-сущность НЕ существует**. Это **конвенция из общей
+практики разработки**, не часть Hermes.
+
+Что есть в Hermes для задач:
+
+  • `task.md` (singular, lowercase) — шаблон задачи в
+    `~/.hermes/profiles/<profile>/workspace/inbox/<task-id>/`.
+  • `progress.json` — машинное состояние задачи.
+  • `plans/<task-id>.md` — журнал задачи.
+  • `kanban` — формальная Kanban-доска (SQLite,
+    `hermes_cli/kanban_db.py`).
+  • `TODO.md` — упоминается в `claw.py:635` для sandbox.
+  • `hermes project` — first-class workspaces, привязанные
+    к kanban-board.
+
+TASKS.md (plural) — это **человеческая конвенция**, не Hermes.
+В open-source проектах TASKS.md обычно лежит в корне репо и
+описывает текущие задачи команды (или AI-агента).
+
+Поэтому этот гайд описывает TASKS.md как **полезный формат
+для AI-агента**, а не как «Hermes-фичу».
+
+────────────────────────────────────────────────────────────────────────────
+1. НАЗНАЧЕНИЕ TASKS.MD
+────────────────────────────────────────────────────────────────────────────
+
+1.1. Что это.
+   Файл в корне проекта (или в workspace), где собран список
+   задач с приоритетами, владельцами, состояниями. Читается
+   и человеком, и AI-агентом.
+
+1.2. Для кого.
+   - **Люди**: developer, lead, contributor — видят, что в работе.
+   - **AI-агент**: при старте сессии читает TASKS.md, понимает,
+     что есть в очереди, что можно взять.
+   - **Сам агент может дописывать**: новые задачи,
+     декомпозиция, отметки о прогрессе.
+
+1.3. Чем отличается от других файлов.
+   - Не SOUL.md (личность).
+   - Не MEMORY.md (факты).
+   - Не AGENTS.md (архитектура).
+   - Не SKILL.md (процедура).
+   - Не README.md (документация).
+   - Это **операционный backlog** на одном листе.
+
+1.4. Когда уместен.
+   - Проект регулярно ведётся, есть очередь задач.
+   - Несколько людей/агентов работают над проектом.
+   - Хотите, чтобы любой, открывший проект, увидел «что делать».
+
+1.5. Когда НЕ уместен.
+   - Один скрипт, разовая задача.
+   - Все задачи уже в Jira/GitHub Issues (тогда дублирование).
+   - Каждая задача — большая спецификация (тогда Kanban
+     в Hermes или в GitHub).
+
+────────────────────────────────────────────────────────────────────────────
+2. СТРУКТУРА TASKS.MD
+────────────────────────────────────────────────────────────────────────────
+
+2.1. Рекомендуемые разделы.
+   - **Заголовок и описание** (что за проект).
+   - **Стратегические цели** (куда движемся).
+   - **Текущий спринт / неделя** (что в работе).
+   - **Бэклог** (что планируется).
+   - **Завершённые** (опц., для истории).
+   - **Вне scope** (что НЕ делаем).
+
+2.2. Минимальный набор полей задачи.
+   Каждая задача — отдельный блок с полями:
+   - **Title** — что делать (1 строка).
+   - **Status** — draft | todo | in_progress | blocked | review | done.
+   - **Priority** — low | normal | high | urgent.
+   - **Owner** — кто отвечает (Rost / agent / @username).
+   - **Estimate** — сколько времени (S / M / L / XL).
+   - **Created** — дата создания.
+   - **Updated** — дата последнего изменения.
+   - **Acceptance Criteria** — чек-лист критериев.
+   - **Notes** — ссылки, контекст, решения.
+
+2.3. Markdown-формат.
+   Используйте:
+   - Заголовки H2/H3 для группировки.
+   - Чек-листы `- [ ]` / `- [x]` для задач.
+   - **жирный** для имён владельцев.
+   - Теги в формате `#tag`.
+   - Не используйте markdown-таблицы для Telegram (Telegram
+     не рендерит).
+
+────────────────────────────────────────────────────────────────────────────
+3. РЕКОМЕНДУЕМЫЙ ПОРЯДОК ЗАПОЛНЕНИЯ
+────────────────────────────────────────────────────────────────────────────
+
+Шаг 1. **Создайте файл в корне проекта**.
+   `/path/to/project/TASKS.md`
+
+Шаг 2. **Заполните заголовок и описание**.
+   Название проекта, 1-3 строки о чём он.
+
+Шаг 3. **Определите стратегические цели**.
+   Что хотим достичь в этом проекте за квартал / полгода.
+
+Шаг 4. **Зафиксируйте текущий спринт / неделю**.
+   3-7 задач, которые делаются сейчас.
+
+Шаг 5. **Зафиксируйте бэклог**.
+   Что планируется после текущего спринта.
+
+Шаг 6. **Добавьте завершённые задачи** (опц.).
+   За последнюю неделю / месяц — для истории.
+
+Шаг 7. **Обновляйте регулярно**.
+   После завершения задачи переместите её в «Завершённые».
+   Каждый понедельник — обновите «Текущий спринт».
+
+────────────────────────────────────────────────────────────────────────────
+4. ПРИМЕР 1 — МИНИМАЛЬНЫЙ TASKS.MD
+────────────────────────────────────────────────────────────────────────────
+
+```markdown
+# Photo Tools — Tasks
+
+Python utilities for EXIF reading and image transforms.
+
+## This week
+- [ ] Add HEIC support to exif reader (in_progress, Rost, M)
+- [ ] Fix orientation bug in transform pipeline (todo, agent, S)
+
+## Backlog
+- [ ] Add CLI flag `--recursive` to scan directories (todo, agent, S)
+- [ ] Write benchmark for transforms vs Pillow (todo, agent, M)
+- [ ] Add type stubs for legacy modules (todo, agent, L)
+
+## Out of scope
+- Cloud storage adapters (S3/GCS)
+- Web UI
+```
+
+────────────────────────────────────────────────────────────────────────────
+5. ПРИМЕР 2 — РАЗВЁРНУТЫЙ TASKS.MD
+────────────────────────────────────────────────────────────────────────────
+
+```markdown
+# Photo Tools — Tasks
+
+Python utilities for EXIF reading and image transforms. MIT licensed.
+Stack: Python 3.11+, uv, Click, pytest, ruff, mypy.
+
+## Strategy (Q3 2026)
+- Reach feature parity with exiftool for common metadata.
+- Support batch processing via CLI.
+- Establish CI matrix: Linux, macOS, Windows.
+- Document every public function.
+
+## This sprint (week of 2026-07-04)
+- [ ] **TASK-2026-07-04-add-heic** — Add HEIC support
+  - Status: in_progress
+  - Owner: Rost (human), agent (implementation)
+  - Estimate: M
+  - Created: 2026-07-04
+  - Acceptance:
+    - [ ] Read HEIC EXIF metadata
+    - [ ] Convert to JPEG for output
+    - [ ] Tests in `tests/test_heic.py`
+    - [ ] Update README with HEIC example
+  - Notes: use `pillow-heif` lib, version constraint `>=0.20`.
+
+- [ ] **TASK-2026-07-04-fix-orientation** — Fix orientation bug
+  - Status: todo
+  - Owner: agent
+  - Estimate: S
+  - Created: 2026-07-04
+  - Acceptance:
+    - [ ] Repro on `tests/fixtures/portrait.jpg`
+    - [ ] Fix in `src/photo_tools/transforms.py`
+    - [ ] All tests pass
+    - [ ] CHANGELOG entry
+  - Notes: bug #42 from issue tracker.
+
+- [ ] **TASK-2026-07-04-docs-pass** — Doc pass on public API
+  - Status: draft
+  - Owner: agent
+  - Estimate: L
+  - Created: 2026-07-04
+  - Acceptance:
+    - [ ] Every public function has Google-style docstring.
+    - [ ] `mkdocs gh-deploy` succeeds.
+
+## Backlog
+- [ ] Add `--recursive` flag to `exif` command.
+- [ ] Write benchmark suite.
+- [ ] Add `mypy --strict` to CI.
+- [ ] Migrate from setuptools to hatchling.
+- [ ] Add a plugin system for custom metadata readers.
+- [ ] Windows ARM64 testing on CI.
+
+## Recently completed (week of 2026-06-28)
+- [x] **TASK-2026-06-30-fix-pytest-xdist** — xdist flaky test fix.
+- [x] **TASK-2026-06-29-ruff-migration** — migrated from black+isort to ruff.
+
+## Out of scope (this quarter)
+- Cloud storage adapters.
+- Web UI.
+- Real-time image processing.
+- Mobile clients.
+
+## Conventions
+- Task ID format: `TASK-YYYY-MM-DD-kebab-case-name`.
+- Always include Acceptance Criteria.
+- Owner can be human (name) or agent.
+- Use `M`/`S`/`L`/`XL` for estimates (1 day, 1-3 days, 1 week, 2+ weeks).
+```
+
+────────────────────────────────────────────────────────────────────────────
+6. ПРИМЕР 3 — TASKS.MD ДЛЯ AI-АГЕНТА (БЕЗ HUMAN)
+────────────────────────────────────────────────────────────────────────────
+
+```markdown
+# Photo Tools — Agent Runbook
+
+This is the agent's task queue. Owner = agent by default.
+Rost reviews outputs and approves completion.
+
+## Active
+- [ ] **TASK-2026-07-04-add-heic** — Add HEIC support
+  - Status: in_progress
+  - Estimate: M
+  - Files: `src/photo_tools/exif/heic.py` (new), `tests/test_heic.py` (new).
+  - Depends on: `pillow-heif>=0.20`.
+  - Blocked by: nothing.
+
+## Queued (do in order after Active is done)
+- [ ] **TASK-2026-07-05-fix-orientation** — Fix orientation bug
+  - Status: todo
+  - Estimate: S
+- [ ] **TASK-2026-07-05-recursive-flag** — Add `--recursive`
+  - Status: todo
+  - Estimate: S
+
+## Holding (waiting for human)
+- [ ] **TASK-2026-07-06-real-benchmarks** — Real benchmarks
+  - Status: blocked
+  - Reason: waiting on Rost to confirm hardware.
+
+## Done this week
+- [x] **TASK-2026-06-30-pytest-xdist** — Fix xdist flaky.
+- [x] **TASK-2026-06-29-ruff** — Migrate to ruff.
+
+## Notes for agent
+- Run `uv run pytest -n auto` before claiming a task done.
+- Update MEMORY.md when learning new conventions.
+- After completing a task, move to `Done` with date.
+```
+
+────────────────────────────────────────────────────────────────────────────
+7. ПРИМЕР 4 — ДЛЯ МУЛЬТИПРОЕКТА (ВСЕ ПРОЕКТЫ В ОДНОМ ФАЙЛЕ)
+────────────────────────────────────────────────────────────────────────────
+
+```markdown
+# Personal Projects — Tasks
+
+Cross-project backlog. Use Hermes Project (`hermes project use`)
+to switch context.
+
+## This week
+### Photo Tools
+- [ ] HEIC support.
+- [ ] Fix orientation bug.
+
+### mima-ops
+- [ ] Audit fail2ban rules.
+- [ ] Document UFW changes.
+
+### blog-content
+- [ ] Draft 2026-Q3 post on Hermes.
+
+## Backlog
+### Photo Tools
+- [ ] `--recursive` flag.
+- [ ] Benchmarks.
+
+### mima-ops
+- [ ] Backup verification script.
+- [ ] Zabbix template for new services.
+
+### blog-content
+- [ ] Update About page.
+
+## Completed (last 7 days)
+- [x] Photo Tools: ruff migration.
+- [x] mima-ops: rotate SSH keys.
+```
+
+────────────────────────────────────────────────────────────────────────────
+8. РЕКОМЕНДУЕМЫЕ ПРАКТИКИ
+────────────────────────────────────────────────────────────────────────────
+
+8.1. **Один TASKS.md = один уровень проекта**.
+   - Репо-уровень: `~/code/photo-tools/TASKS.md`.
+   - Workspace-уровень: `~/.hermes/profiles/<profile>/workspace/TASKS.md`.
+   - Multi-project: файл `tasks.md` в workspace корне.
+
+8.2. **ID задач = даты**.
+   `TASK-YYYY-MM-DD-<name>` — стабильно, машиночитаемо,
+   отсортировано.
+
+8.3. **Чек-листы для подзадач**.
+   `- [ ] Подзадача 1` под основной задачей.
+
+8.4. **Не больше 20-30 активных задач**.
+   Если больше — делите на спринты или используйте Kanban.
+
+8.5. **Обновляйте регулярно**.
+   Каждый день / каждый понедельник — синхронизируйте
+   с реальностью.
+
+8.6. **Лимит размера**.
+   Файл < 50 КБ. Больше — делите по спринтам
+   (TASKS-2026-Q3.md, TASKS-2026-Q4.md).
+
+8.7. **Связь с Kanban**.
+   Если в Hermes есть `hermes kanban`, то TASKS.md = high-level,
+   Kanban = operational. Дублирование не обязательно, но
+   удобно для AI-агента.
+
+8.8. **Версионируйте в git**.
+   TASKS.md — это документ проекта, должен быть в репо
+   и коммититься.
+
+8.9. **Не заменяйте реальный bug-tracker**.
+   TASKS.md — это overview. Детали в GitHub Issues / Linear /
+   Jira. TASKS.md ссылается на них.
+
+────────────────────────────────────────────────────────────────────────────
+9. СВЯЗЬ С ДРУГИМИ ФАЙЛАМИ В HERMES
+────────────────────────────────────────────────────────────────────────────
+
+  ┌────────────────┬───────────────────────────────────────────┐
+  │ Файл           │ Что в нём                                 │
+  ├────────────────┼───────────────────────────────────────────┤
+  │ AGENTS.md      │ Архитектура проекта, conventions.        │
+  │ MEMORY.md      │ Факты о мире, конвенции.                 │
+  │ SKILL.md       │ Процедура «как делать».                  │
+  │ README.md      │ Что это, как установить.                  │
+  │ TASKS.md       │ Что делать сейчас, что в очереди.        │
+  │ CHANGELOG.md   │ Что сделано (по версиям).                │
+  │ task.md        │ ОДНА конкретная задача (в inbox/).       │
+  │ plans/<id>.md  │ Журнал одной задачи.                     │
+  └────────────────┴───────────────────────────────────────────┘
+
+TASKS.md — это **операционный backlog**. AGENTS.md — это **архитектура**.
+task.md — это **одна задача с полным описанием**. TASKS.md —
+список задач (с кратким описанием).
+
+────────────────────────────────────────────────────────────────────────────
+10. КОГДА СОЗДАВАТЬ TASKS.MD
+────────────────────────────────────────────────────────────────────────────
+
+  ┌─────────────────────────────────┬──────────────────────┐
+  │ Ситуация                        │ TASKS.md нужен?       │
+  ├─────────────────────────────────┼──────────────────────┤
+  │ Репо с регулярной разработкой   │ Да                    │
+  │ Один скрипт                    │ Нет (overkill)        │
+  │ Multi-repo проекты              │ Per-repo              │
+  │ AI-агент работает автономно     │ Да, для координации   │
+  │ Уже есть GitHub Issues/Jira     │ Опц. (как overview)   │
+  │ Solo-эксперимент                │ Нет                   │
+  │ Команда 5+ человек              │ Да                    │
+  └─────────────────────────────────┴──────────────────────┘
+
+────────────────────────────────────────────────────────────────────────────
+11. ШАБЛОН TASKS.MD ДЛЯ КОПИРОВАНИЯ
+────────────────────────────────────────────────────────────────────────────
+
+```markdown
+# <Project name> — Tasks
+
+<1-3 строки: что за проект, на чём написан, для кого>
+
+## Strategy (current quarter)
+- <цель 1>
+- <цель 2>
+- <цель 3>
+
+## This sprint (week of YYYY-MM-DD)
+- [ ] **TASK-YYYY-MM-DD-<name>** — <title>
+  - Status: <draft|todo|in_progress|blocked|review|done>
+  - Owner: <name or agent>
+  - Estimate: <S|M|L|XL>
+  - Acceptance:
+    - [ ] <criterion 1>
+    - [ ] <criterion 2>
+  - Notes: <links, decisions, blockers>
+
+- [ ] **TASK-YYYY-MM-DD-<name>** — <title>
+  ...
+
+## Backlog
+- [ ] <future task 1>
+- [ ] <future task 2>
+
+## Completed (last 7 days)
+- [x] **TASK-YYYY-MM-DD-<name>** — <title>
+
+## Out of scope
+- <что НЕ делаем>
+
+## Conventions
+- Task ID: TASK-YYYY-MM-DD-kebab-case.
+- Always include Acceptance.
+- Owner: <name> or `agent`.
+```
+
+────────────────────────────────────────────────────────────────────────────
+12. ЧАСТЫЕ ОШИБКИ
+────────────────────────────────────────────────────────────────────────────
+
+12.1. **TASKS.md превращается в спагетти**.
+   Если файл > 100 КБ — делите по спринтам.
+
+12.2. **Задачи без Acceptance Criteria**.
+   `- [ ] Сделать X` — непонятно, что значит «сделано».
+   Всегда пишите критерии.
+
+12.3. **Задачи без владельца**.
+   Без owner задача висит в воздухе. Всегда owner.
+
+12.4. **Задачи без дат**.
+   `TASK-1` vs `TASK-2026-07-04-fix-bug`. Второе лучше.
+
+12.5. **TASKS.md забывают обновлять**.
+   Файл устарел за неделю — потерян смысл.
+
+12.6. **TASKS.md дублирует Kanban без цели**.
+   Если Kanban в Hermes уже есть, TASKS.md = лишняя нагрузка.
+   Либо — либо.
+
+12.7. **Markdown-таблицы для статусов**.
+   В Telegram не рендерятся. Используйте списки или теги.
+
+12.8. **Без приоритетов**.
+   Все задачи «нормальные» = непонятно, что делать первым.
+   P0 / P1 / P2 или urgent / high / normal / low.
+
+12.9. **Без «Out of scope»**.
+   Без границ проект разрастается.
+
+12.10. **TASKS.md без связи с AGENTS.md**.
+    Если в TASKS.md есть конвенции, которые шире одной задачи —
+    переносите их в AGENTS.md.
+
+────────────────────────────────────────────────────────────────────────────
+13. ИНТЕГРАЦИЯ С HERMES (ЕСЛИ ИСПОЛЬЗУЕТЕ HERMES PROJECT)
+────────────────────────────────────────────────────────────────────────────
+
+13.1. Hermes Project vs TASKS.md.
+   - **Hermes Project** = first-class workspace в Hermes.
+     Per-profile, с kanban-binding и multi-folder.
+   - **TASKS.md** = файл в репо с бэклогом.
+   - Они **дополняют** друг друга:
+     - TASKS.md = high-level backlog.
+     - Kanban в Hermes = operational tasks.
+
+13.2. Workflow.
+   1. Идея → добавить в TASKS.md (статус draft).
+   2. Берём в работу → TASKS.md (in_progress) + Kanban task.
+   3. Делаем → Kanban task (in_progress), обновляем progress.json.
+   4. Завершили → Kanban (done) + TASKS.md (move to Completed).
+
+13.3. Скиллы могут апдейтить TASKS.md.
+   AI-агент может дописывать TASKS.md при работе. Если в SOUL.md
+   или в skill написать «после завершения задачи обновить TASKS.md»,
+   это будет происходить автоматически.
+
+13.4. Алиасы в Hermes.
+   `hermes project create myproject --board=myproject-board`
+   → kanban для проекта.
+   При этом TASKS.md остаётся в репо как overview.
+
+────────────────────────────────────────────────────────────────────────────
+14. ЗАКЛЮЧЕНИЕ
+────────────────────────────────────────────────────────────────────────────
+
+**TASKS.md — это полезный формат, не Hermes-фича.** Это
+конвенция из open-source практики для ведения операционного
+бэклога.
+
+Главное:
+  1. Создавайте в корне проекта (или в workspace).
+  2. Один раздел = текущая работа, бэклог, завершённые.
+  3. Каждая задача: status / owner / estimate / acceptance.
+  4. ID = дата: TASK-YYYY-MM-DD-<name>.
+  5. Обновляйте регулярно (раз в день / раз в неделю).
+  6. Держите < 50 КБ.
+  7. Версионируйте в git.
+  8. Используйте Acceptance Criteria.
+  9. Связывайте с Kanban в Hermes (если есть).
+
+TASKS.md ≠ Kanban в Hermes. TASKS.md — overview. Kanban — operational.
+
+Если у вас уже есть Hermes Project + Kanban — TASKS.md опционален,
+но удобен как «на чём фокус на этой неделе».
+
+────────────────────────────────────────────────────────────────────────────
+ПРИЛОЖЕНИЕ. ЧЕСТНОЕ УТОЧНЕНИЕ
+────────────────────────────────────────────────────────────────────────────
+
+Проверил исходный код Hermes на этом хосте. **TASKS.md как
+встроенная сущность Hermes НЕ существует.** В коде используются:
+
+  • task.md (singular, lowercase) — файл задачи в
+    `~/.hermes/profiles/<profile>/workspace/inbox/<id>/task.md`.
+  • plans/<id>.md — журнал задачи.
+  • kanban — формальная Kanban-доска (SQLite).
+  • TODO.md — упоминается только в `claw.py:635` для sandbox.
+
+Этот гайд описывает TASKS.md как **полезный формат** для
+проектной работы, не как «Hermes-фичу». Если ваш проект
+использует TASKS.md как convention — прекрасно. Если нет —
+можно начать, это 30 минут работы.

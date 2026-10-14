@@ -1,0 +1,673 @@
+# DOCX → LaTeX с сохранением форматирования для шаблонов
+
+## 0. Прямой ответ
+
+**Да, это возможно, но с серьёзными оговорками.**
+
+| Аспект | Шанс сохранения | Реалистичность |
+|---|---|---|
+| Базовая структура (заголовки, абзацы, списки) | ⭐⭐⭐⭐⭐ 95%+ | Отлично |
+| Таблицы (простые) | ⭐⭐⭐⭐ 85-90% | Хорошо |
+| Таблицы (сложные — объединённые ячейки, многоуровневые) | ⭐⭐⭐ 50-70% | Средне |
+| Стили (шрифты, цвета, размеры) | ⭐⭐⭐ 60-75% | Средне |
+| Сложное форматирование (нумерация, отступы, рамки) | ⭐⭐ 40-60% | Плохо-средне |
+| Формулы (Word → OMML → LaTeX) | ⭐⭐⭐⭐ 80-90% | Хорошо (но см.ниже) |
+| Изображения | ⭐⭐⭐⭐⭐ 95%+ | Отлично |
+| Сноски, перекрёстные ссылки | ⭐⭐⭐⭐ 80-90% | Хорошо |
+| Оглавление, нумерация страниц | ⭐⭐ 30-50% | Плохо |
+| **Полное сохранение ВСЕГО форматирования** | ⭐⭐ 30-50% | **НЕ реалистично** |
+
+**Вывод:** обратная конвертация DOCX → LaTeX **теряет часть форматирования** (30-50% в сложных случаях). Для шаблонизации это означает: после конвертации нужно **руками доводить LaTeX-файл** до приемлемого вида, а затем использовать его как шаблон.
+
+---
+
+## 1. Базовая конвертация Pandoc
+
+### Команда
+
+```bash
+pandoc input.docx -o output.tex
+```
+
+### Что получится
+
+- Стандартная LaTeX-разметка.
+- Стандартные пакеты (`article` class по умолчанию).
+- Таблицы в `tabular` окружении.
+- Изображения через `\includegraphics`.
+
+### Что НЕ получится автоматически
+
+- Точные шрифты Word → шрифты LaTeX (нужны пакеты).
+- Конкретные отступы и точные размеры.
+- Сложные стили заголовков.
+- Колонтитулы, рамки.
+- Точные цвета.
+
+---
+
+## 2. Расширенная конвертация (с метаданными)
+
+```bash
+pandoc input.docx -o output.tex \
+    --standalone \
+    --metadata title="Название документа" \
+    --metadata author="Автор" \
+    --metadata date="2026-07-07" \
+    --variable geometry:margin=2.5cm \
+    --variable fontsize=12pt \
+    --variable lang=ru
+```
+
+### Опции Pandoc для DOCX → LaTeX
+
+| Опция | Что делает |
+|---|---|
+| `--standalone` | Полный LaTeX-документ с preamble |
+| `--template=template.tex` | Использовать свой шаблон preamble |
+| `--variable ...` | Переменные для шаблона |
+| `--top-level-division=chapter` | Разделы как `\chapter` (для `book`) |
+| `--listings` | Код в listings окружении |
+| `--biblatex` | BibLaTeX вместо BibTeX |
+| `--no-highlight` | Без подсветки синтаксиса |
+| `-M lang=ru` | Установить язык |
+
+---
+
+## 3. Что теряется при конвертации (детально)
+
+### ❌ Теряется полностью или почти полностью
+
+**1. Шрифты Word**
+- Word использует Calibri, Arial, Times New Roman и др.
+- LaTeX по умолчанию использует Computer Modern.
+- Перенос шрифтов требует ручной работы с пакетами:
+  ```latex
+  \usepackage{fontspec}  % для XeLaTeX/LuaLaTeX
+  \setmainfont{Calibri}  % если установлен
+  ```
+  Или:
+  ```latex
+  \usepackage{mathptmx}  % Times-подобный для pdfLaTeX
+  ```
+
+**2. Точные цвета**
+- Word: цвет RGB/HEX.
+- LaTeX: пакеты `xcolor`, `colortbl`.
+- Точное соответствие — только ручная работа.
+
+**3. Точные отступы и интервалы**
+- Word использует twips/points.
+- LaTeX использует свои единицы (`\parskip`, `\parindent`, `\baselineskip`).
+- Точное соответствие невозможно.
+
+**4. Многоколоночная вёрстка**
+- Word поддерживает колонки разной ширины.
+- LaTeX — `multicol` пакет, но результат отличается.
+
+**5. Сложные рамки и обрамление**
+- Word: рамки вокруг текста, страниц.
+- LaTeX: `tcolorbox`, `mdframed` — но другая логика.
+
+**6. Точная нумерация страниц**
+- Word: разные стили для разных секций.
+- LaTeX: `fancyhdr` — требует ручной настройки.
+
+**7. Колонтитулы (headers/footers)**
+- Word: WYSIWYG редактирование.
+- LaTeX: `fancyhdr` пакет — требует кодирования.
+
+**8. Списки с пользовательскими маркерами**
+- Word: любые символы/изображения как маркеры.
+- LaTeX: ограниченный набор через `enumitem`.
+
+### ⚠️ Частично теряется или конвертируется с потерями
+
+**1. Стили заголовков**
+- Конвертируются как `\section`, `\subsection`.
+- Но точные стили (шрифт, размер, цвет, отступы) — нет.
+
+**2. Стили таблиц**
+- Границы, цвета ячеек — конвертируются частично.
+- Нужна доводка: `colortbl`, `booktabs`, `tabularx`.
+
+**3. Формулы Word**
+- Word хранит формулы как OMML (XML).
+- Pandoc конвертирует в LaTeX, но **качество среднее**.
+- Лучше использовать **Mathpix** (https://mathpix.com/) для распознавания формул из скриншота/PDF.
+
+**4. Сноски**
+- Конвертируются, но стиль может отличаться.
+
+**5. Перекрёстные ссылки**
+- Конвертируются как `\ref`, но стиль нумерации может измениться.
+
+### ✅ Конвертируется хорошо
+
+- Текст, абзацы.
+- Простые таблицы (без объединённых ячеек).
+- Списки.
+- Изображения (встроенные).
+- Простые стили (bold, italic, underline).
+
+---
+
+## 4. Стратегия для шаблонизации
+
+### 4.1. Подход 1: «Конвертировать и доводить» (рекомендую)
+
+**Шаг 1: Конвертация**
+```bash
+pandoc template.docx -o template.tex --standalone
+```
+
+**Шаг 2: Доводка вручную**
+- Добавить нужные пакеты в preamble.
+- Настроить шрифты.
+- Довести стили таблиц.
+- Исправить формулы (если есть).
+
+**Шаг 3: Использование как шаблона**
+```python
+# Python: подставить данные в шаблон
+import jinja2
+
+env = jinja2.Environment(
+    block_start_string='<<%',
+    block_end_string='%>>',
+    variable_start_string='<<',
+    variable_end_string='>>',
+)
+template = env.from_string(open('template.tex').read())
+
+# Подставить данные
+output = template.render(
+    title="Отчёт за июль 2026",
+    company="ООО Рога и Копыта",
+    sections=[
+        {"title": "Введение", "content": "..."},
+        {"title": "Методология", "content": "..."},
+        {"title": "Результаты", "content": "..."},
+    ],
+    tables=[...],
+    figures=[...],
+)
+
+with open('output.tex', 'w') as f:
+    f.write(output)
+
+# Скомпилировать в PDF
+import subprocess
+subprocess.run(['pdflatex', '-interaction=nonstopmode', 'output.tex'])
+```
+
+**Шаг 4: Компиляция**
+```bash
+pdflatex output.tex
+# или
+xelatex output.tex  # если нужны кастомные шрифты
+```
+
+### 4.2. Подход 2: «Ручной шаблон LaTeX + генерация»
+
+**Шаг 1: Создать LaTeX-шаблон с нуля**
+Не конвертировать из DOCX, а написать сразу на LaTeX.
+
+**Шаг 2: Использовать как шаблон через Python/Jinja2**
+
+Этот подход даёт **максимальный контроль**, но требует знания LaTeX.
+
+### 4.3. Подход 3: «docxtpl + Pandoc»
+
+`docxtpl` — Python библиотека для шаблонизации DOCX (не LaTeX).
+
+**Когда использовать:**
+- Если шаблон должен остаться в DOCX (для редактирования обычными пользователями).
+- Если финальный формат — DOCX, а не LaTeX/PDF.
+
+```bash
+pip install docxtpl
+```
+
+```python
+from docxtpl import DocxTemplate
+
+tpl = DocxTemplate('template.docx')
+context = {
+    'title': 'Отчёт',
+    'company': 'ООО Рога',
+    'sections': [...],
+}
+tpl.render(context)
+tpl.save('output.docx')
+```
+
+**Это самый надёжный путь, если нужна высокая степень сохранения форматирования Word.**
+
+### 4.4. Подход 4: «docx2pdf + Pandoc»
+
+**Шаг 1: Конвертация DOCX → LaTeX**
+```bash
+pandoc input.docx -o output.tex
+```
+
+**Шаг 2: Доработка LaTeX вручную**
+
+**Шаг 3: Компиляция LaTeX → PDF**
+```bash
+pdflatex output.tex
+```
+
+---
+
+## 5. Конкретный pipeline для шаблонизации DOCX → LaTeX
+
+### Полный пример
+
+```bash
+# 1. Установить инструменты
+sudo apt update
+sudo apt install -y pandoc texlive-full python3-pip
+pip install jinja2
+
+# 2. Конвертировать DOCX → LaTeX
+pandoc template.docx -o template_raw.tex --standalone
+
+# 3. Посмотреть, что получилось
+head -100 template_raw.tex
+```
+
+```latex
+% template_raw.tex (что генерирует Pandoc)
+\documentclass{article}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{hyperref}
+
+\title{Мой шаблон}
+\author{Автор}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\section{Раздел 1}
+
+Текст раздела 1.
+
+\section{Раздел 2}
+
+\begin{tabular}{|l|l|}
+\hline
+Колонка 1 & Колонка 2 \\
+\hline
+Значение 1 & Значение 2 \\
+\hline
+\end{tabular}
+
+\end{document}
+```
+
+```latex
+% template_final.tex (после ручной доработки)
+\documentclass[a4paper,12pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T2A]{fontenc}        % для русского языка
+\usepackage[russian]{babel}      % русский язык
+\usepackage{fontspec}            % если XeLaTeX
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{booktabs}            % красивые таблицы
+\usepackage{xcolor}              % цвета
+\usepackage{colortbl}            % цвета в таблицах
+\usepackage{geometry}            % отступы
+\geometry{margin=2cm}
+\usepackage{fancyhdr}            % колонтитулы
+\usepackage{enumitem}            % списки
+
+<<#def section_header>>
+\section{<<title>>}
+<<#def contents>>
+<<content>>
+<<#def table>>
+\begin{tabular}{|l|l|}
+\hline
+<<#each rows>><<this>><<#unless last>> & <</unless>><</each>> \\
+\hline
+\end{tabular}
+<<#def figure>>
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.8\textwidth]{<<path>>}
+\caption{<<caption>>}
+\end{figure}
+```
+
+```python
+# generate.py
+import jinja2
+import subprocess
+
+env = jinja2.Environment(
+    block_start_string='<<%',
+    block_end_string='%>>',
+    variable_start_string='<<',
+    variable_end_string='>>',
+)
+
+with open('template_final.tex') as f:
+    template_text = f.read()
+
+template = env.from_string(template_text)
+
+# Данные
+data = {
+    'title': 'Отчёт за июль 2026',
+    'sections': [
+        {
+            'title': 'Введение',
+            'content': 'Это введение...'
+        },
+        {
+            'title': 'Результаты',
+            'content': 'Получены следующие результаты...'
+        },
+    ],
+    'tables': [
+        {
+            'rows': [
+                ['Январь', '100', '200'],
+                ['Февраль', '150', '250'],
+            ]
+        }
+    ],
+    'figures': [
+        {
+            'path': 'chart1.png',
+            'caption': 'Динамика продаж'
+        }
+    ]
+}
+
+output = template.render(**data)
+
+with open('output.tex', 'w') as f:
+    f.write(output)
+
+# Скомпилировать
+subprocess.run(['pdflatex', '-interaction=nonstopmode', 'output.tex'])
+```
+
+---
+
+## 6. Реалистичные ожидания
+
+### Что МОЖНО сохранить автоматически
+
+✅ Структура документа (разделы, подразделы).
+✅ Базовое форматирование текста (bold, italic).
+✅ Простые таблицы.
+✅ Изображения.
+✅ Списки.
+✅ Сноски (базово).
+✅ Библиография (базово).
+
+### Что ТРЕБУЕТ ручной доработки
+
+⚠️ Шрифты (выбор и подключение пакетов).
+⚠️ Точные отступы и интервалы.
+⚠️ Стили заголовков (точные).
+⚠️ Сложные таблицы (объединённые ячейки, многоуровневые).
+⚠️ Формулы (конвертируются, но стиль может отличаться).
+⚠️ Колонтитулы.
+⚠️ Нумерация страниц.
+
+### Что ЛУЧШЕ переделать с нуля в LaTeX
+
+❌ Сложные макеты (буклеты, каталоги).
+❌ Точное воспроизведение дизайна брендбука.
+❌ Многоуровневые цветные блоки.
+❌ Сложные рамки и обрамления.
+
+---
+
+## 7. Альтернативы Pandoc для обратной конвертации
+
+### docx2tex (старая утилита)
+
+```bash
+# Установка (сложно, не всегда доступно)
+# Лучше использовать Pandoc
+```
+
+### Aspose.Words / LibreOffice
+
+**LibreOffice:**
+```bash
+# Конвертация через LibreOffice
+soffice --headless --convert-to pdf template.docx
+# Затем PDF → LaTeX через pdf2latex (качество низкое)
+```
+
+**Не рекомендую для шаблонизации** — теряется много форматирования.
+
+### Mammoth (.docx → HTML)
+
+```bash
+npm install -g mammoth
+mammoth template.docx template.html
+# Затем HTML → LaTeX через Pandoc
+pandoc template.html -o template.tex
+```
+
+**Полезно, когда DOCX содержит сложное форматирование, которое Pandoc не понимает напрямую.**
+
+### Adobe Acrobat / Word
+
+**Microsoft Word:**
+- Открыть DOCX в Word.
+- Сохранить как... (есть ли опция "LaTeX"? Нет).
+- Не подходит.
+
+---
+
+## 8. Рекомендация по выбору подхода
+
+| Цель | Рекомендуемый подход |
+|---|---|
+| Получить DOCX-шаблон для Python-генерации | **docxtpl** (максимальное сохранение форматирования) |
+| Получить LaTeX-шаблон для Python-генерации | **Pandoc + ручная доработка** (60-80% автосохранения) |
+| Точное воспроизведение дизайна Word | **Создать LaTeX-шаблон с нуля** (100% контроль) |
+| Конвертировать разово для чтения | **Pandoc** (достаточно) |
+| Шаблон для множества документов с разными данными | **Pandoc → доводка → Jinja2** (стандарт) |
+| Шаблон, который будут редактировать обычные пользователи | **docxtpl** (оставить в DOCX) |
+
+---
+
+## 9. Пошаговый рецепт для вашего случая
+
+### Задача: DOCX-шаблон со сложными таблицами → LaTeX-шаблон для генерации
+
+**Шаг 1: Конвертация**
+```bash
+pandoc template.docx -o template.tex --standalone --top-level-division=chapter
+```
+
+**Шаг 2: Анализ потерь**
+```bash
+# Посмотреть, что потерялось
+diff <(pandoc template.docx -t markdown) <(pandoc template.tex -t markdown)
+# Если diff большой — много потерь
+```
+
+**Шаг 3: Доводка LaTeX**
+- Добавить `\usepackage{booktabs}` для таблиц.
+- Добавить `\usepackage{xcolor}` и `\usepackage{colortbl}` для цветов.
+- Заменить стандартные таблицы на `tabularx` для лучшего контроля ширины.
+- Настроить шрифты через `\usepackage{fontspec}` (XeLaTeX).
+
+**Шаг 4: Внедрение Jinja2-плейсхолдеров**
+```latex
+% Вместо
+\section{<<section.title>>}
+<<section.content>>
+
+% Вместо
+\begin{tabular}{|l|l|}
+<<#each table.rows>>
+\hline
+<<#each this>>
+<<this>> <<#unless last>>& <</unless>>
+<</each>> \\
+<</each>>
+\hline
+\end{tabular}
+```
+
+**Шаг 5: Генерация в Python**
+```python
+# generate.py (см. пример выше)
+```
+
+**Шаг 6: Компиляция**
+```bash
+pdflatex output.tex
+```
+
+---
+
+## 10. Конкретные проблемы и решения
+
+### Проблема 1: Сложные таблицы с объединёнными ячейками
+
+**Pandoc конвертирует их плохо. Решение:**
+
+```bash
+# Сохранить таблицы отдельно как CSV или Excel
+# В шаблоне загружать данные из CSV
+
+# В Python:
+import csv
+with open('data.csv') as f:
+    rows = list(csv.reader(f))
+
+# В LaTeX через tabularx:
+\begin{tabularx}{\textwidth}{|X|X|X|}
+\hline
+<<#each rows>><<#each this>><<this>><<#unless last>> & <</unless>><</each>> \\
+\hline
+<</each>>
+\end{tabularx}
+```
+
+### Проблема 2: Точные шрифты Word
+
+**Решение для pdfLaTeX:**
+```latex
+\usepackage{mathptmx}      % Times-подобный
+\usepackage{helvet}         % Helvetica-подобный (sans-serif)
+\usepackage{courier}        % Courier (monospace)
+```
+
+**Решение для XeLaTeX/LuaLaTeX:**
+```latex
+\usepackage{fontspec}
+\setmainfont{Times New Roman}
+\setsansfont{Arial}
+\setmonofont{Courier New}
+```
+
+### Проблема 3: Формулы Word
+
+**Решение:**
+1. Скриншот формулы.
+2. Загрузить в https://mathpix.com/ (получить LaTeX).
+3. Вставить в шаблон.
+
+Или вручную переписать формулы в LaTeX.
+
+### Проблема 4: Колонтитулы с разным стилем на разных страницах
+
+**Решение:**
+```latex
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{Левая часть}
+\fancyhead[R]{Правая часть}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+```
+
+### Проблема 5: Многостраничные таблицы
+
+**Решение:**
+```latex
+\usepackage{longtable}
+\begin{longtable}{|l|l|l|}
+\caption{Многостраничная таблица} \\
+\hline
+Колонка 1 & Колонка 2 & Колонка 3 \\
+\hline
+\endfirsthead
+\multicolumn{3}{c}{\textit{Продолжение на следующей странице}} \\
+\hline
+Колонка 1 & Колонка 2 & Колонка 3 \\
+\hline
+\endhead
+... данные ...
+\end{longtable}
+```
+
+---
+
+## 11. Итоговая оценка шансов
+
+### Для вашего сценария (DOCX со сложными таблицами → LaTeX-шаблон)
+
+**Реалистичные шансы:**
+
+- 50% — полностью автоматическая конвертация без потерь.
+- 75% — конвертация с небольшой ручной доводкой (1-2 часа).
+- 90% — конвертация с серьёзной ручной доводкой (1-2 дня).
+- 100% — полностью ручная переработка дизайна на LaTeX (3-5 дней).
+
+**Для шаблонизации 90% — это нормальный результат.** Главное — после доводки иметь стабильный шаблон, который можно использовать многократно.
+
+---
+
+## 12. Рекомендуемый стек для вашей задачи
+
+### Оптимальный стек
+
+1. **Pandoc** — для первичной конвертации.
+2. **XeLaTeX** — для компиляции (поддержка Unicode и шрифтов).
+3. **Jinja2** — для шаблонизации.
+4. **Python** — для автоматизации.
+5. **Make/Just** — для оркестрации (опционально).
+
+### Установка на mima_g_01
+
+```bash
+sudo apt update
+sudo apt install -y pandoc texlive-xetex texlive-lang-cyrillic python3-pip
+pip install jinja2
+```
+
+---
+
+## 13. Источники
+
+- **Pandoc Manual:** https://pandoc.org/MANUAL.html (полное руководство по DOCX ↔ LaTeX).
+- **docxtpl:** https://docxtpl.readthedocs.io/ (Python-шаблонизация DOCX).
+- **Jinja2:** https://jinja.palletsprojects.com/ (шаблонизация для Python).
+- **Mammoth:** https://github.com/mwilliamson/mammoth.js (DOCX → HTML).
+- **Mathpix:** https://mathpix.com/ (распознавание формул).
+- **LaTeX tables:** https://en.wikibooks.org/wiki/LaTeX/Tables (подробный гайд).
+- **fancyhdr:** https://ctan.org/pkg/fancyhdr (колонтитулы в LaTeX).
+
+---
+
+## Конец файла

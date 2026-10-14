@@ -1,0 +1,478 @@
+================================================================================
+RAG И ВЕКТОРНЫЙ ПОИСК В HERMES AGENT
+Подробный разбор архитектуры, текущего состояния и реальных путей
+Дата: 2026-06-15
+Версия: hermes_agent 0.16.0 (editable, /usr/local/lib/hermes-agent)
+Профиль: default, /root/.hermes
+================================================================================
+
+СВОДКА (TL;DR)
+--------------------------------------------------------------------------------
+1. Hermes реализует RAG НЕ как единый pipeline с эмбеддингами, а как набор
+   ПЕРЕКЛЮЧАЕМЫХ слоёв: (a) lexical FTS5-поиск по сессиям, (b) поиск
+   по инструментам (tool search), (c) опциональный MemoryProvider с
+   эмбеддингами / vector retrieval, (d) persistent file outputs.
+
+2. В текущей конфигурации (memory.provider = "") активны ТОЛЬКО
+   (a) и (b). Полноценный vector RAG через плагины НЕ подключён,
+   эмбеддинг-модели не загружены, vector-библиотек в venv нет.
+
+3. Архитектура — pluggable: 7 готовых MemoryProvider-плагинов лежат
+   в /usr/local/lib/hermes-agent/plugins/memory/. Любой из них
+   можно включить, прописав memory.provider в config.yaml и
+   задав API-ключ/конфиг. Кодовая база для vector retrieval
+   присутствует, но фактически бездействует до явной активации.
+
+4. Из "vector search" в Hermes в данный момент работает ТОЛЬКО
+   keyword-lemming (FTS5 + BM25) + Jaccard rerank + опциональная
+   Holographic Reduced Representation (HRR) фаза в плагине
+   holographic — но numpy не установлен, HRR-канал выключен
+   автоматически (fallback в retrieval.py:53-58).
+
+================================================================================
+1. ОБЩАЯ АРХИТЕКТУРА ПАМЯТИ / RAG
+================================================================================
+В коде есть ДВА разных слоя, которые легко спутать:
+
+  Слой A: STATE / SESSIONS — это не RAG, но содержит lexical-поиск
+          по всей истории диалогов. FTS5 по SQLite.
+          Реализация: hermes_state.py + tools/session_search_tool.py.
+          Движок: SQLite FTS5 (BM25).
+          Векторов: нет. Чисто lexical.
+          ВСЕГДА работает (пока жива state.db).
+
+  Слой B: MEMORY PROVIDERS — это и есть "то, что обычно называют
+          RAG": долгосрочная память с эмбеддингами, retrieval,
+          reranking, automatic extraction.
+          Реализация: 7 плагинов в /usr/local/lib/hermes-agent/plugins/memory/
+          Все наследуются от agent.memory_provider.MemoryProvider.
+          Движки: от SQLite-only (holographic) до внешних SaaS
+                  (mem0, retaindb, supermemory, honcho, hindsight,
+                   openviking, byterover).
+          Вектора: mem0, retaindb, supermemory, hindsight,
+                   openviking используют embedding-модели поставщика.
+                   holographic использует собственный HRR (numpy).
+                   honcho использует Honcho AI SaaS.
+
+То есть "RAG" в Hermes = конфигурируемый провайдер поверх (а не
+вместо) сессионного FTS5-поиска. В текущей конфигурации
+memory.provider: '' → слой B отключён, слой A работает.
+
+================================================================================
+2. СЛОЙ A: LEXICAL RETRIEVAL ПО СЕССИЯМ
+================================================================================
+Файл:    /usr/local/lib/hermes-agent/hermes_state.py (187 KB)
+Инструмент: /usr/local/lib/hermes-agent/tools/session_search_tool.py (32 KB)
+
+Что делает:
+  • Хранит ВСЕ сообщения всех сессий в SQLite state.db (WAL mode).
+  • Поддерживает FTS5 virtual table 'messages_fts' и
+    'messages_fts_trigram' (для typo-tolerance).
+  • Trigger'ы _FTS_TRIGGERS поддерживают индекс при insert/delete/update.
+  • Тулза session_search() имеет ТРИ режима вызова:
+      - DISCOVERY (query=...) — FTS5, top-N сессий, snippet + ±5 окон
+      - SCROLL (session_id + around_message_id) — окно вокруг якоря
+      - BROWSE (без аргументов) — список недавних сессий
+
+  • Возвращает bookend_start / bookend_end — это первые 3 и
+    последние 3 user+assistant сообщения сессии (чтобы LLM видел
+    контекст разговора без скачивания всей истории).
+
+  • Тримминг: при превышении memory_char_limit (2200) или
+    user_char_limit (1375) (см. config.yaml этого хоста)
+    старые записи в MEMORY.md / USER.md вытесняются.
+
+  • Tool result persistence: tools/tool_result_storage.py —
+    при превышении MAX_TURN_BUDGET_CHARS (200 000) большие
+    tool-результаты СПИСЫВАЮТСЯ в /tmp/hermes-results/{tool_use_id}.txt,
+    в контекст кладётся preview + путь. Это RAG в смысле
+    "контекстного бюджета", но не vector search.
+
+  • Профили (Hermes profiles): profile-scoped state.db позволяет
+    изолировать базы. cross-profile чтение — read-only, mode=ro.
+
+Вектора в этом слое: НЕТ. Только FTS5 (lexical BM25).
+
+================================================================================
+3. СЛОЙ B: MEMORY PROVIDERS (RAG С ЭМБЕДДИНГАМИ)
+================================================================================
+Базовый класс: /usr/local/lib/hermes-agent/agent/memory_provider.py
+                (MemoryProvider ABC)
+
+Все плагины регистрируются как декораторы и подключаются полем
+memory.provider в config.yaml (например: provider: mem0).
+
+────────────────────────────────────────────────────────────────────────────────
+3.1. mem0 — Memory as a Service
+────────────────────────────────────────────────────────────────────────────────
+Путь:    plugins/memory/mem0/
+Архитектура: server-side LLM extraction + semantic search + reranking
+            + automatic dedup через Mem0 Platform API.
+Конфиг:  MEM0_API_KEY (env) или $HERMES_HOME/mem0.json
+Когда активен: is_available() == (api_key непустой)
+Тулзы:   mem0_profile  — все воспоминания о пользователе
+         mem0_search   — поиск по смыслу (query, rerank, top_k)
+         mem0_conclude — сохранить факт verbatim (без извлечения)
+Embeddings: облачные (Mem0 SaaS), не локальные.
+Стоимость: платная подписка Mem0.
+
+────────────────────────────────────────────────────────────────────────────────
+3.2. supermemory — Semantic Long-term Memory
+────────────────────────────────────────────────────────────────────────────────
+Путь:    plugins/memory/supermemory/
+API:     https://api.supermemory.ai/v4/conversations
+Конфиг:  $HERMES_HOME/supermemory.json
+Режимы:  capture_mode: all|everything
+         search_mode:  hybrid|memories|documents
+Поведение:
+  • auto_recall + auto_capture — прозрачно вставляет
+    <supermemory-context>...</supermemory-context> в system prompt
+    перед каждым turn и очищает этот блок перед возвратом в LLM.
+  • profile_frequency — каждые N turn'ов зовёт profile API.
+  • api_timeout = 5.0 — короткий, чтобы не блокировать agent.
+  • entity_context — системный промпт, описывающий, ЧТО извлекать:
+    "lasting personal facts, preferences, routines, tools, ongoing
+     projects ... Do not remember temporary intents".
+  • _TRIVIAL_RE — отбрасывает "ok / thanks / k" и т.п.
+  • _MIN_CAPTURE_LENGTH = 10 — игнорирует слишком короткие реплики.
+Embeddings: облачные (Supermemory AI).
+Стоимость: платная подписка.
+
+────────────────────────────────────────────────────────────────────────────────
+3.3. retaindb — Cross-session с self-model
+────────────────────────────────────────────────────────────────────────────────
+Путь:    plugins/memory/retaindb/
+API:     https://api.retaindb.com (default), кастомный RETAINDB_BASE_URL
+Архитектура:
+  • Semantic search + profile retrieval
+  • SQLite write-behind очередь (crash-safe async ingest)
+  • Context query с дедупликацией
+  • Dialectic synthesis — LLM-синтез "понимания пользователя",
+    PREFETCH на каждый turn (т.е. agent видит синтез до ответа)
+  • Agent self-model — persona+инструкции из SOUL.md тоже
+    подмешиваются (свой код читает ~/.hermes/SOUL.md)
+  • Shared file store: upload/list/read с rdb:// URI
+Тулзы:   retaindb_profile, retaindb_search, retaindb_context,
+         retaindb_remember, retaindb_forget, retaindb_upload_file,
+         retaindb_list_files, retaindb_read_file, retaindb_delete_file.
+Embeddings: облачные (RetainDB SaaS).
+Стоимость: платная подписка.
+
+────────────────────────────────────────────────────────────────────────────────
+3.4. honcho — AI-native user modeling
+────────────────────────────────────────────────────────────────────────────────
+Путь:    plugins/memory/honcho/
+API:     внешний Honcho server (soc Honcho / honcho-ai)
+Конфиг:  $HERMES_HOME/honcho.json || ~/.honcho/config.json
+         || env (HONCHO_API_KEY, HONCHO_ENVIRONMENT)
+Сессии:  HonchoSession — локальный кэш сообщений + async writer
+         в Honcho. user_peer_id / assistant_peer_id / honcho_session_id
+         — модель двyх "персон" в Honcho.
+Embeddings: облачные (Honcho AI).
+Стоимость: платная подписка.
+
+────────────────────────────────────────────────────────────────────────────────
+3.5. hindsight — Knowledge graph + entities
+────────────────────────────────────────────────────────────────────────────────
+Путь:    plugins/memory/hindsight/
+Автор:   PR #1811 by benfrank241
+Режимы:  cloud (HINDSIGHT_MODE=cloud) или local (HINDSIGHT_MODE=local)
+Конфиг:  HINDSIGHT_API_KEY, HINDSIGHT_BANK_ID, HINDSIGHT_BUDGET (low/mid/high),
+         HINDSIGHT_TIMEOUT (default 120s), HINDSIGHT_IDLE_TIMEOUT (300s)
+Особенность: "Long-term memory with knowledge graph, entity resolution,
+            multi-strategy retrieval" — самый "graphy" из плагинов.
+Embeddings: облачные либо локальные (в зависимости от режима).
+
+────────────────────────────────────────────────────────────────────────────────
+3.6. openviking — Volcengine (ByteDance) Context DB
+────────────────────────────────────────────────────────────────────────────────
+Путь:    plugins/memory/openviking/
+API:     http://127.0.0.1:1933 (default endpoint — локальный)
+Конфиг:  OPENVIKING_ENDPOINT, OPENVIKING_API_KEY, OPENVIKING_ACCOUNT,
+         OPENVIKING_USER, OPENVIKING_AGENT
+Фишка:   viking:// URI — "память как файловая система".
+         Tiered context loading:
+            L0 ≈ 100 tokens (сверх-короткий)
+            L1 ≈ 2 000 tokens (средний)
+            L2 = full content
+         Resource ingestion: URL, docs, code.
+         6 категорий авто-извлечения при session commit.
+Embeddings: либо локальный OpenViking, либо Volcengine.
+Стоимость: локальный — бесплатный (нужен Docker), облако — Volcengine.
+
+────────────────────────────────────────────────────────────────────────────────
+3.7. byterover
+────────────────────────────────────────────────────────────────────────────────
+Путь:    plugins/memory/byterover/
+Детали не разобраны в этом отчёте; в коде присутствует,
+подключается тем же механизмом MemoryProvider.
+
+────────────────────────────────────────────────────────────────────────────────
+3.8. holographic — ЛОКАЛЬНЫЙ vector RAG без внешних SaaS
+────────────────────────────────────────────────────────────────────────────────
+Путь:    plugins/memory/holographic/
+Хранилище: SQLite (по умолчанию $HERMES_HOME/memory_store.db)
+Векторизация: СОБСТВЕННАЯ, без LLM-эмбеддеров!
+  • Holographic Reduced Representations (HRR) — vector symbolic
+    architecture от Plate (1995) + Gayler (2004).
+  • Phase encoding: каждое слово/атом — вектор фаз в [0, 2π),
+    dim=1024 по умолчанию.
+  • Атомы генерируются ДЕТЕРМИНИРОВАННО из SHA-256(слово:i) —
+    одинаковые на любой машине без RNG.
+  • bind (circular convolution) = phase addition
+  • unbind (circular correlation) = phase subtraction
+  • bundle (superposition) = circular mean of complex exponentials
+  • similarity = mean(cos(a-b)) ∈ [-1, 1]
+
+Структура хранения (store.py):
+  facts:      (fact_id, content, category, tags, trust_score,
+               retrieval_count, helpful_count, created_at, updated_at,
+               hrr_vector BLOB)
+  entities:   (entity_id, name, entity_type, aliases, created_at)
+  fact_entities: (fact_id, entity_id) — many-to-many
+  facts_fts:  FTS5(content, tags) — lexical fallback
+
+Retrieval pipeline (retrieval.py):
+  1) FTS5 candidates (×3 от лимита для реранкинга)
+  2) Jaccard rerank (token overlap)
+  3) HRR similarity (если numpy и hrr_weight > 0)
+  4) Trust weighting: score = relevance * trust_score
+  5) Optional temporal decay: 0.5^(age_days / half_life)
+  6) Sort desc, top-N
+
+  Веса по умолчанию:
+    fts_weight    = 0.4
+    jaccard_weight= 0.3
+    hrr_weight    = 0.3
+    → итого relevance ∈ [0, 1] * trust ∈ [0, 1]
+
+Compositional queries:
+  • probe(entity)   — unbind факта от role-entity atom → content vector
+  • reason(entities) — извлечь факты, связанные с НЕСКОЛЬКИМИ entity
+  • related(entity)  — structural adjacency
+  • contradict       — найти конфликтующие факты (memory hygiene)
+
+Trust + feedback:
+  • fact_feedback(helpful|unhelpful, fact_id) — поднимает/опускает
+    trust_score, что входит в retrieval score.
+  • trust_score стартует с 0.5, min_trust_threshold = 0.3 (фильтр).
+
+Тулзы: fact_store (add/search/probe/related/reason/contradict/
+       update/remove/list), fact_feedback.
+Конфиг: db_path, auto_extract, default_trust, min_trust_threshold,
+        temporal_decay_half_life (в config.yaml → plugins →
+        hermes-memory-store).
+
+Зависимости: numpy. Без numpy hrr_weight авто-обнуляется,
+             остаются только FTS5+Jaccard (см. retrieval.py:53-58).
+
+Стоимость: БЕСПЛАТНО, всё локально.
+
+================================================================================
+4. ВНУТРЕННИЙ TOOL-SEARCH (PROGRESSIVE TOOL DISCLOSURE)
+================================================================================
+Файл: /usr/local/lib/hermes-agent/tools/tool_search.py
+Конфиг в config.yaml:
+  tools:
+    tool_search:
+      enabled: auto
+      threshold_pct: 10
+      search_default_limit: 5
+      max_search_limit: 20
+
+Что делает:
+  • Когда число "deferrable" tools (MCP + plugin) занимает
+    < threshold_pct (10%) контекстного окна — никакого
+    tool search не происходит, tools-array идёт как есть.
+  • Иначе model видит ТРИ bridge-инструмента вместо сотен
+    реальных: tool_search, tool_describe, tool_call.
+  • tool_search возвращает top-N tools по релевантности
+    запросу пользователя.
+  • Catalog пересобирается на КАЖДОЙ assembly (stateless
+    по дизайну — у OpenClaw была regression из-за
+    session-keyed catalog, который расходился с registry;
+    здесь это явно исправлено).
+  • CHARS_PER_TOKEN=*** — дешёвая эвристика 4 символа/токен
+    (т.к. настоящего токенизатора на хосте нет).
+  • Core tools из toolsets._HERMES_CORE_TOOLS НИКОГДА не
+    откладываются — always-load, без исключений.
+
+Поиск: чисто lexical (по имени/описанию tool, не vector).
+Token-count: 4 chars/token эвристика.
+
+================================================================================
+5. ТЕКУЩЕЕ СОСТОЯНИЕ НА ЭТОМ ХОСТЕ
+================================================================================
+Из config.yaml (/root/.hermes/config.yaml):
+  memory:
+    memory_enabled: true
+    user_profile_enabled: true
+    memory_char_limit: 2200
+    user_char_limit: 1375
+    provider: ''        ← ПУСТО → ни один memory-плагин не подключён
+    nudge_interval: 10
+    flush_min_turns: 6
+  tools:
+    tool_search:
+      enabled: auto
+      threshold_pct: 10
+      search_default_limit: 5
+      max_search_limit: 20
+
+Файлы памяти (flat, НЕ vector):
+  /root/.hermes/memories/MEMORY.md     2 213 B  (5 параграфов фактов)
+  /root/.hermes/memories/USER.md         769 B  (3 параграфа профиля)
+  /root/.hermes/SOUL.md                 (конфиг агента, не память)
+
+Установленные Python-пакеты (проверено pip list в venv):
+  numpy           — НЕТ
+  faiss / chroma / qdrant / pinecone / weaviate / lancedb — НЕТ
+  sqlite-vec      — НЕТ
+  rank_bm25       — НЕТ
+  honcho, mem0, supermemory, retaindb, hindsight, openviking — НЕТ
+  sentence-transformers — НЕТ
+  → ни одна специализированная vector/embed-библиотека не установлена.
+
+Что работает прямо сейчас:
+  ✔ Сессионный lexical-поиск (FTS5 BM25 по state.db)
+  ✔ Tool search (lexical, по catalog)
+  ✔ Tool result persistence (file-based, не vector)
+  ✔ Flat-файлы MEMORY.md / USER.md (с trim при переполнении)
+  ✔ Subagent / delegation (отдельная ось, не RAG)
+
+Что НЕ работает прямо сейчас:
+  ✘ Никакие vector-эмбеддинги
+  ✘ Ни один из 7 MemoryProvider-плагинов
+  ✘ HRR holographic (numpy отсутствует → автодеградация)
+  ✘ Semantic search, reranking по embedding similarity
+  ✘ Knowledge graph (hindsight)
+  ✘ viking:// filesystem (openviking)
+
+================================================================================
+6. КАК ПОДКЛЮЧИТЬ VECTOR RAG В ЭТОЙ ИНСТАЛЛЯЦИИ
+================================================================================
+Вариант A — БЕСПЛАТНО, локально (holographic):
+  1) pip install numpy
+  2) в config.yaml добавить:
+       memory:
+         provider: hermes-memory-store
+       plugins:
+         hermes-memory-store:
+           db_path: /root/.hermes/memory_store.db
+           auto_extract: true
+           default_trust: 0.5
+           min_trust_threshold: 0.3
+           temporal_decay_half_life: 30
+  3) перезапустить gateway.
+  Плюсы: $0, работает offline, есть entity resolution + trust.
+  Минусы: HRR-качество ниже современных LLM-эмбеддингов;
+          auto_extract=true потребует LLM для извлечения фактов.
+
+Вариант B — облачный Mem0/Supermemory/RetainDB:
+  1) подписаться, получить API-ключ
+  2) в config.yaml:
+       memory:
+         provider: mem0   (или supermemory / retaindb)
+  3) ключ в env или $HERMES_HOME/mem0.json:
+       export MEM0_API_KEY=***
+  4) перезапустить.
+  Плюсы: качественные embeddings + reranking, dedup, profile.
+  Минусы: $$, online-only, vendor lock-in, privacy.
+
+Вариант C — OpenViking (self-hosted Volcengine):
+  1) docker run volcengine/openviking-server
+  2) в config.yaml:
+       memory:
+         provider: openviking
+       env: OPENVIKING_ENDPOINT=http://127.0.0.1:1933
+  Плюсы: локальный, tiered context, viking:// browsing.
+  Минусы: сложный setup, Volcengine-специфичный формат.
+
+================================================================================
+7. ГДЕ RAG / ВЕКТОРЫ СТАЛИ БЫ ВИДНЫ В КОНТЕКСТЕ
+================================================================================
+Каждый assistant turn проходит через MemoryProvider (если
+подключён), и:
+
+  • supermemory вставляет <supermemory-context> в system prompt
+    автоматически, потом вырезает перед возвратом LLM.
+  • retaindb префетчит dialectic synthesis и self-model.
+  • mem0 префетчит profile и recent relevant memories.
+  • holographic хранит в SQLite; вызывается явной тулзой
+    fact_store (не auto-pipeline).
+
+В output: <persisted-output>...</persisted-output> маркеры для
+больших tool-результатов (это не vector, но связано с RAG-
+логистикой контекста).
+
+================================================================================
+8. ОГРАНИЧЕНИЯ И ПОДВОДНЫЕ КАМНИ
+================================================================================
+  • Параллельные плагины не суммируются: provider — строка
+    с одним значением, не список. Включить два одновременно
+    нельзя (например, mem0 + holographic).
+  • memory_char_limit=2200 / user_char_limit=1375 — лимиты
+    на flat-файлы. Длинный MEMORY.md будет усечён.
+  • sanitize_context в agent/memory_manager.py — автоматический
+    тримминг при переполнении (вытесняет старые записи).
+  • state.db на NFS/WSL1 падает с SQLITE_PROTOCOL в WAL mode,
+    есть fallback на journal_mode=DELETE (см. _WAL_INCOMPAT_MARKERS
+    в hermes_state.py). Может сказаться на FTS5-поиске.
+  • embedding API-провайдеров: разные тарифы, разные размеры
+    векторов (768 / 1024 / 1536 / 3072), разные модели.
+    Миграция между провайдерами обычно требует re-ingest.
+  • Никакой "универсальной" vector-БД, общей для всех
+    плагинов, в Hermes нет — каждый провайдер изолирован.
+
+================================================================================
+9. ЧТО ПОКАЗЫВАЕТ ВЕРСИЯ 0.16.0
+================================================================================
+Глядя на код (а не на доки), в hermes_agent 0.16.0:
+  • FTS5 + BM25 — продакшен, стабильно.
+  • Tool search с порогом 10% — продакшен.
+  • MemoryProvider ABC + 7 плагинов — продакшен
+    (некоторые плагины помечены как адаптации старых PR,
+    это нормально для Hermes-проекта).
+  • HRR / holographic — продакшен, но НЕ по умолчанию.
+  • Mem0 / RetainDB / Supermemory — quality tier, требуют $$.
+  • Honcho / Hindsight / OpenViking — alternative providers,
+    покрывают разные use-cases (graph, SaaS-user-model,
+    filesystem-of-context).
+
+Прямого упоминания "RAG" как общей абстракции в коде
+несколько (например, в `website/scripts/extract-skills.py:526`
+"rag" встречается в списке тегов), но в агенте RAG
+реализован ровно как "FTS5 + опциональный memory provider",
+без собственной vector-БД общего назначения. Это
+архитектурно чисто, но не "RAG в смысле LangChain" —
+скорее "pluggable memory layer поверх lexical retrieval".
+
+================================================================================
+10. РЕКОМЕНДАЦИЯ ДЛЯ ЭТОГО ХОСТА
+--------------------------------------------------------------------------------
+Если цель — ПОПРОБОВАТЬ vector RAG бесплатно и локально:
+  → holographic + numpy (вариант A выше, ~30 строк конфига).
+
+Если цель — КАЧЕСТВЕННЫЙ RAG без оглядки на бюджет:
+  → mem0 или supermemory (вариант B, 5 минут setup).
+
+Если цель — ИСПОЛЬЗОВАТЬ существующий lexical слой:
+  → он уже работает; тулза session_search() доступна
+    агенту, /root/.hermes/state.db с FTS5 — рабочий.
+
+Если цель — КОРПОРАТИВНЫЙ self-hosted:
+  → openviking (volcengine) или self-hosted mem0.
+
+================================================================================
+Артефакты:
+  /root/.hermes/config.yaml                  (текущая конфигурация)
+  /root/.hermes/memories/MEMORY.md           (2.1 KB, flat memory)
+  /root/.hermes/memories/USER.md             (769 B, user profile)
+  /root/.hermes/state.db                     (FTS5, sessions)
+  /usr/local/lib/hermes-agent/agent/memory_provider.py        (ABC)
+  /usr/local/lib/hermes-agent/plugins/memory/                 (7 плагинов)
+  /usr/local/lib/hermes-agent/tools/session_search_tool.py   (FTS5 search)
+  /usr/local/lib/hermes-agent/tools/tool_search.py           (progressive disclosure)
+  /usr/local/lib/hermes-agent/tools/tool_result_storage.py    (persisted outputs)
+  /usr/local/lib/hermes-agent/hermes_state.py                 (FTS5 schema, WAL)
+================================================================================

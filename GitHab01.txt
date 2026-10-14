@@ -1,0 +1,352 @@
+БЭКАП ДАННЫХ АГЕНТОВ В GITHAB — ЧЁТКАЯ ПОСЛЕДОВАТЕЛЬНОСТЬ ДЕЙСТВИЙ
+================================================================
+Версия: 1.0
+Назначение: гарантированно сохранить код, артефакты и конфиги
+агентских сессий в удалённый Git-репозиторий (GitHub / Gitea / GitLab).
+Везде под "GitHab" подразумевается любой Git-хостинг.
+
+----------------------------------------------------------------
+0. ПОДГОТОВКА (один раз на машину)
+----------------------------------------------------------------
+0.1. Проверить, что Git установлен и настроен.
+     git --version
+     git config --global user.name  "agent-backup-bot"
+     git config --global user.email "agent-backup@<ваш-домен>"
+     # Если работаете от root и бэкапите чужие репо — добавьте
+     # safe.directory, иначе Git будет ругаться на права:
+     git config --global --add safe.directory '*'
+
+0.2. Создать на GitHab пустой приватный репозиторий, например
+     "agents-backup". Скопировать HTTPS-URL вида
+     https://<token>@github.com/<owner>/agents-backup.git
+     (token = PAT с правом repo:write; НИКОГДА не коммитьте токен
+     в открытый файл, см. п. 4.2).
+
+0.3. Определить каталог-источник бэкапа, например:
+     AGENT_ROOT="/root/.hermes"
+     BACKUP_TMP="/var/tmp/agents-backup"
+     mkdir -p "$BACKUP_TMP"
+
+----------------------------------------------------------------
+1. ЧТО ИМЕННО БЭКАПИМ
+----------------------------------------------------------------
+   $AGENT_ROOT/skills/          # все skills, которыми пользуются агенты
+   $AGENT_ROOT/memories/        # долговременная память агентов
+   $AGENT_ROOT/config.yaml      # конфиг gateway и профилей
+   $AGENT_ROOT/.env             # ТОЛЬКО если храните в vault; иначе — исключить
+   $AGENT_ROOT/profiles/        # per-profile skills/plugins/cron/memories
+   /opt/agent-workspaces/       # любые внешние workspace-папки агентов
+   $HOME/.claude/, $HOME/.codex/ # state-каталоги других рантаймов
+   Любые SQLite-БД сессий (если используются).
+
+   Перед копированием — остановить активных агентов, чтобы не снять
+   полузаписанный блоб. Если остановка невозможна — использовать
+   rsync --partial --inplace в режиме live snapshot.
+
+----------------------------------------------------------------
+2. СБОРКА СНАПШОТА
+----------------------------------------------------------------
+2.1. Создать каталог с датой-временем:
+     SNAP="$BACKUP_TMP/agents-$(date -u +%Y%m%dT%H%M%SZ)"
+     mkdir -p "$SNAP"
+
+2.2. Скопировать нужное (rsync сохраняет права/время):
+     rsync -aHAX --info=stats2 \
+       $AGENT_ROOT/skills/     "$SNAP/skills/"
+       $AGENT_ROOT/memories/   "$SNAP/memories/"
+       $AGENT_ROOT/profiles/   "$SNAP/profiles/"
+       $AGENT_ROOT/config.yaml "$SNAP/config.yaml"
+       /opt/agent-workspaces/  "$SNAP/workspaces/"
+
+2.3. Упаковать в tar.gz с контрольной суммой:
+     tar -C "$BACKUP_TMP" -czf "$SNAP.tar.gz" "$(basename "$SNAP")"
+     sha256sum "$SNAP.tar.gz" | tee "$SNAP.tar.gz.sha256"
+
+2.4. (Опционально) подписать архив GPG-ключом, которому доверяет
+     GitHab-side policy:
+     gpg --batch --yes --armor --detach-sign \
+         --output "$SNAP.tar.gz.asc" "$SNAP.tar.gz"
+
+2.5. Очистить временный каталог:
+     rm -rf "$SNAP"
+
+----------------------------------------------------------------
+3. ИНИЦИАЛИЗАЦИЯ ЛОКАЛЬНОГО GIT-РЕПО АРХИВА
+----------------------------------------------------------------
+3.1. Распаковать архив в рабочую копию:
+     WORK="$BACKUP_TMP/agents-repo"
+     rm -rf "$WORK" && mkdir -p "$WORK"
+     tar -C "$WORK" -xzf "$SNAP.tar.gz"
+     # Внутри окажется каталог с тем же именем, что и tar.gz
+     WORK_DATA="$WORK/$(basename "$SNAP")"
+
+3.2. Превратить его в bare-friendly зеркало:
+     git init -b main "$WORK_DATA"
+     git -C "$WORK_DATA" add -A
+     git -C "$WORK_DATA" commit -m "snapshot $(date -u +%FT%TZ)"
+
+3.3. Если раньше бэкапы уже пушились — подцепить историю:
+     git -C "$WORK_DATA" remote add origin \
+       https://<token>@github.com/<owner>/agents-backup.git
+     git -C "$WORK_DATA" fetch origin
+     git -C "$WORK_DATA" rebase origin/main || \
+       git -C "$WORK_DATA" rebase --abort
+
+----------------------------------------------------------------
+4. БЕЗОПАСНАЯ ПУБЛИКАЦИЯ В GITHAB
+----------------------------------------------------------------
+4.1. Способ 1 (рекомендуемый): SSH-ключ, привязанный к бот-аккаунту.
+     ssh-keygen -t ed25519 -C "agents-backup" -f ~/.ssh/agents_backup
+     # публичный ключ добавить в GitHab → Settings → Deploy keys
+     # (с правом write) у репозитория agents-backup.
+     git -C "$WORK_DATA" remote set-url origin \
+       git@github.com:<owner>/agents-backup.git
+
+4.2. Способ 2 (HTTPS + PAT):
+     a) Положить токен в файл с правами 0600:
+        umask 077
+        printf '%s' 'ghp_XXXXXXXXXXXXXXXXXXXX' > /root/.gh_backup_tok
+        chmod 600 /root/.gh_backup_tok
+     b) Собрать URL из кусков, чтобы токен не светился в истории:
+        TOK=$(cat /root/.gh_backup_tok)
+        URL="https://${TOK}@github.com/<owner>/agents-backup.git"
+     c) git -C "$WORK_DATA" remote add origin "$URL"
+     d) ПОСЛЕ успешного push URL с токеном желательно стереть:
+        git -C "$WORK_DATA" remote set-url origin \
+          https://github.com/<owner>/agents-backup.git
+        unset URL TOK
+
+4.3. Залить:
+     git -C "$WORK_DATA" push -u origin main
+     # Если были старые бэкапы и main уже существует:
+     git -C "$WORK_DATA" push origin main:main --force-with-lease
+     # --force-with-lease безопаснее --force: GitHab отклонит push,
+     # если на сервере есть коммиты, которых у вас локально нет.
+
+4.4. Проверить, что последний коммит виден удалённо:
+     git -C "$WORK_DATA" ls-remote origin
+     # В выводе должна быть ваша SHA у refs/heads/main.
+
+----------------------------------------------------------------
+5. АВТОМАТИЗАЦИЯ (cron/systemd)
+----------------------------------------------------------------
+5.1. Скрипт /usr/local/bin/agents-backup.sh:
+     #!/usr/bin/env bash
+     set -euo pipefail
+     AGENT_ROOT="/root/.hermes"
+     BACKUP_TMP="/var/tmp/agents-backup"
+     WORK="$BACKUP_TMP/agents-repo"
+     SNAP_NAME="agents-$(date -u +%Y%m%dT%H%M%SZ)"
+     mkdir -p "$BACKUP_TMP"
+     tar -C "$BACKUP_TMP" -czf "$BACKUP_TMP/$SNAP_NAME.tar.gz" \
+         -C "$AGENT_ROOT" skills memories profiles config.yaml
+     rm -rf "$WORK" && mkdir -p "$WORK"
+     tar -C "$WORK" -xzf "$BACKUP_TMP/$SNAP_NAME.tar.gz"
+     cd "$WORK/$SNAP_NAME"
+     git init -q -b main .
+     git add -A
+     git -c user.name=agents-backup-bot \
+         -c user.email=agents-backup@localhost \
+         commit -q -m "snapshot $SNAP_NAME"
+     git remote remove origin 2>/dev/null || true
+     git remote add origin \
+       "https://$(cat /root/.gh_backup_tok)@github.com/<owner>/agents-backup.git"
+     git push -q origin main:main --force-with-lease
+     echo "OK $SNAP_NAME"
+
+     chmod 700 /usr/local/bin/agents-backup.sh
+
+5.2. Запускать ежедневно в 03:17 через systemd timer:
+     /etc/systemd/system/agents-backup.service
+     [Unit]
+     Description=Agents data backup to GitHab
+     [Service]
+     Type=oneshot
+     ExecStart=/usr/local/bin/agents-backup.sh
+
+     /etc/systemd/system/agents-backup.timer
+     [Unit]
+     Description=Daily agents backup
+     [Timer]
+     OnCalendar=*-*-* 03:17:00
+     Persistent=true
+     [Install]
+     WantedBy=timers.target
+
+     systemctl daemon-reload
+     systemctl enable --now agents-backup.timer
+
+5.3. Проверить, что таймер жив:
+     systemctl list-timers agents-backup.timer
+     journalctl -u agents-backup.service -n 50 --no-pager
+
+----------------------------------------------------------------
+6. ВОССТАНОВЛЕНИЕ ИЗ БЭКАПА
+----------------------------------------------------------------
+6.1. Склонировать целиком:
+     git clone https://github.com/<owner>/agents-backup.git /tmp/restore
+     ls /tmp/restore/   # список снапшотов-каталогов
+
+6.2. Достать нужный снапшот:
+     tar -C / -xzf /tmp/restore/agents-YYYYMMDDTHHMMSSZ.tar.gz
+     # либо распаковать вручную:
+     tar -xzf agents-YYYYMMDDTHHMMSSZ.tar.gz -C /tmp/restore/one
+
+6.3. Верифицировать подпись/контрольную сумму:
+     sha256sum -c agents-YYYYMMDDTHHMMSSZ.tar.gz.sha256
+     gpg --verify agents-YYYYMMDDTHHMMSSZ.tar.gz.asc \
+                 agents-YYYYMMDDTHHMMSSZ.tar.gz
+
+6.4. Скопировать восстановленные данные на их штатные места
+     (skills → $AGENT_ROOT/skills/ и т. д.), затем:
+     systemctl --user restart hermes-gateway    # если конфиг менялся
+
+----------------------------------------------------------------
+7. ЧЕКЛИСТ ПЕРЕД СДАЧЕЙ
+----------------------------------------------------------------
+[ ] .gitignore исключает .env, токены, *.sqlite-*
+[ ] Репозиторий приватный
+[ ] Deploy key / PAT имеет минимально нужные права
+[ ] Включён 2FA у аккаунта-владельца
+[ ] Тестовый прогон push + restore выполнен вручную
+[ ] Таймер активен, последний запуск успешен
+[ ] Логи бэкапа сохраняются 30+ дней
+[ ] Подпись/хеш архива проверяются автоматически на restore
+[ ] SQLite-БД бэкапятся online API, а не копированием (см. §8)
+
+----------------------------------------------------------------
+8. БЭКАП SQLITE-СЕССИЙ (.db, .sqlite, .sqlite3)
+----------------------------------------------------------------
+SQLite-файлы в `~/.hermes/`, `~/.claude/`, `~/.codex/` и workspace-ах
+хранят текущее состояние сессий, индексы воспоминаний и метаданные
+навыков. Наивный `cp *.db $BACKUP/` берёт срез БД в произвольный
+момент транзакции — результат может быть inconsistent, особенно в
+режимах WAL/TRUNCATE.
+
+8.1. Сначала понять, какие файлы вообще есть и в каком режиме
+     работает журнал:
+     find $AGENT_ROOT /opt/agent-workspaces -type f \
+       \( -name '*.db' -o -name '*.sqlite' -o -name '*.sqlite3' \)
+     # Для каждой БД — определить journal_mode:
+     sqlite3 /path/to/sessions.db \
+       "PRAGMA journal_mode; PRAGMA busy_timeout; PRAGMA wal_autocheckpoint;"
+
+     Типичные значения journal_mode:
+       delete   — основной файл .db + .db-journal при записи
+       wal      — .db + .db-wal + .db-shm; НЕ копировать .db просто так
+       truncate — похож на delete, но без journal-файла
+       persist  — заголовок помечен, отдельного файла нет
+       memory   — журнал в RAM, **нельзя** сохранить — бэкапить
+                  только при остановленном агенте
+       off      — без журнала вообще (опасно, но хотя бы консистентно)
+
+8.2. Главное правило: для online-бэкапа используйте Backup API,
+     никогда не копируйте .db/.wal/.shm вручную. SQLite сама
+     делает снимок на момент старта, держит нужные блокировки
+     и отдаёт уже согласованный дамп.
+
+     sqlite3 /path/to/sessions.db ".backup '$BACKUP_TMP/sessions-$(date -u +%Y%m%dT%H%M%SZ).db'"
+     # По умолчанию WAL-страницы корректно сливаются в основной файл
+     # при backup. Код возврата 0 = OK, != 0 = проблема; всегда
+     # проверяйте $? или используйте `&&` в скрипте.
+
+8.3. Альтернатива: VACUUM INTO (сжимает и сразу отдаёт):
+     sqlite3 /path/to/sessions.db \
+       "VACUUM INTO '$BACKUP_TMP/sessions-vacuumed.db'"
+     # Полезно как вторичный артефакт: дефрагментированная копия
+     # для хранения в репо. В hot-path не злоупотреблять — VACUUM
+     # эксклюзивно блокирует БД.
+
+8.4. .gitignore для SQLite (иначе коммит раздуется, а .git LFS
+     тут не нужен):
+     cat >> "$WORK/.gitignore" <<'EOF'
+     # SQLite transient files — НЕ бэкапим как часть репо
+     *.db-journal
+     *.db-shm
+     *.db-wal
+     *.sqlite-journal
+     *.sqlite-shm
+     *.sqlite-wal
+     *.sqlite3-journal
+     *.sqlite3-shm
+     *.sqlite3-wal
+     # Сами .db/.sqlite/.sqlite3 добавляем вручную (см. §3.1)
+     EOF
+
+8.5. Коммит только "чистых" .db (без -journal/-shm/-wal):
+     # Удалить транзитные файлы, если они всё-таки попали
+     find "$WORK" \( -name '*.db-journal' -o -name '*.db-shm' \
+        -o -name '*.db-wal' -o -name '*.sqlite-journal' \
+        -o -name '*.sqlite-shm' -o -name '*.sqlite-wal' \
+        -o -name '*.sqlite3-journal' -o -name '*.sqlite3-shm' \
+        -o -name '*.sqlite3-wal' \) -delete
+     git -C "$WORK" add -A
+     git -C "$WORK" commit -m "snapshot $(date -u +%FT%TZ) [sqlite online backup]"
+
+8.6. Опционально: для редких сценариев "агент нельзя трогать,
+     а WAL разросся" — мягкий checkpoint ПЕРЕД backup API:
+     sqlite3 /path/to/sessions.db "PRAGMA wal_checkpoint(TRUNCATE);"
+     sqlite3 /path/to/sessions.db ".backup '$BACKUP_TMP/sessions.db'"
+     # TRUNCATE полностью освобождает .db-wal; безопасно на лету,
+     # если нет долгих транзакций.
+
+8.7. В скрипт автоматизации (§5.1) добавить блок:
+     # SQLite backup step — выполнять ПОСЛЕ rsync, ДО tar
+     DB_BACKUP_DIR="$BACKUP_TMP/db-$(date -u +%Y%m%dT%H%M%SZ)"
+     mkdir -p "$DB_BACKUP_DIR"
+     while IFS= read -r db; do
+         [ -r "$db" ] || continue
+         base=$(basename "$db")
+         sqlite3 "$db" ".backup '$DB_BACKUP_DIR/$base'" \
+           && echo "  backed up $db" \
+           || { echo "  FAILED $db" >&2; exit 1; }
+     done < <(find "$AGENT_ROOT" /opt/agent-workspaces \
+                  -type f \( -name '*.db' -o -name '*.sqlite' \
+                  -o -name '*.sqlite3' \) 2>/dev/null)
+     tar -C "$DB_BACKUP_DIR/.." -czf \
+         "$BACKUP_TMP/${SNAP_NAME}-dbs.tar.gz" \
+         "$(basename "$DB_BACKUP_DIR")"
+     rm -rf "$DB_BACKUP_DIR"
+
+8.8. Восстановление SQLite-БД:
+     a) Из тарбола .db-файлов (наш формат):
+        tar -xzf agents-YYYYMMDDTHHMMSSZ-dbs.tar.gz -C /tmp/restore_db
+     b) Положить на штатное место:
+        cp /tmp/restore_db/<имя>.db /path/to/live/<имя>.db
+        chown <user>:<group> /path/to/live/<имя>.db
+        chmod 0640 /path/to/live/<имя>.db
+     c) Удалить транзитные файлы от старой БД (если live-процесс
+        ещё держит БД, делать при его остановке):
+        rm -f /path/to/live/<имя>.db-journal \
+              /path/to/live/<имя>.db-wal \
+              /path/to/live/<имя>.db-shm
+     d) Проверить целостность после восстановления:
+        sqlite3 /path/to/live/<имя>.db "PRAGMA integrity_check;"
+        sqlite3 /path/to/live/<имя>.db "PRAGMA foreign_key_check;"
+     e) Запустить агентский сервис:
+        systemctl --user start hermes-gateway
+        journalctl -u hermes-gateway -n 20 --no-pager | tail
+
+8.9. Подводные камни SQLite-бэкапа:
+     - journal_mode=memory ⇒ Backup API тоже работает, но вы
+       теряете данные, накопленные с момента последней записи
+       в момент копирования. Если агенту важна свежесть —
+       переключите на wal/truncate до backup-а.
+     - busy_timeout=0 ⇒ backup может мгновенно падать с
+       "database is locked". Установите `PRAGMA busy_timeout=5000;`
+       в настройках приложения или временно в скрипте:
+         sqlite3 "$db" "PRAGMA busy_timeout=5000;"
+     - Огромные .db-wal (>1 ГБ) ⇒ backup API будет долгим.
+       Делайте `PRAGMA wal_checkpoint(TRUNCATE);` заранее или
+       настройте `wal_autocheckpoint=1000;`.
+     - Если в .env указаны пути к БД зашифрованных секретов
+       (sqlcipher) — Backup API работает, но выгруженный файл
+       остаётся зашифрованным тем же ключом. Ключ хранить ОТДЕЛЬНО
+       от бэкапа (см. §4.2 — никогда в одном коммите).
+     - Не бэкапьте SQLite-базы во время активной миграции схемы
+       (ALTER TABLE …). Backup API ждёт окончания миграции, и
+       таймаут systemd unit может сработать раньше. Делайте
+       backup в окно обслуживания либо увеличьте
+       `TimeoutStartSec=` в unit-файле.
+
+Конец инструкции.

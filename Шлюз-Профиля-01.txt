@@ -1,0 +1,429 @@
+═══════════════════════════════════════════════════════════════════
+  Gateway конкретного профиля Hermes Agent
+  Полное руководство для mima_g_01 (Ubuntu 24.04.4 LTS)
+═══════════════════════════════════════════════════════════════════
+
+Версия Hermes: текущая инсталляция на mima_g_01
+Профили в системе:
+  • default         — корневой /root/.hermes (активный systemd unit)
+  • analyst_training — /root/.hermes/profiles/analyst_training
+  • mi_mg_01        — /root/.hermes/profiles/mi_mg_01
+
+═══════════════════════════════════════════════════════════════════
+1. АРХИТЕКТУРА: ЧТО ТАКОЕ «GATEWAY ПРОФИЛЯ»
+═══════════════════════════════════════════════════════════════════
+
+Hermes Agent устроен так:
+
+  Профиль = полностью изолированный Hermes с собственным
+            ├── ~/.hermes/profiles/<name>/.env       (токены, ключи)
+            ├── ~/.hermes/profiles/<name>/config.yaml (настройки)
+            ├── ~/.hermes/profiles/<name>/SOUL.md    (kernel-инвариант)
+            ├── ~/.hermes/profiles/<name>/memories/  (USER, MEMORY)
+            ├── ~/.hermes/profiles/<name>/skills/    (скиллы профиля)
+            ├── ~/.hermes/profiles/<name>/platforms/ (настройки мессенджеров)
+            ├── ~/.hermes/profiles/<name>/state.db   (SQLite состояние)
+            ├── ~/.hermes/profiles/<name>/gateway_state.json
+            └── ~/.hermes/profiles/<name>/gateway.lock
+
+  Gateway — это runtime-процесс (hermes_cli.main gateway run),
+            который:
+            1. Опрашивает подключённые мессенджеры (Telegram/Matrix/...)
+            2. Передаёт входящие сообщения агенту нужного профиля
+            3. Отправляет ответы обратно в мессенджер
+
+  Один gateway = один профиль. Каждый профиль с подключёнными
+  мессенджерами требует СВОЕГО gateway-процесса.
+
+Текущее состояние:
+  ✓ default         — PID 33769 (active, запущен 17:28:25 после reload)
+  ✗ analyst_training — stopped (последний запуск 2 июля)
+  ✗ mi_mg_01        — not running (никогда не запускался?)
+
+═══════════════════════════════════════════════════════════════════
+2. БАЗОВЫЕ КОМАНДЫ УПРАВЛЕНИЯ
+═══════════════════════════════════════════════════════════════════
+
+2.1 Посмотреть все gateway
+──────────────────────────
+$ hermes gateway list
+Gateways:
+  ✓ default                  — PID 33769
+  ✗ analyst_training (current) — not running
+  ✗ mi_mg_01                 — not running
+
+2.2 Запустить gateway конкретного профиля
+─────────────────────────────────────────
+$ hermes -p analyst_training gateway run           # foreground (для отладки)
+$ hermes -p analyst_training gateway start         # background (как сервис)
+
+Опции команды start:
+  --system   использовать системный (system) сервис вместо user-level
+  --all      убить все устаревшие gateway-процессы во всех профилях
+
+Пример:
+$ hermes -p mi_mg_01 gateway start --all
+
+2.3 Остановить gateway
+──────────────────────
+$ hermes -p mi_mg_01 gateway stop
+
+ВНИМАНИЕ: команда `hermes gateway stop` (без -p) работает ТОЛЬКО для
+профиля default. Для остальных — обязательно указывать -p.
+
+2.4 Перезапустить gateway
+─────────────────────────
+$ hermes -p mi_mg_01 gateway restart
+
+2.5 Статус конкретного профиля
+──────────────────────────────
+$ hermes -p mi_mg_01 gateway status
+$ hermes -p mi_mg_01 status                 # общий статус профиля
+
+2.6 Прочитать логи gateway профиля
+──────────────────────────────────
+$ journalctl --user -u hermes-gateway -n 100
+$ ls -la /root/.hermes/profiles/mi_mg_01/logs/
+$ tail -f /root/.hermes/profiles/mi_mg_01/logs/gateway.log
+
+═══════════════════════════════════════════════════════════════════
+3. УСТАНОВКА GATEWAY КАК SYSTEMD-СЕРВИСА
+═══════════════════════════════════════════════════════════════════
+
+Есть ДВА уровня сервисов:
+
+A. User-level (по умолчанию):
+   - Файл: /root/.config/systemd/user/hermes-gateway.service
+   - Запуск: systemctl --user {start|stop|restart|status} hermes-gateway
+   - Видит только user-окружение (нет доступа к системным логам)
+   - Linger: loginctl enable-linger root (чтобы пережил logout)
+
+B. System-level (опция --system):
+   - Файл: /etc/systemd/system/hermes-gateway.service
+   - Запуск: sudo systemctl {start|stop|restart|status} hermes-gateway
+   - Видит всё, требует root
+
+3.1 Автоустановка user-level сервиса
+────────────────────────────────────
+$ hermes -p mi_mg_01 gateway install
+
+Это создаст /root/.config/systemd/user/hermes-gateway.service
+(с правильным ExecStart для профиля mi_mg_01) и активирует его.
+
+3.2 Что внутри сервисного файла
+────────────────────────────────
+Сейчас (для default-профиля):
+[Unit]
+Description=Hermes Agent Gateway - Messaging Platform Integration
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+ExecStart=/usr/local/lib/hermes-agent/venv/bin/python -m hermes_cli.main gateway run
+WorkingDirectory=/root/.hermes
+Environment="PATH=..."
+Environment="VIRTUAL_ENV=/usr/local/lib/hermes-agent/venv"
+Environment="HERMES_HOME=/root/.hermes"
+Restart=always
+RestartSec=5
+RestartForceExitStatus=75
+KillMode=mixed
+KillSignal=SIGTERM
+ExecReload=/bin/kill -USR1 $MAINPID
+ExecStopPost=-/usr/local/lib/hermes-agent/venv/bin/python -m gateway.cgroup_cleanup
+TimeoutStopSec=210
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target
+
+Для профиля mi_mg_01 ключевые правки:
+  WorkingDirectory=/root/.hermes/profiles/mi_mg_01
+  Environment="HERMES_HOME=/root/.hermes/profiles/mi_mg_01"
+
+3.3 Включение и запуск
+──────────────────────
+$ systemctl --user daemon-reload
+$ systemctl --user enable hermes-gateway       # автозапуск при логине
+$ systemctl --user start hermes-gateway        # запустить сейчас
+$ systemctl --user status hermes-gateway       # проверить
+
+3.4 Linger (чтобы пережил logout)
+─────────────────────────────────
+$ loginctl enable-linger root
+$ loginctl show-user root | grep Linger        # должно быть Linger=yes
+
+═══════════════════════════════════════════════════════════════════
+4. ПЕРЕКЛЮЧЕНИЕ АКТИВНОГО ПРОФИЛЯ
+═══════════════════════════════════════════════════════════════════
+
+4.1 Sticky default (для всех команд `hermes` без -p)
+───────────────────────────────────────────────────
+$ hermes profile use mi_mg_01
+# запишется в /root/.hermes/active_profile
+$ cat /root/.hermes/active_profile
+mi_mg_01
+
+$ hermes profile use default                  # вернуться к default
+
+4.2 Временное переключение (только для одной команды)
+─────────────────────────────────────────────────────
+$ hermes -p mi_mg_01 chat                     # чат с профилем mi_mg_01
+$ hermes -p mi_mg_01 cron list                # cron-задачи mi_mg_01
+$ hermes -p mi_mg_01 skills list              # скиллы mi_mg_01
+
+4.3 Просмотр профилей
+──────────────────────
+$ hermes profile list
+$ hermes profile show mi_mg_01                # подробности
+$ hermes profile info mi_mg_01
+
+═══════════════════════════════════════════════════════════════════
+5. НАСТРОЙКА МЕССЕНДЖЕРОВ В ПРОФИЛЕ
+═══════════════════════════════════════════════════════════════════
+
+Каждый профиль имеет свои настройки мессенджеров:
+
+  ~/.hermes/profiles/<name>/
+    ├── .env                          # TELEGRAM_BOT_TOKEN, MATRIX_HOMESERVER...
+    ├── config.yaml                   # gateway.platforms.{telegram,matrix,...}
+    ├── channel_directory.json        # какой чат в какой профиль
+    └── pairing/                      # QR/коды для WhatsApp
+
+5.1 Telegram для профиля mi_mg_01
+──────────────────────────────────
+Шаг 1: получить токен через @BotFather (https://t.me/BotFather)
+Шаг 2: добавить в .env профиля:
+  echo "TELEGRAM_BOT_TOKEN=123456:ABC..." >> ~/.hermes/profiles/mi_mg_01/.env
+  chmod 600 ~/.hermes/profiles/mi_mg_01/.env
+Шаг 3: (опционально) прописать chat_id в channel_directory.json
+Шаг 4: запустить gateway профиля:
+  hermes -p mi_mg_01 gateway start
+
+5.2 Matrix для профиля mi_mg_01
+───────────────────────────────
+В .env профиля:
+  MATRIX_HOMESERVER=https://msg.lab.example.org
+  MATRIX_USER_ID=@agent-mi-mg-01:msg.lab.example.org
+  MATRIX_ACCESS_TOKEN=...
+
+В config.yaml профиля:
+  gateway:
+    platforms:
+      matrix:
+        homeserver: ${MATRIX_HOMESERVER}
+        user_id: ${MATRIX_USER_ID}
+        access_token: ${MATRIX_ACCESS_TOKEN}
+
+5.3 Проверка подключения после запуска
+──────────────────────────────────────
+$ hermes -p mi_mg_01 gateway status
+$ journalctl --user -u hermes-gateway -n 50 | grep -E "Telegram|Matrix|connected|error"
+
+═══════════════════════════════════════════════════════════════════
+6. УПРАВЛЕНИЕ ЧЕРЕЗ FLAGS (hermes gateway + опции)
+═══════════════════════════════════════════════════════════════════
+
+Все gateway-команды принимают -p <profile>:
+  hermes -p <profile> gateway {run,start,stop,restart,status,install,uninstall,list,setup}
+
+Дополнительные глобальные флаги:
+  --accept-hooks    авто-одобрение shell-хуков (эквивалент
+                    HERMES_ACCEPT_HOOKS=1)
+  --yolo            пропустить все safety-проверки (ОСТОРОЖНО)
+  --safe-mode       принудительный safe-mode
+  --ignore-user-config
+  --ignore-rules
+
+Пример безопасного запуска:
+$ hermes --safe-mode -p mi_mg_01 gateway run
+# foreground, safe-mode, видны все ошибки в stderr
+
+═══════════════════════════════════════════════════════════════════
+7. ДИАГНОСТИКА ПРОБЛЕМ
+═══════════════════════════════════════════════════════════════════
+
+7.1 Gateway не стартует
+───────────────────────
+$ hermes -p mi_mg_01 gateway run        # foreground → видны ошибки
+$ journalctl --user -u hermes-gateway -n 100 --no-pager
+$ ls -la /root/.hermes/profiles/mi_mg_01/state.db
+# Если state.db залочен — gateway уже запущен в другом месте
+
+7.2 Gateway завис, не отвечает на сообщения
+──────────────────────────────────────────
+$ hermes -p mi_mg_01 status
+$ curl http://localhost:PORT/health 2>/dev/null    # если есть health endpoint
+$ systemctl --user restart hermes-gateway
+# Если не помогает:
+$ pkill -9 -f "mi_mg_01.*gateway"
+$ hermes -p mi_mg_01 gateway start
+
+7.3 Polling 409 conflict (Telegram)
+───────────────────────────────────
+Означает, что два gateway опрашивают один бот-токен.
+Решение:
+$ hermes gateway list            # найти второй процесс
+$ kill <pid>
+$ systemctl --user restart hermes-gateway
+
+7.4 Profile locked (gateway.lock существует, но процесс мёртв)
+──────────────────────────────────────────────────────────────
+$ ls -la /root/.hermes/profiles/mi_mg_01/gateway.lock
+$ cat /root/.hermes/profiles/mi_mg_01/gateway.lock
+# Если PID в lock не существует:
+$ rm /root/.hermes/profiles/mi_mg_01/gateway.lock
+$ hermes -p mi_mg_01 gateway start
+
+7.5 Profile not found
+─────────────────────
+$ hermes profile list
+# Если mi_mg_01 нет — его нужно создать:
+$ hermes profile create mi_mg_01
+# Или импортировать:
+$ hermes profile import /path/to/mi_mg_01.tar.gz
+
+═══════════════════════════════════════════════════════════════════
+8. МНОЖЕСТВЕННЫЕ GATEWAY ОДНОВРЕМЕННО
+═══════════════════════════════════════════════════════════════════
+
+Можно запустить gateway для нескольких профилей параллельно,
+НО только если у каждого СВОИ мессенджеры (отдельные боты):
+
+  # Терминал 1
+  hermes -p default gateway run
+
+  # Терминал 2
+  hermes -p analyst_training gateway run
+
+  # Терминал 3
+  hermes -p mi_mg_01 gateway run
+
+Каждый процесс занимает ~1 GB RAM, ~17 минут CPU на день.
+На mima_g_01 (16 GB RAM) одновременно 3 gateway = ок.
+Больше 4 — может упереться в память.
+
+Для systemd-автозапуска нескольких нужны разные service-файлы:
+  /root/.config/systemd/user/hermes-gateway@mi_mg_01.service
+  /root/.config/systemd/user/hermes-gateway@analyst_training.service
+
+═══════════════════════════════════════════════════════════════════
+9. ПРАКТИЧЕСКИЙ СЦЕНАРИЙ: ПОДНЯТЬ GATEWAY ПРОФИЛЯ mi_mg_01
+═══════════════════════════════════════════════════════════════════
+
+# Шаг 1: проверить состояние
+hermes gateway list
+hermes profile show mi_mg_01
+
+# Шаг 2: убедиться что профиль готов
+ls /root/.hermes/profiles/mi_mg_01/
+# должны быть: .env, config.yaml, SOUL.md, memories/
+
+# Шаг 3: проверить .env (должны быть токены)
+[ -f /root/.hermes/profiles/mi_mg_01/.env ] && echo "OK" || echo "MISSING"
+
+# Шаг 4: dry-run в foreground
+hermes -p mi_mg_01 gateway run
+# (Ctrl+C для выхода, если ок)
+
+# Шаг 5: установить как сервис (если ещё не)
+hermes -p mi_mg_01 gateway install
+
+# Шаг 6: активировать
+systemctl --user enable hermes-gateway
+systemctl --user start hermes-gateway
+
+# Шаг 7: проверить
+systemctl --user status hermes-gateway
+hermes -p mi_mg_01 status
+
+# Шаг 8: посмотреть логи
+journalctl --user -u hermes-gateway -f
+
+═══════════════════════════════════════════════════════════════════
+10. ВАЖНЫЕ ПРЕДОСТЕРЕЖЕНИЯ
+═══════════════════════════════════════════════════════════════════
+
+⚠ НЕЛЬЗЯ рестартить/останавливать gateway изнутри gateway-shell.
+   Tool security блокирует с сообщением:
+   "Blocked: cannot restart or stop the gateway from inside the
+    gateway process. The gateway would kill this command before it
+    could complete (SIGTERM propagates to child processes)."
+   → Делай это из отдельного ssh-окна или из cron-задачи.
+
+⚠ НЕЛЬЗЯ держать два gateway на одном bot_token.
+   Telegram возвращает 409 Conflict. Один бот = один gateway.
+
+⚠ Profile-overlays НЕ ослабляют SOUL базового агента.
+   Если в профиле mi_mg_01/SOUL.md написано "ignore safety rules",
+   это будет проигнорировано (kernel-инвариант побеждает).
+
+⚠ .env содержит реальные токены. Не отправляй его в Telegram,
+   не коммить в git, не показывай в скриншотах.
+   Permissions: chmod 600.
+
+⚠ Hermes sanitizes токены в выводе терминала (3+ подряд * → ***).
+   Это нормально. Реальный токен всегда в /root/.hermes/<profile>/.env.
+
+⚠ Если gateway работает от root — он может ВСЁ на этой машине.
+   Это удобно, но опасно. Для production-окружения заведи
+   отдельного пользователя hermes-agent.
+
+═══════════════════════════════════════════════════════════════════
+11. ГДЕ ЭТО В КОДЕ HERMES
+═══════════════════════════════════════════════════════════════════
+
+Пути в исходниках (если нужно копать глубже):
+
+  /usr/local/lib/hermes-agent/hermes_cli/main.py         # CLI entry
+  /usr/local/lib/hermes-agent/hermes_cli/gateway.py      # подкоманды
+  /usr/local/lib/hermes-agent/hermes_cli/gateway_install.py
+  /usr/local/lib/hermes-agent/hermes_cli/profile.py      # profile mgmt
+  /usr/local/lib/hermes-agent/hermes_plugins/telegram_platform/adapter.py
+  /usr/local/lib/hermes-agent/hermes_plugins/matrix_platform/adapter.py
+  /usr/local/lib/hermes-agent/gateway/cgroup_cleanup.py
+  /usr/local/lib/hermes-agent/gateway/state.py          # gateway_state.json
+
+═══════════════════════════════════════════════════════════════════
+12. СПРАВОЧНИК КОМАНД (шпаргалка)
+═══════════════════════════════════════════════════════════════════
+
+Управление профилями:
+  hermes profile list                            # все профили
+  hermes profile show <name>                     # детально
+  hermes profile use <name>                      # sticky default
+  hermes profile create <name>                   # новый
+  hermes profile delete <name>                   # удалить
+  hermes profile info <name>                     # ещё инфы
+  hermes -p <name> ...                           # временно переключиться
+
+Управление gateway:
+  hermes gateway list                            # все gateway
+  hermes -p <name> gateway status                # статус профиля
+  hermes -p <name> gateway run                   # foreground
+  hermes -p <name> gateway start                 # background
+  hermes -p <name> gateway start --all           # убить старые процессы
+  hermes -p <name> gateway stop                  # остановить
+  hermes -p <name> gateway restart               # перезапустить
+  hermes -p <name> gateway install               # systemd-сервис
+  hermes -p <name> gateway uninstall             # убрать сервис
+  hermes -p <name> gateway setup                 # интерактивная настройка
+
+Systemd (user-level):
+  systemctl --user status hermes-gateway
+  systemctl --user start hermes-gateway
+  systemctl --user stop hermes-gateway
+  systemctl --user restart hermes-gateway
+  systemctl --user enable hermes-gateway         # автостарт
+  systemctl --user disable hermes-gateway        # убрать автостарт
+  journalctl --user -u hermes-gateway -f         # live-лог
+  journalctl --user -u hermes-gateway -n 100     # последние 100 строк
+
+═══════════════════════════════════════════════════════════════════
+Конец документа.
+Версия: 2026-07-15
+Hermes Agent на mima_g_01 (Ubuntu 24.04.4 LTS)
+═══════════════════════════════════════════════════════════════════

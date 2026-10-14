@@ -1,0 +1,905 @@
+# SKILL.md — что писать и как писать
+## Полный гайд по навыкам профиля Hermes Agent
+
+────────────────────────────────────────────────────────────────────────────
+0. ЧТО ТАКОЕ SKILL.MD И ЧЕМ ОН ОТЛИЧАЕТСЯ ОТ SOUL / MEMORY / USER
+────────────────────────────────────────────────────────────────────────────
+
+SKILL.md — это **процедурная память** профиля. В нём живут инструкции
+«как делать конкретные вещи»: команды, последовательности шагов,
+конвенции конкретного инструмента (Telegram, GitHub, SSH, Docker и т.п.).
+
+Файл лежит здесь:
+   ~/.hermes/skills/<имя>/SKILL.md
+
+В отличие от SOUL/MEMORY/USER (которые описывают «кто, что вокруг, с
+кем разговариваем»), SKILL.md описывает **«как выполнить задачу Z»** —
+через точные команды, API-вызовы и подводные камни.
+
+Формальное имя файла в Hermes 2026: **SKILL.md** (с большой буквы, .md
+расширение). Это жёсткое имя — `skills_hub` ищет именно `SKILL.md`, не
+`skill.md` или `Skill.md`. В этом гайде я использую SKILL.md.
+
+────────────────────────────────────────────────────────────────────────────
+0.1. ЧЕТЫРЕ ФАЙЛА — СРАВНЕНИЕ
+────────────────────────────────────────────────────────────────────────────
+
+  ┌────────────────┬────────────────────────────┬───────────────────────────┐
+  │                │ SOUL.md / MEMORY.md /       │ SKILL.md                  │
+  │                │ USER.md                     │                           │
+  ├────────────────┼────────────────────────────┼───────────────────────────┤
+  │ Отвечает на    │ Кто? Что вокруг? С кем?     │ Как сделать X?            │
+  │ вопрос         │                            │                           │
+  │ Тип памяти     │ фактическая (declarative)   │ процедурная (procedural)  │
+  │ Содержит       │ факты, правила, роли       │ команды, рецепты, pitfalls│
+  │ Размер         │ 1-16 КБ                    │ 4-30 КБ (по необходимости)│
+  │ Когда писать   │ постоянно                  │ когда повторился паттерн  │
+  │ Обновляется    │ медленно (месяцы)           │ редко, но major-апдейты  │
+  └────────────────┴────────────────────────────┴───────────────────────────┘
+
+────────────────────────────────────────────────────────────────────────────
+1. КАК ПРАВИЛЬНО НАЗВАТЬ ФАЙЛ И КАТАЛОГ
+────────────────────────────────────────────────────────────────────────────
+
+1.1. ИМЯ ФАЙЛА.
+   Только SKILL.md, с большой буквы. Любые другие варианты (skill.md,
+   Skill.md, SKILL.MD, Skill.MD) **не будут загружены** skills_hub.
+
+1.2. ИМЯ КАТАЛОГА.
+   Имя директории = имя скила. Используйте `kebab-case` или
+   `snake_case` — оба работают.
+   Хорошие имена:
+     - `github-pr-workflow`
+     - `mima_g_01_operations`
+     - `telegram-bot-management`
+   Плохие имена:
+     - `My Skill` (пробел, не lowercase)
+     - `gh` (слишком короткое, не описательное)
+     - `skill1` (не запоминается)
+
+1.3. ДЛИНА ИМЕНИ.
+   - Минимум 3 символа (ваша рекомендация), максимум 64 (по конвенции).
+   - Имя должно быть стабильным — не переименовывайте скиллы без
+     серьёзной причины (skill name используется в related_skills,
+     load_skill, hooks и т.д.).
+
+1.4. КАТЕГОРИИ (опционально).
+   Можно группировать скилы в подкатегории:
+     ~/.hermes/skills/github/github-pr-workflow/SKILL.md
+     ~/.hermes/skills/devops/mima_g_01_operations/SKILL.md
+
+   Это полезно, если у вас 10+ скилов в одной области. Не обязательно
+   для 2-3 скилов в проекте.
+
+1.5. ОДНА СУЩНОСТЬ = ОДИН СКИЛЛ.
+   Не пишите один большой SKILL.md с «и то и это». Лучше разнести:
+     - `telegram_bot_setup` — как создать бота
+     - `telegram_bot_security` — как защитить бота
+     - `telegram_bot_polling` — polling-нюансы
+
+────────────────────────────────────────────────────────────────────────────
+2. ОБЯЗАТЕЛЬНЫЙ YAML FRONTMATTER
+────────────────────────────────────────────────────────────────────────────
+
+Hermes читает первую YAML-секцию до `---` и валидирует. Без `name:`
+выдаётся warning. Минимум:
+
+```
+---
+name: <kebab-case-имя>
+description: "Краткое описание, до 120 символов. По нему модель
+              решает, загружать ли этот скил."
+---
+```
+
+Полная рекомендуемая структура:
+
+```
+---
+name: mima_g_01_operations
+description: "Operational tasks for the mima_g_01 server: SSH, fail2ban,
+              systemd unit checks, log analysis, controlled restarts."
+version: 1.0.0
+author: Rost
+license: MIT
+platforms: [linux]
+metadata:
+  hermes:
+    tags: [ssh, fail2ban, systemd, mima_g_01, mima-g-01, server]
+    related_skills: [messaging-gateway-setup, hermes-gateway]
+---
+
+# mima_g_01 Operations
+...содержимое...
+```
+
+2.1. Поля frontmatter и их смысл.
+
+  `name` (обязательно).
+    kebab-case имя. Используется как id для related_skills,
+    для tool `skill_view`, для bundle references.
+
+  `description` (обязательно).
+    Одна-две строки, описывающие, **когда загружать этот скил**.
+    Модель использует description, чтобы решить, нужен ли скил
+    для текущей задачи. Описание должно отвечать на вопрос
+    «когда применять».
+
+  `version`.
+    SemVer (MAJOR.MINOR.PATCH). Если вы делаете несовместимые
+    изменения (другая команда, новый prerequisite) — bump MAJOR.
+    Если дополняете — MINOR. Исправления — PATCH.
+
+  `author`.
+    Кто автор. Не влияет на загрузку, но полезен для audit.
+
+  `license`.
+    MIT по умолчанию. Другие: Apache-2.0, BSD-3-Clause и т.д.
+
+  `platforms`.
+    На каких ОС работает скил. `[linux]`, `[macos, linux]`, или
+    `[all]` (по умолчанию, если опущено).
+
+  `metadata.hermes.tags`.
+    Список тегов для поиска и группировки. Модель может использовать
+    теги, когда ищет «а есть ли скил про…?» через skill_view.
+
+  `metadata.hermes.related_skills`.
+    Связанные скилы. При загрузке этого скила модель увидит hint
+    про связанные.
+
+2.2. ЧТО НЕ ДОЛЖНО БЫТЬ В FRONTMATTER.
+   - Секреты (токены, пароли).
+   - Большие объёмы текста (>10 строк).
+   - Не-ASCII имена (лучше kebab-case на латинице).
+
+────────────────────────────────────────────────────────────────────────────
+3. ЧТО ПИСАТЬ В ТЕЛЕ SKILL.MD
+────────────────────────────────────────────────────────────────────────────
+
+Тело — это **процедурный гайд**: точные команды, шаги, подводные
+камни. Рекомендуемая структура (проверена на реальных скилах Hermes):
+
+```
+# <Имя скила> (H1)
+
+<H2> When to Use
+  Триггеры, при которых скил нужен. Коротко, в виде буллетов.
+  Модель должна мочь "узнать" свою задачу здесь.
+
+<H2> Prerequisites
+  Что должно быть до старта. Установленные пакеты, настройки,
+  доступы.
+
+<H2> Step-by-step
+  Пронумерованные шаги. Каждый шаг — отдельное действие.
+  Можно использовать code-блоки с ```bash ... ```.
+
+<H2> Pitfalls
+  Типичные ошибки и что делать. Это самая ценная часть скила.
+
+<H2> Verified commands
+  Команды, которые точно работают (проверены вами).
+
+<H2> See also
+  Ссылки на related_skills и внешние ресурсы.
+```
+
+3.1. ОБЯЗАТЕЛЬНЫЕ РАЗДЕЛЫ.
+   - **When to Use** — без него модель не знает, когда грузить скил.
+   - **Step-by-step** — без него скил бесполезен.
+   - **Pitfalls** — отличает отличный скил от среднего.
+
+3.2. НЕОБЯЗАТЕЛЬНЫЕ, НО ПОЛЕЗНЫЕ.
+   - **Prerequisites** — если без них скил не работает.
+   - **Verified commands** — гарантия того, что шаги реальные.
+   - **Troubleshooting** — отдельно от Pitfalls, для сложных скилов.
+   - **When NOT to use** — анти-паттерны, защита от over-загрузки.
+
+3.3. ЧТО НЕ ПИСАТЬ.
+   - Большие теории (модель не выучит).
+   - Личные мнения и юмор.
+   - Запреты без альтернатив («никогда не делай X» — но не сказано, что вместо).
+   - Секреты и токены.
+   - Устаревшие API-методы (deprecated methods).
+
+────────────────────────────────────────────────────────────────────────────
+4. РАЗМЕР СКИЛА И КОГДА СОЗДАВАТЬ НОВЫЙ
+────────────────────────────────────────────────────────────────────────────
+
+4.1. ИДЕАЛЬНЫЙ РАЗМЕР.
+   - Минимальный: 2-4 КБ (короткие скилы для простых задач).
+   - Типичный: 8-15 КБ (средний скил с примерами).
+   - Большой: 20-30 КБ (сложный скил с troubleshooting).
+   - Максимум: не более 50 КБ. Если больше — делите.
+
+4.2. КОГДА СОЗДАВАТЬ НОВЫЙ СКИЛ (а не расширять существующий).
+   Сигналы:
+   - Скил занимает разные домены (например, Telegram + SSH).
+   - Скил грузится редко вместе с другим (related_skills пустой).
+   - Логически — это разные «операции», которые меняются независимо.
+   - Триггеры (`When to Use`) разные.
+
+   Примеры разделения:
+   - `telegram_bot_create` vs `telegram_bot_polling_faq` —
+     разные триггеры: создание vs troubleshooting polling.
+   - `ssh_login_to_mima_g_01` vs `ssh_hardening` —
+     разные домены: вход vs изменение sshd_config.
+
+4.3. КОГДА РАСШИРЯТЬ СУЩЕСТВУЮЩИЙ.
+   - Добавляются новые шаги в той же операции.
+   - Pitfalls про тот же инструмент.
+   - Related_skills остаются стабильными.
+   - Triggers похожи.
+
+4.4. СВЯЗЬ С РЕАЛЬНЫМ ОПЫТОМ.
+   - Если вы 2+ раза за неделю писали однотипные команды —
+     пора вынести в скил.
+   - Если скил используется 5+ раз в неделю — он ценный.
+   - Если ни разу за месяц — стоит подумать, нужен ли.
+
+────────────────────────────────────────────────────────────────────────────
+5. ПРИМЕРЫ (5 СКИЛОВ)
+═══════════════════════════════════════════════════════════════════════════
+ПРИМЕР 1. Скил «mima_g_01_operations» — операционные задачи на сервере
+═══════════════════════════════════════════════════════════════════════════
+
+```
+---
+name: mima_g_01_operations
+description: "Operationally check or modify the mima_g_01 server: SSH,
+              systemd, logs, fail2ban. Always ask before destructive ops."
+version: 1.0.0
+author: Rost
+license: MIT
+platforms: [linux]
+metadata:
+  hermes:
+    tags: [ssh, systemd, fail2ban, mima_g_01, server, ops]
+    related_skills: [messaging-gateway-setup]
+---
+
+# mima_g_01 Operations
+
+## When to Use
+
+- User asks to check/repair/restart anything on the `mima_g_01` server.
+- SSH troubleshooting, systemd unit inspection, log analysis.
+- fail2ban or UFW questions related to this server.
+
+## Prerequisites
+
+- SSH key `~/.ssh/id_ed25519_mima` is configured in `~/.ssh/config`
+  with alias `mima-g-01`.
+- `hermes-gateway` is running as a user-level systemd unit.
+
+## Step-by-step
+
+### Quick health snapshot
+
+```bash
+ssh mima-g-01 'uptime; df -h / | tail -1; free -h | head -2;
+                 systemctl --user status hermes-gateway.service --no-pager'
+```
+
+### Check the gateway
+
+```bash
+ssh mima-g-01 'XDG_RUNTIME_DIR=/run/user/0 \
+                 systemctl --user status hermes-gateway.service --no-pager'
+```
+
+### Check fail2ban
+
+```bash
+ssh mima-g-01 'fail2ban-client status sshd'
+```
+
+### Restart a service (ask first)
+
+```bash
+ssh mima-g-01 'XDG_RUNTIME_DIR=/run/user/0 \
+                 systemctl --user restart hermes-gateway.service'
+```
+
+## Pitfalls
+
+- **Always prefix user-level systemctl with `XDG_RUNTIME_DIR=/run/user/0`**
+  when running over SSH as root. Otherwise `systemctl --user` fails
+  with "Failed to connect to bus".
+
+- **Do not kill the gateway process directly** (no `kill -9`). Let
+  systemd manage the lifecycle.
+
+- **Avoid `apt upgrade` without explicit user approval**. The server
+  has UFW pinning fail2ban configuration, and kernel-related upgrades
+  may break custom kernel modules.
+
+- **Telegram polling conflict**: if you see `Conflict: terminated by
+  other getUpdates`, another Hermes instance has the same token. Use
+  `pgrep -a -f hermes_cli` to detect.
+
+- **IPv6 egress is not configured**. Always use IPv4 for Telegram API
+  (curl `-4`) or rely on fallback IP `149.154.166.110`.
+
+## When NOT to Use
+
+- General Linux questions not specific to mima_g_01 — don't load this
+  skill; use built-in tools.
+- Code review or writing — these are different domains.
+
+## See also
+
+- `messaging-gateway-setup` — for Telegram gateway setup on this server.
+- `~/.hermes/profiles/mi_mg_01/MEMORY.md` — full server facts.
+```
+
+Пояснения:
+  • Frontmatter: `name` в kebab-case, `description` короткий и
+    описывает **триггер**, не задачу. Модель прочитает description
+    в первую очередь и решит «это надо грузить».
+  • `metadata.hermes.tags` — 7 тегов для поиска. Каждый — конкретное
+    слово, по которому можно найти скил (mima_g_01, fail2ban, ssh).
+  • `related_skills: [messaging-gateway-setup]` — модель при загрузке
+    этого скила увидит hint, что есть связанный.
+  • When to Use — 3 буллета, каждый отдельный триггер. Не «все случаи,
+    когда пользователь спрашивает про mima_g_01», а конкретные действия.
+  • Prerequisites — 2 важных prerequisites. Без SSH-ключа и без
+    systemd-юнита скил бесполезен.
+  • Step-by-step — 4 кода с примерами. **Один шаг — одна команда**,
+    не «как обычно» или «по желанию». Это критично: модель применяет
+    команды буквально.
+  • Pitfalls — 5 типовых ловушек. Каждая — конкретная ситуация,
+    с решением. Здесь же анти-паттерны (kill -9, apt upgrade).
+  • When NOT to Use — анти-триггер. Защищает от over-загрузки.
+  • See also — связь с другими скилами и MEMORY.md.
+
+═══════════════════════════════════════════════════════════════════════════
+ПРИМЕР 2. Скил «telegram_bot_setup» — настройка нового Telegram-бота
+═══════════════════════════════════════════════════════════════════════════
+
+```
+---
+name: telegram_bot_setup
+description: "Create a Telegram bot via @BotFather, get token, wire to
+              Hermes with allowed_users and webhook hygiene."
+version: 1.2.0
+author: Hermes Agent (adapted from official docs)
+license: MIT
+platforms: [all]
+metadata:
+  hermes:
+    tags: [telegram, bot, botfather, webhook, polling]
+    related_skills: [messaging-gateway-setup]
+---
+
+# Telegram Bot Setup
+
+## When to Use
+
+- User asks "create a Telegram bot" or provides a new token.
+- Wiring a new Hermes gateway to an existing bot.
+- Migrating between polling and webhook.
+
+## Prerequisites
+
+- A Telegram account.
+- Decision on bot purpose (DM-only? Group-bound? Channel?).
+- This skill does NOT cover Matrix bots; use `matrix-bot-setup`.
+
+## Step-by-step
+
+### 1. Create bot via @BotFather
+
+1. Open Telegram, search `@BotFather` (verified).
+2. Send `/newbot`.
+3. BotFather asks for **name** (display) → e.g. `Mima Hermes Bot`.
+4. BotFather asks for **username** (must end in `bot`) →
+   e.g. `MimaG01Bot`.
+5. BotFather replies with a token like `110201543:AAH...~46 chars`.
+   Save it now; this is the only time.
+
+### 2. Optional BotFather configuration
+
+```
+/setdescription  → up to 512 chars, shown before /start
+/setabouttext    → up to 120 chars, bio
+/setuserpic      → upload avatar
+/setcommands     → list of `/cmd - description`
+/setprivacy      → for groups: choose Disable to see all messages
+```
+
+### 3. Test the token
+
+```bash
+curl -s "https://api.telegram.org/bot<TOKEN>/getMe"
+```
+
+Expected: `{"ok":true, "result":{...}}`.
+
+### 4. Add to Hermes env
+
+In `~/.hermes/profiles/<name>/.env` (mode 600):
+
+```
+TELEGRAM_BOT_TOKEN=<TOKEN>
+TELEGRAM_ALLOWED_USERS=<chat_id>
+TELEGRAM_HOME_CHAT=<chat_id>
+```
+
+Find your `chat_id` via `getUpdates` after `/start`.
+
+### 5. Clear webhook (polling mode)
+
+```bash
+curl -s "https://api.telegram.org/bot<TOKEN>/deleteWebhook?drop_pending_updates=false"
+```
+
+### 6. Restart gateway
+
+```bash
+systemctl --user restart hermes-gateway.service
+journalctl --user -u hermes-gateway.service -n 30 -f
+```
+
+## Pitfalls
+
+- **Token is a password.** Storing in MEMORY/USER/SKILL breaks Hermes
+  sanitization. Keep secrets only in `.env` (mode 600).
+
+- **One bot = one gateway.** Running two gateways with the same token
+  causes `409 Conflict` on `getUpdates`. Hermes has backoff (1/5 →
+  5/5), but the situation won't heal until you stop one instance.
+
+- **`TELEGRAM_ALLOWED_USERS` is mandatory.** Without it, Hermes
+  ignores inbound messages from anyone. This is by design.
+
+- **Webhook must be cleared** before starting polling. Otherwise
+  Telegram sends updates to the webhook URL and Hermes sees nothing.
+
+- **chat_id, not username.** You need the numeric chat_id, not
+  `@username`. Get it from `getUpdates → message.chat.id`.
+
+## When NOT to Use
+
+- For Matrix bots — use `matrix-bot-setup`.
+- For MTProto user accounts (Telethon/Pyrogram) — totally different
+  stack, not covered here.
+
+## See also
+
+- `messaging-gateway-setup` — for matrix/telegram gateway patterns.
+- https://core.telegram.org/bots/api — official reference.
+```
+
+Пояснения:
+  • `description` отвечает на «когда применять», а не «что делает».
+    Это важно: «Create a Telegram bot via @BotFather» — это не
+    триггер, это описание. Триггер: «User asks 'create a Telegram
+    bot'». Я переписал под «Create» в повелительном наклонении.
+  • `metadata.hermes.tags` — все слова, которые могут появиться в
+    запросе: telegram, bot, botfather, polling.
+  • Step-by-step — 6 шагов, каждый с code-блоком где это bash,
+    с прозой где это человек-в-Telegram.
+  • Pitfalls — 5 штук, каждая — реальная проблема, которая убьёт
+    установку: токен в неположенном месте, двойной gateway, нет
+    ALLOWED_USERS, залипший webhook, chat_id ≠ username.
+  • When NOT to Use — для Telegram-ботов не путать с Matrix и
+    MTProto. Это критично, потому что разные стеки.
+
+═══════════════════════════════════════════════════════════════════════════
+ПРИМЕР 3. Скил «failure_to_code_review_format» — формат code review
+═══════════════════════════════════════════════════════════════════════════
+
+(Я намеренно делаю маленький скил — для одной операции.)
+
+```
+---
+name: code-review-format
+description: "Output a code-review comment with three parts: problem,
+              why-it-matters, fix. Use when reviewing a diff or PR."
+version: 1.0.0
+license: MIT
+metadata:
+  hermes:
+    tags: [code-review, format, severity, feedback]
+    related_skills: [github-pr-workflow]
+---
+
+# Code Review Comment Format
+
+## When to Use
+
+- Output a code-review comment for a single issue.
+- Format any single piece of feedback in PR-style.
+
+## Format
+
+```
+🚨 [severity] <Short problem statement>
+
+Why: <why this matters — what's the consequence if we ship it?>
+
+Fix:
+```diff
+- <old code>
++ <new code>
+```
+
+Suggested commit: `git commit -m '<short>'`
+```
+
+## Severity Levels
+
+| Marker | Meaning                                                  |
+|--------|----------------------------------------------------------|
+| 🚨    | blocker — must fix before merge                          |
+| ⚠️    | important — should fix, can be discussed                 |
+| 💡    | idea — nice-to-have, optional                            |
+| ✅    | already good                                             |
+
+## Pitfalls
+
+- **Don't write "looks good" without specifics.** Either explain why,
+  or skip the comment.
+- **Don't bundle multiple issues.** One comment = one problem.
+- **Don't suggest refactoring for style only.** If there's no concrete
+  benefit, leave a 💡 instead of demanding change.
+```
+
+Пояснения:
+  • Этот скил маленький (10 строк тела) — для одной узкой операции.
+  • `metadata.hermes.tags` — все ключевые слова, не один.
+  • Severity-таблица — превращает размытое «какие маркеры» в конкретную
+    шпаргалку.
+  • Pitfalls — анти-паттерны code review, не сам код.
+
+═══════════════════════════════════════════════════════════════════════════
+ПРИМЕР 4. Скил «matrix-room-thread-routing» — где отвечать
+═══════════════════════════════════════════════════════════════════════════
+
+```
+---
+name: matrix-room-thread-routing
+description: "Reply in the same place the user wrote: top-level for new
+              threads, threaded for follow-ups. Override per user pref."
+version: 1.0.0
+license: MIT
+platforms: [all]
+metadata:
+  hermes:
+    tags: [matrix, thread, routing, delivery, top-level]
+    related_skills: [messaging-gateway-setup]
+---
+
+# Matrix Reply Routing
+
+## When to Use
+
+- Replying to a Matrix message.
+- Deciding whether to reply in a thread or as a top-level message.
+- User explicitly said "ответь в тред" или "не в тред".
+
+## Default Behavior
+
+- Threads (Matrix «replies»): reply in the same thread (default).
+- Top-level: when the user explicitly asks, or for system messages.
+
+## When the user said "не в тред"
+
+Send to `matrix:!ROOMID:HOMESERVER` (top-level) instead of using
+`MATRIX_HOME_ROOM_THREAD_ID`.
+
+## Pitfalls
+
+- **Matrix may list multiple "rooms" with the same id but different
+  `thread_id`.** Treat them as one room — only `thread_id` differs.
+
+- **Sending to a dead thread** returns `404 Not Found`. Always confirm
+  the thread is still alive if replying minutes later.
+
+- **Rate limit per room.** Don't spam more than ~1 msg/sec to a single
+  room; queue them.
+
+## Code Snippet
+
+```python
+# Top-level (when user asked)
+target = f"matrix:!ROOMID:HOMESERVER"
+# Threaded (default)
+target = f"matrix:!ROOMID:HOMESERVER:${thread_root_event_id}"
+```
+```
+
+Пояснения:
+  • Очень узкий скил: одна конкретная проблема, одно решение.
+  • Когда вынести в отдельный скил vs добавить в SOUL.md:
+    - В SOUL.md: «не отвечай в тред» (ролевая инструкция).
+    - В SKILL.md: КАК это технически сделать (target format, pitfalls).
+    Разные домены.
+  • Code-блок снизу — verbatim, прямо в файл.
+
+═══════════════════════════════════════════════════════════════════════════
+ПРИМЕР 5. Скил «hermes-self-update-and-rollback» — обновление и откат
+═══════════════════════════════════════════════════════════════════════════
+
+```
+---
+name: hermes-self-update-and-rollback
+description: "Update Hermes to latest, verify, and rollback if broken.
+              Use when user asks to update, upgrade, or fix Hermes."
+version: 1.4.0
+author: Hermes Agent
+license: MIT
+metadata:
+  hermes:
+    tags: [update, upgrade, rollback, hermes, version]
+---
+
+# Hermes Update & Rollback
+
+## When to Use
+
+- User says "обнови Hermes" / "update Hermes" / "ship latest".
+- After a confirmed bug in current version.
+- Before introducing breaking changes (test update first).
+
+## Prerequisites
+
+- Checkpoint before update:
+  `$ hermes checkpoints create "before-update-$(date +%Y%m%d)"`
+- Network access to Hermes Hub.
+
+## Step-by-step
+
+### Standard update
+
+```bash
+hermes update
+```
+
+Wait. Gateway will restart; sessions persist.
+
+### Verify after update
+
+```bash
+hermes version
+hermes doctor
+```
+
+Look at `doctor` output — any warnings?
+
+### Roll back if broken
+
+```bash
+hermes rollback --to <checkpoint_id>
+```
+
+## Pitfalls
+
+- **Update causes gateway restart.** Long-running sessions (>15 min)
+  may lose context. Communicate this BEFORE updating.
+
+- **Config may need migration.** After major-version update, run:
+  `hermes config migrate`.
+
+- **Skills may need re-install.** Custom skills in `~/.hermes/skills/`
+  are preserved, but bundled skills may update separately.
+
+- **Skipped update during cron jobs.** If a cron runs every minute,
+  schedule update outside peak hours.
+
+- **Always create checkpoint first.** `hermes rollback` requires
+  a known-good checkpoint.
+
+## When NOT to Use
+
+- For Docker images — use a separate deployment workflow.
+- For niche bugs — open an issue, don't roll back.
+
+## See also
+
+- `hermes checkpoints` — manage rollback points.
+- `~/.hermes/profiles/*/backups/` — full backups.
+```
+
+Пояснения:
+  • `description` триггерно-описательный: «Update Hermes to latest,
+    verify, and rollback if broken. Use when user asks to update…».
+  • Step-by-step — три подраздела (стандарт, верификация, откат).
+  • Pitfalls — 5 штук: gateway-restart, config-migration, skill-mismatch,
+    cron-collision, checkpoint-required.
+  • When NOT to Use — защищает от over-применения.
+
+────────────────────────────────────────────────────────────────────────────
+6. СВЯЗЬ С ДРУГИМИ ФАЙЛАМИ
+────────────────────────────────────────────────────────────────────────────
+
+6.1. SKILL.md vs SOUL.md.
+   SOUL.md: «Роль, стиль, общие правила» (статика).
+   SKILL.md: «Конкретные команды и шаги» (процедурное).
+   Пример:
+   - SOUL.md: «Не используй Markdown-таблицы (Telegram не рендерит).»
+   - SKILL.md: «Как отформатировать CSV так, чтобы Excel открыл
+     как таблицу.»
+
+6.2. SKILL.md vs MEMORY.md.
+   MEMORY.md: «Факты об окружении» (что вокруг).
+   SKILL.md: «Как с этим работать».
+   Пример:
+   - MEMORY.md: «mima-g-01: root, IPv4-only, ssh ключ
+     `~/.ssh/id_ed25519_mima`.»
+   - SKILL.md: «Как зайти на mima-g-01 и что там делать.»
+
+6.3. SKILL.md vs USER.md.
+   USER.md: «Кто вы» (человек).
+   SKILL.md: «Что умеет агент».
+   Это разные сущности; не путать.
+
+────────────────────────────────────────────────────────────────────────────
+7. КАК СОЗДАТЬ СКИЛ ИЗ ЧАТА
+────────────────────────────────────────────────────────────────────────────
+
+7.1. Через `hermes skills`:
+   $ hermes skills create <kebab-name>
+   Создаст каркас `~/.hermes/skills/<name>/SKILL.md` с шаблоном.
+   Откройте файл, отредактируйте.
+
+7.2. Через web-dashboard:
+   `localhost:PORT/dashboard/skills` — графический редактор SKILL.md.
+
+7.3. Через skill_view tool:
+   Агент видит скилы через tool `skill_view` — может вызвать
+   `skill_view(name='mima_g_01_operations')` и прочитать содержимое.
+   Если скил часто используется — он попадает в preloaded_skills.
+
+7.4. Через bundle distribution:
+   `hermes profile distribution --publish` — собрать скилы в дистрибутив,
+   доступный другим профилям через `profile install`.
+
+────────────────────────────────────────────────────────────────────────────
+8. КОГДА ЛУЧШЕ СОЗДАТЬ НОВЫЙ СКИЛ (а не расширять существующий)
+────────────────────────────────────────────────────────────────────────────
+
+Сигналы разделить на 2+ скила:
+
+8.1. РАЗНЫЕ ТРИГГЕРЫ.
+   Пример: «create a bot» vs «debug polling conflict». Разные
+   when-to-use. Один скил может покрыть оба, но фронт-текст
+   раздуется — модель начнёт путаться.
+
+8.2. РАЗНЫЕ PREREQUISITES.
+   Пример: «telegram_bot_setup» (нужен только аккаунт)
+   vs «telegram_bot_polling_faq» (нужен запущенный gateway).
+
+8.3. РАЗНЫЕ RELATED_SKILLS.
+   Если related_skills пересекаются < 30% — это разные домены.
+
+8.4. РАЗНЫЕ ЧАСТОТЫ ОБНОВЛЕНИЯ.
+   Скил «fail2ban_jail_setup» (раз в год) vs «telegram_polling_faq»
+   (раз в месяц). Разделять — обновлять независимо.
+
+8.5. РАЗНЫЕ ТИПЫ ПОЛЬЗОВАТЕЛЕЙ.
+   «telegram_bot_setup» (для админа) vs «telegram_bot_for_users»
+   (для конечного юзера). Один профиль может иметь оба.
+
+8.6. КОГДА НЕ ДЕЛИТЬ.
+   - Один скил < 30 КБ, всё логично связано.
+   - Когда related_skills совпадают > 70%.
+   - Когда triggers пересекаются.
+
+────────────────────────────────────────────────────────────────────────────
+9. ПРАКТИКИ ИМЕНОВАНИЯ
+────────────────────────────────────────────────────────────────────────────
+
+9.1. Хорошие имена (kebab-case, стабильные).
+   - `telegram_bot_setup`
+   - `telegram_polling_faq`
+   - `ssh_hardening_audit`
+   - `github_pr_workflow`
+   - `code_review_format`
+   - `mima_g_01_operations`
+
+9.2. Плохие имена.
+   - `my_skill_1` — нумерация не нужна.
+   - `tg` — слишком короткое.
+   - `TelegramBot` — не kebab-case.
+   - `setup` — не описательное.
+
+9.3. ИМЕНОВАНИЕ КАТЕГОРИЙ (подкаталоги).
+   - `github/` — широкая категория.
+   - `github/github-pr-workflow/` — конкретный скил.
+   - `devops/mima_g_01_operations/` — категория + частный случай.
+
+────────────────────────────────────────────────────────────────────────────
+10. ПРИМЕР ЖИЗНЕННОГО ЦИКЛА СКИЛА
+────────────────────────────────────────────────────────────────────────────
+
+День 1: Сделал операцию в первый раз, всё заработало.
+День 5: Сделал ту же операцию снова, набил руку. Команды запомнил.
+День 14: В третий раз нужно делать → выношу в `~/.hermes/skills/.../SKILL.md`.
+  → Описал frontmatter, when-to-use, step-by-step, pitfalls.
+День 21: Нашёл ошибку в скиле → patch (1.0.1).
+День 35: Добавил связанный skill `telegram_polling_faq`.
+День 60: Скил расширился > 30 КБ → делю на 2 скила.
+День 120: Скил устарел (API депрекейтнул) → bump MAJOR (2.0.0).
+День 365: Скил больше не нужен → удалить или archive.
+
+────────────────────────────────────────────────────────────────────────────
+11. ЧАСТЫЕ ОШИБКИ
+────────────────────────────────────────────────────────────────────────────
+
+11.1. SKILL.md без `name:` в frontmatter.
+   → skills_hub выдаёт warning, может работать, но плохая практика.
+
+11.2. SKILL.md, названный `skill.md`, `Skill.md` или `SKILL.MD`.
+   → Не загрузится. Только `SKILL.md`.
+
+11.3. Скил-комбайн на 50+ КБ.
+   → Модель потеряет фокус, при загрузке сожрёт много токенов.
+     Делите.
+
+11.4. Скил без `When to Use`.
+   → Модель не знает, когда грузить — может пропустить или
+     загрузить невпопад.
+
+11.5. Скил без Pitfalls.
+   → Типичные ошибки забываются, и модель их повторяет.
+
+11.6. Скил с секретами.
+   → `token: ghp_...` в frontmatter или step-by-step. Срочно удалить.
+
+11.7. Скил ссылается на API, которого уже нет.
+   → Без указания version рискованно. Версионируйте через
+     frontmatter.
+
+11.8. Скил из чужого проекта без адаптации.
+   → Чужой скил может использовать инструменты, которых у вас нет.
+     Переписывайте под себя.
+
+11.9. Дублирование SOUL/MEMORY/USER контента.
+   → Если это правило — в SOUL. Если факт — в MEMORY. Скил
+     не для декларативных знаний.
+
+11.10. Мало тегов.
+   → Если скил не находится через `skill_view` — добавьте теги.
+
+────────────────────────────────────────────────────────────────────────────
+12. ЧЕКЛИСТ ПЕРЕД СОХРАНЕНИЕМ
+────────────────────────────────────────────────────────────────────────────
+
+  □ Файл называется ровно SKILL.md?
+  □ Frontmatter начинается с `---` и содержит name (kebab-case)?
+  □ description — это ТРИГГЕР, а не описание?
+  □ Есть sections: When to Use, Step-by-step, Pitfalls?
+  □ Нет секретов в frontmatter или теле?
+  □ Нет дублирования SOUL/MEMORY/USER?
+  □ Команды в ```bash код-блоках``` и проверены?
+  □ Pitfalls конкретные, не «будь аккуратен»?
+  □ related_skills указаны?
+  □ version обновлён (если меняли)?
+  □ tags включают синонимы?
+
+────────────────────────────────────────────────────────────────────────────
+13. ЗАКЛУЧЕНИЕ
+────────────────────────────────────────────────────────────────────────────
+
+SKILL.md — это **процедурная память** профиля. Самая редкая, но самая
+ценная при многократном повторении.
+
+SOUL отвечает «кто я».
+MEMORY отвечает «что вокруг».
+USER отвечает «с кем я говорю».
+SKILL отвечает «как это делать».
+
+Главное правило: **не пишите скил «на будущее»**. Пишите его, когда
+повторился паттерн, и вы уже понимаете, что здесь будут частые
+правки. Скил — это инструмент для повторяющейся работы, а не
+теоретический реестр возможностей.
+
+Пять практик, чтобы скилы оставались здоровыми:
+  1. Kebab-case, стабильные имена.
+  2. Frontmatter с валидным `name` и описательным `description`.
+  3. Sections: When to Use / Step-by-step / Pitfalls.
+  4. Related_skills для связей.
+  5. Версионировать при изменениях API.

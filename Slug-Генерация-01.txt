@@ -1,0 +1,588 @@
+═══════════════════════════════════════════════════════════════════
+  SLUG-ГЕНЕРАЦИЯ-01 · Пошаговый playbook
+  Как задать slug при генерации проекта (с привязкой к mima_g_01)
+═══════════════════════════════════════════════════════════════════
+
+Версия: 2026-07-15
+Среда: mima_g_01 (Ubuntu 24.04.4 LTS), root, GitHub-аккаунт kuznetsovrost-svg
+Предпосылки: на машине установлены git, docker (опционально), gh CLI (опционально)
+
+═══════════════════════════════════════════════════════════════════
+ШАГ 0. РЕШИТЬ, НУЖЕН ЛИ SLUG ВООБЩЕ
+═══════════════════════════════════════════════════════════════════
+
+Slug нужен, если проект:
+  • Будет иметь Git remote (github.com/kuznetsovrost-svg/<slug>)
+  • Будет публиковаться как Docker image
+  • Будет деплоиться в Kubernetes / Docker Compose / systemd
+  • Будет устанавливаться как пакет (pip/npm/cargo)
+  • Будет иметь URL (даже внутренний в nginx/caddy)
+
+Slug НЕ нужен (можно обойтись UUID/хэшем):
+  • Одноразовые скрипты
+  • throwaway-эксперименты в /tmp
+
+═══════════════════════════════════════════════════════════════════
+ШАГ 1. ВЫБРАТЬ ИМЯ ПРОЕКТА → ПОЛУЧИТЬ SLUG
+═══════════════════════════════════════════════════════════════════
+
+1.1. Возьми естественное название проекта (на русском или английском)
+
+    «ИС Сириус · Миграция Postgres 17»  →  естественный slug:
+    «B-PP1-8 migration postgres 17»      →  естественный slug: b-pp1-8
+
+1.2. Приведи к канону:
+    • Только [a-z0-9-]
+    • Разделитель слов: дефис
+    • Без ведущих/завершающих дефисов
+    • Без двойных дефисов
+    • Длина: ≤ 50 символов (DNS-label limit 63, оставляем запас)
+
+1.3. Если название кириллицей — транслитерируй:
+
+    ИС Сириус · Проектная ПРАКТИКА
+        ↓ slugify
+    is-sirius-proektnaya-praktika
+
+    B-ПП1-8 Миграция Postgres 17
+        ↓ slugify (с сохранением цифр и кириллица→latin)
+    b-pp1-8-migraciya-postgres-17
+
+1.4. Утилита для генерации (положить в ~/.local/bin/slug):
+
+    cat > ~/.local/bin/slug << 'BASH'
+    #!/usr/bin/env python3
+    """Generate a project slug from free-form text."""
+    import re
+    import sys
+
+    TRANSLIT = {
+        'а':'a','б':'b','в':'v','г':'g','д':'d','е':'e','ё':'e','ж':'zh',
+        'з':'z','и':'i','й':'i','к':'k','л':'l','м':'m','н':'n','о':'o',
+        'п':'p','р':'r','с':'s','т':'t','у':'u','ф':'f','х':'h','ц':'ts',
+        'ч':'ch','ш':'sh','щ':'sch','ъ':'','ы':'y','ь':'','э':'e','ю':'yu','я':'ya',
+    }
+
+    def to_slug(s: str, max_len: int = 50) -> str:
+        out = []
+        for c in s:
+            if c in TRANSLIT:
+                out.append(TRANSLIT[c])
+            elif c.isascii():
+                out.append(c)
+            else:
+                out.append(' ')
+        s = ''.join(out).lower()
+        s = re.sub(r'[^a-z0-9]+', '-', s)
+        s = s.strip('-')
+        s = re.sub(r'-+', '-', s)
+        return s[:max_len].rstrip('-')
+
+    if __name__ == '__main__':
+        text = ' '.join(sys.argv[1:]) or sys.stdin.read()
+        slug = to_slug(text)
+        # Валидация
+        if not re.match(r'^[a-z0-9]+(?:-[a-z0-9]+)*$', slug):
+            print(f'INVALID: {slug!r}', file=sys.stderr)
+            sys.exit(1)
+        if len(slug) > 50:
+            print(f'TOO LONG ({len(slug)}>50): {slug!r}', file=sys.stderr)
+            sys.exit(2)
+        print(slug)
+    BASH
+    chmod +x ~/.local/bin/slug
+
+    Использование:
+    $ slug "ИС Сириус · Проектная ПРАКТИКА"
+    is-sirius-proektnaya-praktika
+
+    $ slug "B-PP1-8 migration postgres 17"
+    b-pp1-8-migration-postgres-17
+
+    $ slug "API Gateway для микросервисов"
+    api-gateway-dlya-mikroservisov
+
+1.5. Проверь валидность:
+
+    $ slug "новый проект" && echo "VALID" || echo "INVALID"
+    novyj-proekt
+    VALID
+
+═══════════════════════════════════════════════════════════════════
+ШАГ 2. СОЗДАТЬ КОРНЕВОЙ КАТАЛОГ ПРОЕКТА
+═══════════════════════════════════════════════════════════════════
+
+Структура каталогов на mima_g_01:
+
+    /root/projects/<slug>/          # основное место
+    ├── README.md
+    ├── LICENSE
+    ├── .gitignore
+    ├── .git/                       # появится после git init
+    ├── docs/
+    ├── src/                        # или app/, или специфичное
+    ├── tests/
+    └── scripts/
+
+Команды:
+
+    SLUG="my-project"               # подставь свой slug
+    ROOT="/root/projects/${SLUG}"
+
+    mkdir -p "${ROOT}"
+    cd "${ROOT}"
+
+    # Стандартные подкаталоги
+    mkdir -p src tests docs scripts
+
+    # (опционально) под конкретный стек:
+    # Python:   mkdir -p src/<pkg> tests
+    # Node:     mkdir -p src test
+    # Go:       mkdir -p cmd internal pkg
+    # Rust:     mkdir -p src
+    # Terraform: mkdir -p modules environments
+
+    # .gitignore (минимальный для Linux/Python/Node)
+    cat > .gitignore << 'EOF'
+    # OS
+    .DS_Store
+    Thumbs.db
+
+    # Editors
+    .vscode/
+    .idea/
+    *.swp
+    *.swo
+
+    # Secrets
+    .env
+    .env.local
+    *.pem
+    *.key
+
+    # Python
+    __pycache__/
+    *.pyc
+    .venv/
+    venv/
+    .pytest_cache/
+
+    # Node
+    node_modules/
+    dist/
+    build/
+
+    # Build artifacts
+    *.log
+    *.tmp
+    EOF
+
+═══════════════════════════════════════════════════════════════════
+ШАГ 3. ИНИЦИАЛИЗИРОВАТЬ GIT
+═══════════════════════════════════════════════════════════════════
+
+    cd "${ROOT}"
+    git init -b main                                 # default branch main
+    git config user.name "kuznetsovrost-svg"         # если не глобально
+    git config user.email "kuznetsov.rost@gmail.com"
+
+    # Глобальные настройки уже есть в ~/.gitconfig на mima_g_01:
+    #   user.name=kuznetsovrost-svg
+    #   user.email=kuznetsov.rost@gmail.com
+    #   url.git@github.com:.insteadof https://github.com/
+    # значит HTTPS github URLs автоматически → SSH
+
+    # Первый коммит
+    git add .gitignore
+    git commit -m "chore: initial commit with .gitignore"
+
+═══════════════════════════════════════════════════════════════════
+ШАГ 4. СОЗДАТЬ GITHUB REMOTE
+═══════════════════════════════════════════════════════════════════
+
+Вариант A: через gh CLI (рекомендую)
+
+    # Проверить авторизацию
+    gh auth status
+
+    # Создать репо
+    gh repo create "kuznetsovrost-svg/${SLUG}" \
+        --public \
+        --description "Краткое описание проекта" \
+        --source . \
+        --remote origin \
+        --push
+
+    # Флаги:
+    #   --public | --private
+    #   --description "..." (до 350 символов)
+    #   --source .   использовать текущий каталог как исходник
+    #   --remote origin  имя remote
+    #   --push       сразу запушить
+
+    # Если хочешь НЕ пушить сразу:
+    gh repo create "kuznetsovrost-svg/${SLUG}" \
+        --public \
+        --description "..." \
+        --source .
+    # remote будет добавлен, push — отдельной командой
+
+Вариант B: через web-интерфейс github.com
+
+    1. Открыть https://github.com/new
+    2. Repository name: kuznetsovrost-svg/<slug>
+    3. Visibility: Public/Private
+    4. НЕ инициализировать (ни README, ни .gitignore, ни license)
+    5. Нажать "Create repository"
+    6. Локально:
+       git remote add origin git@github.com:kuznetsovrost-svg/${SLUG}.git
+       git push -u origin main
+
+Вариант C: только локальный git (без remote)
+
+    # Если проект пока не публикуется
+    git init -b main                # уже сделано на шаге 3
+    # remote добавляется позже, когда понадобится
+
+═══════════════════════════════════════════════════════════════════
+ШАГ 5. ЗАПИСАТЬ SLUG В МАНИФЕСТЫ ПРОЕКТА
+═══════════════════════════════════════════════════════════════════
+
+5.1. README.md (первая строка — slug как идентификатор)
+
+    cat > README.md << EOF
+    # ${SLUG}
+
+    > Краткое описание в 1 строку.
+
+    ## Slug
+
+    \`${SLUG}\`
+
+    ## Stack
+    - (заполни)
+
+    ## Setup
+    \`\`\`bash
+    # команды для запуска
+    \`\`\`
+
+    ## Structure
+    \`\`\`
+    src/
+    tests/
+    docs/
+    \`\`\`
+    EOF
+    git add README.md
+    git commit -m "docs: add README with slug"
+
+5.2. Python (pyproject.toml)
+
+    # PEP 503: для pip slug → underscores
+    PIP_NAME=$(echo "${SLUG}" | tr '-' '_')
+    cat > pyproject.toml << EOF
+    [project]
+    name = "${PIP_NAME}"
+    version = "0.1.0"
+    description = "..."
+    # Import name в Python остаётся с дефисами:
+    # import ${SLUG}    # НЕЛЬЗЯ
+    # import ${PIP_NAME}  # можно
+
+    [tool.setuptools.packages.find]
+    where = ["src"]
+    EOF
+
+    # Если хочется сохранить дефисы в имени пакета —
+    # использовать [tool.setuptools] packages = ["src/my_pkg"]
+    # и src/my_pkg/ как реальное имя каталога
+
+5.3. Node (package.json)
+
+    cat > package.json << EOF
+    {
+      "name": "${SLUG}",
+      "version": "0.1.0",
+      "description": "...",
+      "main": "src/index.js",
+      "scripts": {
+        "start": "node src/index.js",
+        "test": "jest"
+      }
+    }
+    EOF
+    npm init -y                      # если нужна автогенерация
+
+5.4. Go (go.mod)
+
+    cd "${ROOT}"
+    go mod init "github.com/kuznetsovrost-svg/${SLUG}"
+    # Go-модули не используют отдельный slug в имени —
+    # они привязаны к import-path (= github URL)
+
+5.5. Rust (Cargo.toml)
+
+    cat > Cargo.toml << EOF
+    [package]
+    name = "${SLUG//-/_}"           # Rust заменяет - на _
+    version = "0.1.0"
+    edition = "2021"
+    EOF
+
+5.6. Terraform / Ansible / etc.
+
+    # В Terraform модуль не имеет «имени» как такового,
+    # но в README.md модуля первой строкой укажи slug.
+
+    # В Ansible роль — имя каталога roles/<slug>/
+    mkdir -p roles/${SLUG}/{tasks,handlers,templates,files,vars,defaults,meta}
+
+5.7. Docker
+
+    cat > Dockerfile << EOF
+    FROM python:3.11-slim
+    LABEL org.opencontainers.image.title="${SLUG}"
+    LABEL org.opencontainers.image.version="0.1.0"
+    LABEL org.opencontainers.image.source="https://github.com/kuznetsovrost-svg/${SLUG}"
+    WORKDIR /app
+    COPY . .
+    CMD ["python", "-m", "${PIP_NAME}"]
+    EOF
+
+5.8. Kubernetes / Helm
+
+    # Namespace НЕ должен содержать slug (slug → environment-разделение)
+    # kubectl create namespace myproject-prod
+
+    # Helm chart name
+    helm create ${SLUG}              # создаст каталог ${SLUG}/
+
+    # В Chart.yaml:
+    cat > ${SLUG}/Chart.yaml << EOF
+    apiVersion: v2
+    name: ${SLUG}
+    description: ...
+    type: application
+    version: 0.1.0
+    appVersion: "0.1.0"
+    EOF
+
+═══════════════════════════════════════════════════════════════════
+ШАГ 6. НАСТРОИТЬ CI/CD (опционально)
+═══════════════════════════════════════════════════════════════════
+
+GitHub Actions использует slug в качестве имени workflow-файлов:
+
+    mkdir -p .github/workflows
+    cat > .github/workflows/ci.yml << EOF
+    name: CI-${SLUG}
+    on:
+      push:
+        branches: [main]
+      pull_request:
+    jobs:
+      test:
+        runs-on: ubuntu-latest
+        steps:
+          - uses: actions/checkout@v4
+          # остальные шаги
+    EOF
+
+═══════════════════════════════════════════════════════════════════
+ШАГ 7. ЗАФИКСИРОВАТЬ SLUG В КОМАНДНЫХ СОКРАЩЕНИЯХ
+═══════════════════════════════════════════════════════════════════
+
+7.1. Aliases в ~/.bashrc
+
+    cat >> ~/.bashrc << EOF
+
+    # Project: ${SLUG}
+    alias ${SLUG}='cd /root/projects/${SLUG}'
+    alias ${SLUG}-logs='journalctl --user -u ${SLUG} -f'
+    alias ${SLUG}-docker='docker ps -f name=${SLUG}'
+    alias ${SLUG}-k8s='kubectl -n myproject-dev get all -l app=${SLUG}'
+    EOF
+    source ~/.bashrc
+
+7.2. tmux session
+
+    tmux new -d -s ${SLUG} -c /root/projects/${SLUG}
+    tmux attach -t ${SLUG}
+
+═══════════════════════════════════════════════════════════════════
+ШАГ 8. ДОКУМЕНТИРОВАТЬ SLUG ВНУТРИ ПРОЕКТА
+═══════════════════════════════════════════════════════════════════
+
+Создай файл SLUG.md в корне проекта:
+
+    cat > SLUG.md << EOF
+    # Project slug
+
+    This project slug is: \`${SLUG}\`
+
+    ## Where this slug is used
+
+    - Git remote: git@github.com:kuznetsovrost-svg/${SLUG}.git
+    - Docker image: kuznetsovrost-svg/${SLUG}:\${VERSION}
+    - Python package: ${PIP_NAME}
+    - npm package: ${SLUG}
+    - Kubernetes: deployment label app=${SLUG}
+    - Helm release: helm install ${SLUG} ./chart
+    - systemd service: ${SLUG}.service
+    - DNS: ${SLUG}.svc.cluster.local
+
+    ## Do not change
+
+    The slug is part of the project's identity. Renaming it requires
+    updating all references above AND informing all users.
+    EOF
+    git add SLUG.md
+    git commit -m "docs: document project slug"
+
+═══════════════════════════════════════════════════════════════════
+ШАГ 9. ВАЛИДАЦИЯ ПЕРЕД ПУШЕМ
+═══════════════════════════════════════════════════════════════════
+
+Чек-лист перед первым push:
+
+    SLUG="my-project"
+
+    # 1. Валидность slug
+    echo "${SLUG}" | grep -qE '^[a-z0-9]+(-[a-z0-9]+)*$' \
+        && echo "✓ slug valid" || echo "✗ INVALID SLUG"
+
+    # 2. Длина ≤ 50
+    [ ${#SLUG} -le 50 ] \
+        && echo "✓ length OK" || echo "✗ TOO LONG (${#SLUG}>50)"
+
+    # 3. Не зарезервированное слово
+    case "${SLUG}" in
+        admin|api|www|test|prod|dev|staging|root|system)
+            echo "✗ RESERVED WORD"
+            ;;
+        *) echo "✓ not reserved" ;;
+    esac
+
+    # 4. Все манифесты на месте
+    for f in README.md .gitignore pyproject.toml package.json Dockerfile; do
+        [ -f "${f}" ] && echo "✓ ${f}" || echo "○ ${f} (optional)"
+    done
+
+    # 5. Git status чистый
+    if git diff --quiet && git diff --cached --quiet; then
+        echo "✓ working tree clean"
+    else
+        echo "! uncommitted changes:"
+        git status --short
+    fi
+
+═══════════════════════════════════════════════════════════════════
+ШАГ 10. ПЕРВЫЙ PUSH
+═══════════════════════════════════════════════════════════════════
+
+    cd /root/projects/${SLUG}
+    git log --oneline                       # проверь историю
+    git remote -v                           # проверь remote
+    git push -u origin main                 # первый push
+
+После push:
+    • Открой https://github.com/kuznetsovrost-svg/${SLUG}
+    • Settings → Topics: добавь 3-5 тегов
+    • Settings → About: добавь описание
+    • Settings → General → Branch protection (опционально)
+
+═══════════════════════════════════════════════════════════════════
+ПРИЛОЖЕНИЕ A. ЧАСТЫЕ ОШИБКИ
+═══════════════════════════════════════════════════════════════════
+
+❌ Ошибка 1: slug меняется в процессе
+   Симптом: репо `my-app` на GitHub, но Docker-образ `myapp`,
+   а в k8s deployment label `my_app`.
+   Решение: до генерации — утвердить slug и записать в SLUG.md.
+
+❌ Ошибка 2: slug слишком длинный
+   Симптом: не влезает в DNS label (63 символа), обрезается в k8s.
+   Решение: ≤ 50 символов на этапе выбора.
+
+❌ Ошибка 3: slug начинается с цифры
+   Симптом: валидно для DNS, но невалидно для npm-пакета.
+   Решение: добавить префикс: `pkg-myapp` или `app-2026-...`.
+
+❌ Ошибка 4: slug содержит зарезервированное слово
+   Симптом: namespace collision, конфликт с сервисами.
+   Решение: `my-app-api` вместо `api`.
+
+❌ Ошибка 5: кириллица «протекла» в slug
+   Симптом: `проект-1` не работает в Docker / DNS.
+   Решение: использовать утилиту `slug` из шага 1.
+
+❌ Ошибка 6: slug разный для git remote и docker image
+   Симптом: нельзя найти соответствие между github и registry.
+   Решение: один slug → все манифесты используют его.
+
+❌ Ошибка 7: slug = версия (`my-app-v2`)
+   Симптом: при обновлении версии меняется slug.
+   Решение: slug = имя без версии, версия — в tag.
+
+═══════════════════════════════════════════════════════════════════
+ПРИЛОЖЕНИЕ B. ШПАРГАЛКА ОДНОЙ СТРОКОЙ
+═══════════════════════════════════════════════════════════════════
+
+# Сгенерировать slug из русского названия:
+slug "Мой крутой проект 2026"
+
+# Создать проект одной командой (после установки slug-утилиты):
+SLUG=$(slug "Новое название") && \
+mkdir -p /root/projects/${SLUG} && \
+cd /root/projects/${SLUG} && \
+git init -b main && \
+gh repo create kuznetsovrost-svg/${SLUG} --public --source . --push
+
+# Переименовать slug (все ссылки сразу):
+NEW=$(slug "Новое правильное имя") && \
+OLD=$(cat SLUG.md | grep '`' | head -1 | tr -d '`') && \
+git mv ... # (см. отдельную инструкцию по rename)
+
+═══════════════════════════════════════════════════════════════════
+ПРИЛОЖЕНИЕ C. СВЯЗЬ С СУЩЕСТВУЮЩИМИ ПРОЕКТАМИ НА mima_g_01
+═══════════════════════════════════════════════════════════════════
+
+Примеры slug-ов, которые можно встретить:
+
+    b-pp1-8                  # аббревиатура, цифры, дефис
+    migration-postgres-17    # назначение + версия стека
+    is-sirius-proektnaya-praktika   # кириллица → транслитерация
+    api-gateway              # два слова через дефис
+    cve-monitor-2026         # категория + год
+
+Шаблон рекомендуемый:
+    {проект}[-{модуль}][-{назначение}]
+
+    myapp                    # проект целиком
+    myapp-api                # только backend
+    myapp-web                # только frontend
+    myapp-migration-pg17     # подзадача миграции
+
+═══════════════════════════════════════════════════════════════════
+ПРИЛОЖЕНИЕ D. ОТЛИЧИЕ ОТ ДРУГИХ ИДЕНТИФИКАТОРОВ
+═══════════════════════════════════════════════════════════════════
+
+| Идентификатор | Когда использовать | Пример |
+|---|---|---|
+| slug         | URL, Docker, k8s, имена пакетов | b-pp1-8-migration |
+| UUID         | внутренние ID в БД, ключи шифрования | 550e8400-e29b-41d4-a716-446655440000 |
+| hash         | cache keys, content addressing | sha256:abc123... |
+| semantic ver | версии пакетов | 1.2.3 |
+| git sha      | версии кода | a1b2c3d |
+| internal ID  | autoincrement в БД | 42 |
+| IPv4/IPv6    | адреса хостов | 192.168.1.10 |
+| DNS FQDN     | доменные имена | api.example.com |
+
+slug ≠ UUID ≠ hash ≠ version. Каждый инструмент — для своего.
+
+═══════════════════════════════════════════════════════════════════
+Конец playbook.
+Версия: 2026-07-15
+Hermes Agent на mima_g_01 (Ubuntu 24.04.4 LTS)
+═══════════════════════════════════════════════════════════════════

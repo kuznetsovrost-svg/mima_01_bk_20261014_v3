@@ -1,0 +1,402 @@
+# Бэкап этого сервера в GitHub-репозиторий mima_01_bk
+
+Дата: 18.06.2026
+Хост: Ubuntu 24.04.4 LTS, root@twc1.net (8.31.79.37)
+GitHub-аккаунт: kuznetsovrost-svg (email: kuznetsov.rost@gmail.com)
+Целевой репозиторий: https://github.com/kuznetsovrost-svg/mima_01_bk
+  (SSH: git@github.com:kuznetsovrost-svg/mima_01_bk.git)
+
+================================================================
+0. ЧТО УЖЕ ПРОВЕРЕНО НА СЕРВЕРЕ (чтобы не делать заново)
+================================================================
+
+  [x] SSH-ключ к github.com залит и работает:
+        $ ssh -T git@github.com
+        Hi kuznetsovrost-svg! You've successfully authenticated,
+        but GitHub does not provide shell access.
+
+  [x] В ~/.gitconfig стоит глобальный rewrite:
+        url.git@github.com:.insteadof https://github.com/
+      Это значит: ЛЮБОЙ clone/fetch/pull по https://github.com/...
+      молча переписывается на git@github.com:... — пароли/токены
+      запрашиваться не будут.
+
+  [x] git и gh установлены (gh = GitHub CLI, залогинен).
+
+  [x] Репозиторий kuznetsovrost-svg/mima_01_bk существует.
+      Проверить:
+        $ gh repo view kuznetsovrost-svg/mima_01_bk
+      Поля, которые нужно увидеть/подтвердить вручную:
+        - defaultBranchRef   (main? master?)
+        - isPrivate          (true / false)
+        - description        ("Второй репозиторий для проверки SSH")
+        - url
+      Посмотреть содержимое:
+        $ gh api repos/kuznetsovrost-svg/mima_01_bk/contents
+      Посмотреть последние коммиты:
+        $ gh api repos/kuznetsovrost-svg/mima_01_bk/commits \
+              --jq '.[0:5] | .[] | "\(.sha[0:7])  \(.commit.message | gsub("\n";" / "))"'
+
+  [x] Размер домашнего каталога ~root: ~2 GB.
+      Главные "тяжёлые" каталоги:
+        /root/.cache       1.1G   ← в бэкап НЕ берём
+        /root/.npm         393M   ← в бэкап НЕ берём (переустанавливается)
+        /root/.hermes      326M   ← в бэкап НЕ берём (ниже объясню)
+        /root/.local       2.2M
+        /root/migration    32K    ← это пользовательский каталог
+        /root/.ssh         24K    ← см. раздел "Что НЕ бэкапить"
+        /root/.gnupg       12K    ← см. раздел "Что НЕ бэкапить"
+      В корне /root лежат 31 файл (AGENT01.txt, GitHub02.txt,
+      Hermes_сайт_01.txt и т.п.) — это твои рабочие документы,
+      их бэкапим.
+
+================================================================
+1. СТРАТЕГИЯ БЭКАПА
+================================================================
+
+Делаем "домашний каталог как dotfiles-проект":
+  /root  →  ~/mima_01_bk_workdir/  →  push в mima_01_bk
+
+Принципы:
+  • Берём ТОЛЬКО то, что восстанавливается руками за час, и что
+    жалко потерять: конфиги, скрипты, документы, настройки.
+  • НЕ берём кэши, скачанные модели, виртуальные окружения,
+    состояние пакетных менеджеров — это восстанавливается одной
+    командой и раздувает репо.
+  • Ключи и пароли НЕ бэкапим (см. раздел 6).
+  • Один коммит = один снимок с датой в сообщении, чтобы видеть
+    историю изменений.
+
+================================================================
+2. ЧТО БЭКАПИМ (и что НЕ бэкапим)
+================================================================
+
+БЭКАПИМ (whitelist):
+  /root/*.txt, /root/*.md                 — рабочие документы
+  /root/migration/                        — каталог с миграциями
+  /root/.bashrc, /root/.profile
+  /root/.gitconfig                        — публичный
+  /root/.config/                          — НЕ целиком:
+        берём .config/git, .config/gh, .config/hermes-cli,
+        .config/pip, прочие "настройки".
+        НЕ берём .config/Caches, .config/Code/Cache,
+        .config/Slack/Cache, .config/pip/cache и т.п.
+  /root/.local/bin, /root/.local/share   — без bin/python,
+        без share/virtualenvs (это envs)
+
+НЕ БЭКАПИМ (blacklist — ОБЯЗАТЕЛЬНО через .gitignore):
+  /root/.cache/                            — кэши ОС и пакетов
+  /root/.npm/                              — скачанные npm-пакеты
+  /root/.hermes/                           — база Hermes, логи,
+                                              кэш, состояние
+                                              (cron-jobs, RAG-индексы,
+                                              sqlite-сессии, голосовые
+                                              записи)
+  /root/.ssh/                              — закрытый SSH-ключ
+                                              (см. раздел 6)
+  /root/.gnupg/                            — закрытые GPG-ключи
+  /root/.local/lib/, /root/.local/share/virtualenvs/,
+  /root/.local/share/Trash/, /root/.local/share/uv/,
+  /root/.local/share/uv-python/           — venv и питон-окружения
+  /root/.config/*/Cache/, /root/.config/*/Caches/
+  /root/.config/Slack/Code Cache/
+  **/__pycache__/, **/*.pyc, **/*.wasm
+  *.swp, *.swo, *~, .DS_Store, Thumbs.db
+
+================================================================
+3. ПОДГОТОВКА РАБОЧЕГО КАТАЛОГА (одноразово)
+================================================================
+
+  # 3.1. Выбираем, где держать "зеркало" домашней папки.
+  # Лучше НЕ в /root, чтобы случайно не запушить лишнее.
+  # Я кладу в /opt — он есть на сервере.
+  sudo mkdir -p /opt/mima_01_bk_workdir
+  sudo chown root:root /opt/mima_01_bk_workdir
+  cd /opt/mima_01_bk_workdir
+
+  # 3.2. Клонируем пустой/существующий репозиторий.
+  #     Через https — сработает rewrite на SSH (см. раздел 0).
+  git clone https://github.com/kuznetsovrost-svg/mima_01_bk.git
+  cd mima_01_bk
+
+  # 3.3. Создаём .gitignore под наш whitelist+blacklist.
+  #     Содержимое — в Приложении A ниже.
+
+  # 3.4. Говорим git-у "наш корень" — это КОПИЯ /root,
+  #     а не сам /root. Создаём зеркало.
+  #     ВАРИАНТ A (рекомендую): rsync в work-каталог с фильтром,
+  #     а git add/commit уже оттуда. Так никогда не запушишь
+  #     лишнее: то, чего нет в work-каталоге, в git не попадёт.
+  #
+  #     Команды — в разделе 4.
+
+================================================================
+4. ОДНОРАЗОВАЯ СИНХРОНИЗАЦИЯ (первый бэкап)
+================================================================
+
+  # 4.1. Создаём .gitignore (Приложение A).
+  # 4.2. rsync из /root в work-каталог.
+  #     Исключения — те же, что blacklist в .gitignore, чтобы
+  #     случайно не заливать гигабайты.
+
+  cd /opt/mima_01_bk_workdir/mima_01_bk
+
+  rsync -a --delete \
+        --exclude='.git' \
+        --exclude='.cache' \
+        --exclude='.npm' \
+        --exclude='.hermes' \
+        --exclude='.ssh' \
+        --exclude='.gnupg' \
+        --exclude='.local/lib' \
+        --exclude='.local/share/virtualenvs' \
+        --exclude='.local/share/Trash' \
+        --exclude='.local/share/uv' \
+        --exclude='.local/share/uv-python' \
+        --exclude='.config/*/Cache' \
+        --exclude='.config/*/Caches' \
+        --exclude='__pycache__' \
+        --exclude='*.pyc' \
+        --exclude='.bash_history' \
+        --exclude='*.swp' --exclude='*.swo' --exclude='*~' \
+        /root/  ./root/
+
+  # Создастся подкаталог ./root/ со всем whitelist-содержимым.
+  # Проверь глазами:
+  ls -la root/
+  du -sh root/    # ожидаю: <100 MB, реально десятки мегабайт
+
+  # 4.3. Не обязательно, но удобно: манифест окружения.
+  #     Это поможет восстановить сервер, даже если сам бэкап
+  #     окажется старым.
+  {
+    echo "=== Снимок сервера $(date -Iseconds) ==="
+    echo
+    echo "## /etc/os-release"
+    cat /etc/os-release
+    echo
+    echo "## uname -a"
+    uname -a
+    echo
+    echo "## dpkg --get-selections (только реально установленное)"
+    dpkg --get-selections | awk '$2=="install"{print $1}' \
+         | sort > root/manifest/packages.txt
+    echo "  /opt/mima_01_bk_workdir/mima_01_bk/root/manifest/packages.txt"
+    echo
+    echo "## pipx list (если есть)"
+    command -v pipx >/dev/null && pipx list || echo "  pipx не установлен"
+    echo
+    echo "## crontab -l"
+    crontab -l > root/manifest/crontab.txt 2>/dev/null \
+       && echo "  crontab сохранён в root/manifest/crontab.txt" \
+       || echo "  crontab пуст или не настроен"
+    echo
+    echo "## systemctl list-unit-files --state=enabled"
+    systemctl list-unit-files --state=enabled > root/manifest/services.txt 2>/dev/null
+    echo "  /opt/mima_01_bk_workdir/mima_01_bk/root/manifest/services.txt"
+    echo
+    echo "## df -h"
+    df -h > root/manifest/disk.txt
+  } | tee root/manifest/SNAPSHOT.txt
+
+  # 4.4. git add + commit + push.
+  git add -A
+  git status               # ОБЯЗАТЕЛЬНО посмотри глазами
+  git commit -m "backup: server snapshot $(date -Iseconds)"
+  git push -u origin HEAD  # в первый раз с -u, дальше без
+
+================================================================
+5. РЕГУЛЯРНЫЙ БЭКАП (раз в неделю / по желанию)
+================================================================
+
+  # Скрипт-обёртка — Приложение B.
+  # Ставится в /usr/local/bin/backup-to-mima01.sh
+  # Запуск:
+  #     sudo /usr/local/bin/backup-to-mima01.sh
+  #
+  # Или через cron — Приложение C.
+
+================================================================
+6. БЕЗОПАСНОСТЬ: ЧТО НЕ БЭКАПИТЬ И ПОЧЕМУ
+================================================================
+
+  .ssh/         — закрытый ключ от github. Если утечёт
+                  (например, репо случайно станет публичным,
+                  или кто-то получит read к репо) — ключ
+                  можно отозвать, но проще вообще не
+                  коммитить. Публичный id_*.pub можно, но
+                  осторожно (см. ниже).
+  .gnupg/       — то же самое. Секретные ключи GPG.
+  *.env, *.pem, *.key, id_rsa, id_ed25519,
+  .netrc, .docker/config.json — любые файлы с секретами.
+
+  Если всё-таки нужен список публичных ключей для "порядка":
+        cp -a ~/.ssh/id_*.pub /tmp/pubs/ 2>/dev/null
+  и положи их в репо отдельным каталогом ssh-public/
+  (они безопасны, если это правда *.pub).
+
+  Перед КАЖДЫМ git push делай:
+        git status
+        git diff --cached --stat
+  и убедись, что в списке нет ничего из blacklist.
+
+================================================================
+7. ПРОВЕРКА БЭКАПА (восстановление)
+================================================================
+
+  # На другой/чистой машине:
+  git clone https://github.com/kuznetsovrost-svg/mima_01_bk.git
+  cd mima_01_bk
+  ls root/manifest/         # есть SNAPSHOT.txt
+  cat root/manifest/packages.txt | xargs sudo apt-get install -y
+  # …и т.д. по манифесту.
+
+================================================================
+ПРИЛОЖЕНИЕ A — .gitignore (положить в корень репо)
+================================================================
+
+  # === Кэши и временное — никогда в бэкап ===
+  .cache/
+  .npm/
+  .hermes/
+  *.tmp
+  *.swp
+  *.swo
+  *~
+  .DS_Store
+  Thumbs.db
+
+  # === Секреты — никогда в бэкап ===
+  .ssh/
+  .gnupg/
+  .netrc
+  .env
+  .env.*
+  *.pem
+  *.key
+  id_rsa
+  id_rsa.pub
+  id_ed25519
+  id_ed25519.pub
+  .docker/config.json
+
+  # === Виртуальные окружения и питон-кэш ===
+  .local/lib/
+  .local/share/virtualenvs/
+  .local/share/uv/
+  .local/share/uv-python/
+  .local/share/Trash/
+  __pycache__/
+  **/__pycache__/
+  *.pyc
+  *.pyo
+  *.wasm
+
+  # === Кэши приложений ===
+  .config/*/Cache/
+  .config/*/Caches/
+  .config/Code/Cache/
+  .config/Slack/Cache/
+  .config/pip/cache/
+  .config/yarn/cache/
+
+  # === История и логи ===
+  .bash_history
+  .lesshst
+  .viminfo
+  .python_history
+  .config/hermes-cli/sessions/
+  .config/hermes-cli/cache/
+  .config/hermes-cli/logs/
+
+  # === Скачанные модели / датасеты (тяжёлые) ===
+  *.bin
+  *.gguf
+  *.safetensors
+  *.pt
+  *.pth
+  *.onnx
+  *.h5
+  *.parquet
+  models/
+  .cache/huggingface/
+
+  # === Собственно work-каталог rsync ===
+  /root/
+
+================================================================
+ПРИЛОЖЕНИЕ B — /usr/local/bin/backup-to-mima01.sh
+================================================================
+
+  #!/usr/bin/env bash
+  set -euo pipefail
+
+  WORK=/opt/mima_01_bk_workdir/mima_01_bk
+  cd "$WORK" || { echo "Нет $WORK"; exit 1; }
+
+  rsync -a --delete \
+        --exclude='.git' --exclude='.cache' --exclude='.npm' \
+        --exclude='.hermes' --exclude='.ssh' --exclude='.gnupg' \
+        --exclude='.local/lib' --exclude='.local/share/virtualenvs' \
+        --exclude='.local/share/Trash' --exclude='.local/share/uv' \
+        --exclude='.local/share/uv-python' \
+        --exclude='.config/*/Cache' --exclude='.config/*/Caches' \
+        --exclude='__pycache__' --exclude='*.pyc' \
+        --exclude='.bash_history' \
+        --exclude='*.swp' --exclude='*.swo' --exclude='*~' \
+        /root/  ./root/
+
+  {
+    echo "=== Снимок сервера $(date -Iseconds) ==="
+    cat /etc/os-release
+    uname -a
+  } > root/manifest/SNAPSHOT.txt
+
+  if git diff --cached --quiet && \
+     git diff --quiet && \
+     [ -z "$(git ls-files --others --exclude-standard)" ]; then
+    echo "Нечего коммитить: $WORK актуален."
+    exit 0
+  fi
+
+  git add -A
+  git commit -m "backup: server snapshot $(date -Iseconds)"
+  git push
+
+  echo "OK: бэкап отправлен."
+
+================================================================
+ПРИЛОЖЕНИЕ C — cron (раз в сутки, в 03:00)
+================================================================
+
+  # sudo crontab -e
+  0 3 * * * /usr/local/bin/backup-to-mima01.sh \
+      >> /var/log/mima_01_bk.log 2>&1
+
+================================================================
+ПРИЛОЖЕНИЕ D — что я ещё НЕ проверил (нужно перед первым push)
+================================================================
+
+  [ ] default-ветка репо (main или master)
+        gh repo view kuznetsovrost-svg/mima_01_bk \
+           --json defaultBranchRef --jq .defaultBranchRef.name
+      Если master — везде выше замени "main" на "master".
+
+  [ ] публичный или приватный репо
+        gh repo view kuznetsovrost-svg/mima_01_bk --json isPrivate
+      Если публичный — пересмотри whitelist ещё раз:
+      никаких публичных SSH-ключей, никаких имён/email-ов
+      в конфигах, которые ты не хочешь светить.
+
+  [ ] .gitignore уже лежит в репо?
+        gh api repos/kuznetsovrost-svg/mima_01_bk/contents/.gitignore
+      Если да — посмотри, не конфликтует с моим Приложением A.
+
+  [ ] под какой учёткой gh залогинен
+        gh auth status
+      Должно быть kuznetsovrost-svg.
+
+  [ ] есть ли уже файлы в репо
+        gh api repos/kuznetsovrost-svg/mima_01_bk/contents
+      Если там лежит что-то важное — не делай git push -f
+      и не запускай rsync --delete до того, как разберёшься.

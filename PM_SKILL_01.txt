@@ -1,0 +1,674 @@
+═══════════════════════════════════════════════════════════════════
+  PM_SKILL_01 · Скиллы для проектного управления в Hermes Agent
+  Обзор методологий + рекомендации по структуре скиллов
+═══════════════════════════════════════════════════════════════════
+
+Версия: 2026-07-17
+Среда: Hermes Agent v0.18.0 на mima_g_01
+Профиль: analyst_training
+
+═══════════════════════════════════════════════════════════════════
+1. ВВЕДЕНИЕ
+═══════════════════════════════════════════════════════════════════
+
+Проектное управление (Project Management, PM) — это применение
+методологий, инструментов и техник для инициации, планирования,
+исполнения, мониторинга и завершения проекта с целью достижения
+конкретных целей в рамках ограничений (scope/time/cost/quality).
+
+В контексте AI-агента Hermes PM-скилл помогает:
+  • Пользователю структурировать проект (от идеи до результата)
+  • Агенту брать на себя рутинные PM-задачи (трекинг, отчёты, риски)
+  • Обеим сторонам говорить на одном языке (глоссарий PM)
+  • Применять правильную методологию под тип проекта
+
+═══════════════════════════════════════════════════════════════════
+2. ОБЗОР МЕТОДОЛОГИЙ PM
+═══════════════════════════════════════════════════════════════════
+
+2.1. PMBOK (PMI, Project Management Body of Knowledge)
+────────────────────────────────────────────────────────
+Самый распространённый стандарт. Подходит для enterprise-проектов
+с фиксированными требованиями и формальной отчётностью.
+
+5 процессных групп:
+  1. Initiating       — определить стейкхолдеров, устав проекта
+  2. Planning         — WBS, расписание, бюджет, план коммуникаций
+  3. Executing        — координация команды, поставка результатов
+  4. Monitoring & Controlling — отслеживание прогресса, change control
+  5. Closing          — формальное закрытие, lessons learned
+
+10 областей знаний:
+  • Integration Management
+  • Scope Management
+  • Schedule Management
+  • Cost Management
+  • Quality Management
+  • Resource Management
+  • Communications Management
+  • Risk Management
+  • Procurement Management
+  • Stakeholder Management
+
+Когда применять:
+  ✓ Enterprise-проекты (>1 млн $)
+  ✓ Регулируемые отрасли (госсектор, банки, фарма)
+  ✓ Формальные контракты с фиксированным scope
+  ✗ Небольшие agile-проекты
+  ✗ Стартапы с неопределёнными требованиями
+
+2.2. PRINCE2 (Projects IN Controlled Environments)
+──────────────────────────────────────────────────
+Британский стандарт. Более формальный, чем PMBOK. Хорош для
+госпроектов и крупных enterprise.
+
+7 принципов:
+  1. Continued business justification
+  2. Learn from experience
+  3. Defined roles and responsibilities
+  4. Manage by stages
+  5. Manage by exception
+  6. Focus on products
+  7. Tailor to suit the project
+
+7 тем:
+  • Business Case
+  • Organization
+  • Quality
+  • Plans
+  • Risk
+  • Change
+  • Progress
+
+7 процессов (по стадиям):
+  • Starting Up a Project (SU)
+  • Directing a Project (DP)
+  • Initiating a Project (IP)
+  • Controlling a Stage (CS)
+  • Managing Product Delivery (MP)
+  • Managing Stage Boundaries (SB)
+  • Closing a Project (CP)
+
+Когда применять:
+  ✓ UK/EU госпроекты
+  ✓ Жёсткое регулирование
+  ✓ Несколько подрядчиков
+  ✗ Гибкие IT-проекты
+
+2.3. Agile / Scrum
+────────────────────
+Итеративный подход. Фиксированные спринты (1-4 недели),
+постоянная обратная связь, изменения приветствуются.
+
+Scrum-артефакты:
+  • Product Backlog     — приоритезированный список требований
+  • Sprint Backlog      — задачи на текущий спринт
+  • Increment          — потенциально поставляемый продукт
+
+Scrum-церемонии:
+  • Sprint Planning      — выбор задач на спринт
+  • Daily Standup        — 15-минутный sync (что вчера/сегодня/блокеры)
+  • Sprint Review        — демо результата стейкхолдерам
+  • Sprint Retrospective — что улучшить в следующем спринте
+  • Backlog Refinement   — уточнение и приоритезация бэклога
+
+Роли:
+  • Product Owner       — отвечает за value и приоритеты
+  • Scrum Master        — убирает блокеры, обучает команде
+  • Development Team    — кросс-функциональная, 3-9 человек
+
+Когда применять:
+  ✓ Software-проекты
+  ✓ Неопределённые требования
+  ✓ Быстрая обратная связь с пользователем
+  ✓ Команды 3-9 человек
+  ✗ Hardware, строительство, регулируемые отрасли
+
+2.4. Kanban
+─────────────
+Визуальное управление потоком задач. Подходит для operational
+работы и поддержки, не для проектов с чётким началом/концом.
+
+Элементы:
+  • Kanban Board     — визуальная доска (To Do → In Progress → Done)
+  • WIP Limits       — лимит одновременной работы в колонке
+  • Lead Time        — время от запроса до поставки
+  • Cycle Time       — время от старта работы до завершения
+  • CFD              — Cumulative Flow Diagram (диаграмма потока)
+
+Метрики:
+  • Throughput       — задач в единицу времени
+  • WIP Aging        — как долго задача в работе
+  • Blocked Items    — что застряло
+
+Когда применять:
+  ✓ Operational teams (поддержка, DevOps)
+  ✓ Bug fix потоки
+  ✓ Content production
+  ✓ Mixed work (projects + run)
+  ✗ Один большой проект с чёткими фазами
+
+2.5. Lean
+─────────
+Устранение потерь, оптимизация потока ценности.
+
+7 видов потерь (Muda):
+  1. Defects        — дефекты
+  2. Overproduction — избыточное производство
+  3. Waiting        — ожидание
+  4. Transport      — транспортировка
+  5. Inventory      — избыточные запасы
+  6. Motion         — лишние движения
+  7. Over-processing — избыточная обработка
+
+Принципы Lean:
+  • Value          — определить ценность с точки зрения клиента
+  • Value Stream   — карта потока создания ценности
+  • Flow           — обеспечить непрерывный поток
+  • Pull           — вытягивающее производство
+  • Perfection     — постоянное улучшение (Kaizen)
+
+Когда применять:
+  ✓ Оптимизация процессов
+  ✓ Производство, услуги
+  ✓ В комбинации с Agile или Kanban
+
+2.6. Waterfall
+───────────────
+Классический последовательный подход. Каждая фаза завершается
+полностью до начала следующей.
+
+Фазы:
+  Requirements → Design → Implementation → Verification → Maintenance
+
+Когда применять:
+  ✓ Hardware, строительство
+  ✓ Регулируемые отрасли (FDA, авиация)
+  ✓ Фиксированные требования
+  ✗ Быстро меняющийся рынок
+  ✗ Software с коротким TTL
+
+2.7. Critical Chain Project Management (CCPM)
+─────────────────────────────────────────────
+Теория ограничений (TOC) Голдратта. Фокус на ресурсах, а не на
+задачах. Защита от Student Syndrome и Parkinson Law.
+
+Ключевые идеи:
+  • Resource-dependent scheduling
+  • Buffers: project buffer, feeding buffer, resource buffer
+  • Subordination of work to constraint
+  • 50% rule (сокращение оценок, буфер компенсирует)
+
+Когда применять:
+  ✓ Resource-constrained проекты
+  ✓ Многозадачные команды
+  ✓ Длинные проекты с неопределённостью
+
+2.8. Hybrid (Water-Scrum-Fall, SAFe, LeSS)
+───────────────────────────────────────────
+Комбинации подходов. Самый частый случай в enterprise:
+  • Waterfall для governance
+  • Scrum для execution
+  • Kanban для operations
+
+SAFe (Scaled Agile Framework):
+  • Уровни: Team, Program, Large Solution, Portfolio
+  • PI Planning (Program Increment)
+  • ART (Agile Release Train)
+
+═══════════════════════════════════════════════════════════════════
+3. ВЫБОР МЕТОДОЛОГИИ — ДЕРЕВО ПРИНЯТИЯ РЕШЕНИЙ
+═══════════════════════════════════════════════════════════════════
+
+  Проект. Что выбрать?
+
+  1. Требования ЧЁТКИЕ и фиксированные?
+     ├─ ДА → Waterfall или PMBOK
+     │       └─ Регулируемая отрасль? → PMBOK
+     │       └─ Госпроект UK? → PRINCE2
+     │       └─ Простой hardware? → Waterfall
+     └─ НЕТ → Идём дальше
+
+  2. Команда БОЛЬШАЯ (>20 человек)?
+     ├─ ДА → SAFe или PRINCE2
+     └─ НЕТ → Agile
+
+  3. Продукт — SOFTWARE?
+     ├─ ДА → Scrum (если есть продукт-менеджер) или Kanban
+     └─ НЕТ → Lean или PMBOK
+
+  4. Проект ДЛИТЕЛЬНЫЙ (>6 месяцев)?
+     ├─ ДА → CCPM или PMBOK
+     └─ НЕТ → Scrum или Kanban
+
+  5. Что-то OPERATIONAL + PROJECT?
+     └─ Kanban + Scrum hybrid
+
+Матрица быстрого выбора:
+
+| Тип проекта | Рекомендация |
+|---|---|
+| Enterprise IT (внедрение SAP) | PMBOK или PRINCE2 |
+| Software startup | Scrum |
+| Bug fix / support | Kanban |
+| Hardware construction | Waterfall |
+| Process optimization | Lean + Kanban |
+| Resource-constrained R&D | CCPM |
+| Multi-team (>5 команд) | SAFe |
+| State/government project | PMBOK или PRINCE2 |
+| Marketing campaign | Kanban + Scrum |
+| Data migration | PMBOK (high-risk) |
+| AI/ML project | Hybrid (PMBOK + Scrum) |
+| Personal/freelance | Kanban или GTD |
+
+═══════════════════════════════════════════════════════════════════
+4. РЕКОМЕНДУЕМАЯ СТРУКТУРА PM-СКИЛЛОВ В HERMES
+═══════════════════════════════════════════════════════════════════
+
+Учитывая архитектуру Hermes skills, я рекомендую **3-уровневую
+структуру**:
+
+Уровень 1: Универсальный skill `project-management` (gateway)
+Уровень 2: Узкие skills по методологиям (`pm-scrum`, `pm-pmbok`, ...)
+Уровень 3: Skill-утилиты (`pm-risk-register`, `pm-wbs-builder`, ...)
+
+═══════════════════════════════════════════════════════════════════
+5. SKILL `project-management` (УРОВЕНЬ 1)
+═══════════════════════════════════════════════════════════════════
+
+Расположение: ~/.hermes/skills/project-management/
+
+  project-management/
+  ├── SKILL.md                    # gateway: выбор методологии, общие концепции
+  ├── references/
+  │   ├── glossary.md             # общий глоссарий PM (200+ терминов)
+  │   ├── methodology-compare.md  # когда что применять (см. §3 этого файла)
+  │   ├── lifecycle-overview.md   # общий жизненный цикл проекта
+  │   ├── roles-responsibilities.md  # стандартные роли
+  │   └── deliverables-checklist.md  # какие артефакты нужны на каждой фазе
+  ├── templates/
+  │   ├── project-charter.md      # устав проекта
+  │   ├── meeting-notes.md        # протокол встречи
+  │   ├── decision-log.md         # журнал решений
+  │   ├── status-report.md        # статус-отчёт
+  │   ├── lessons-learned.md      # извлечённые уроки
+  │   └── kickoff-agenda.md       # повестка kickoff-встречи
+  ├── scripts/
+  │   └── project_health.py       # метрики здоровья проекта
+  └── assets/
+      └── pmbok-processes.md      # сводка процессов
+
+SKILL.md проекта project-management (структура):
+
+  ---
+  name: project-management
+  description: Универсальный помощник по проектному управлению.
+    Помогает выбрать методологию, создать устав, вести статус,
+    управлять рисками и стейкхолдерами. Использует child-skills
+    pm-pmbok, pm-scrum, pm-kanban для деталей.
+  version: 1.0.0
+  ---
+
+  # project-management
+
+  ## Когда применять
+    - Пользователь запускает новый проект
+    - Запрос содержит «проект», «план», «сроки», «задачи»
+    - Нужна помощь с WBS, RACI, рисками, статусом
+    - Выбор между методологиями
+
+  ## Data files
+    - references/glossary.md — общий глоссарий
+    - references/methodology-compare.md — выбор методологии
+    - templates/project-charter.md — устав проекта
+
+  ## Алгоритм
+    1. Определить тип проекта (см. methodology-compare.md)
+    2. Выбрать подходящую методологию
+    3. Подключить узкий skill (pm-scrum, pm-pmbok, pm-kanban)
+    4. Создать артефакты (устав, WBS, риски)
+    5. Настроить регулярный статус-репорт
+
+  ## Child skills
+    - pm-pmbok — для формальных проектов
+    - pm-scrum — для software/sprint-проектов
+    - pm-kanban — для operational work
+    - pm-risk-register — управление рисками
+    - pm-wbs-builder — построение WBS
+
+  ## VERIFICATION
+    - [ ] Методология выбрана обосновано
+    - [ ] Устав создан и одобрен стейкхолдерами
+    - [ ] Риски идентифицированы (минимум 5)
+    - [ ] Stakeholder map готова
+    - [ ] Communication plan установлен
+
+═══════════════════════════════════════════════════════════════════
+6. SKILL `pm-scrum` (УРОВЕНЬ 2 — узкая методология)
+═══════════════════════════════════════════════════════════════════
+
+  ~/.hermes/skills/pm-scrum/
+  ├── SKILL.md                    # Scrum ceremonies, артефакты, роли
+  ├── references/
+  │   ├── scrum-guide-summary.md  # Scrum Guide 2020
+  │   ├── user-stories.md         # INVEST, примеры
+  │   ├── estimation.md           # story points, planning poker
+  │   ├── metrics.md              # velocity, burndown, burnup
+  │   └── anti-patterns.md        # что ломает Scrum
+  ├── templates/
+  │   ├── user-story.md           # As a/I want/So that
+  │   ├── sprint-backlog.md       # задачи на спринт
+  │   ├── definition-of-done.md   # критерии готовности
+  │   ├── daily-standup.md        # формат дейли
+  │   ├── retrospective.md        # шаблон ретро
+  │   └── product-backlog.md      # шаблон бэклога
+  ├── scripts/
+  │   ├── velocity_calc.py        # расчёт velocity
+  │   ├── burndown_chart.py       # генерация burndown (graphviz)
+  │   └── story_split.py          # разбиение user stories
+  └── assets/
+      └── scrum-cheatsheet.md     # одностраничная шпаргалка
+
+═══════════════════════════════════════════════════════════════════
+7. SKILL `pm-pmbok` (УРОВЕНЬ 2)
+═══════════════════════════════════════════════════════════════════
+
+  ~/.hermes/skills/pm-pmbok/
+  ├── SKILL.md                    # 5 групп, 10 знаний, ключевые артефакты
+  ├── references/
+  │   ├── 5-process-groups.md     # детально по каждой
+  │   ├── 10-knowledge-areas.md   # детально по каждой
+  │   ├── inputs-tools-outputs.md # ITTO матрица
+  │   └── pmbok-vs-prince2.md     # сравнение
+  ├── templates/
+  │   ├── project-charter.md      # устав проекта (PMBOK-формат)
+  │   ├── scope-statement.md      # описание содержания
+  │   ├── wbs.md                  # WBS
+  │   ├── schedule.md             # расписание
+  │   ├── budget.md               # бюджет
+  │   ├── risk-register.md        # реестр рисков
+  │   ├── stakeholder-register.md # реестр стейкхолдеров
+  │   ├── communication-plan.md   # план коммуникаций
+  │   └── status-report.md        # отчёт о статусе
+  └── scripts/
+      ├── wbs_validator.py        # проверка структуры WBS
+      └── earned_value.py         # EVM метрики (PV, EV, AC, CPI, SPI)
+
+═══════════════════════════════════════════════════════════════════
+8. SKILL `pm-kanban` (УРОВЕНЬ 2)
+═══════════════════════════════════════════════════════════════════
+
+  ~/.hermes/skills/pm-kanban/
+  ├── SKILL.md                    # Kanban board, WIP limits, метрики
+  ├── references/
+  │   ├── kanban-guide.md         # основы
+  │   ├── wip-limits.md           # как выбирать
+  │   └── metrics.md              # lead/cycle time, CFD
+  ├── templates/
+  │   ├── board-config.md         # настройка доски
+  │   ├── card-template.md        # карточка задачи
+  │   └── policy.md               # политики команды
+  ├── scripts/
+  │   ├── cfd_chart.py            # Cumulative Flow Diagram
+  │   ├── lead_time_calc.py       # расчёт lead time
+  │   └── throughput.py           # throughput analysis
+  └── assets/
+      └── kanban-cheatsheet.md    # шпаргалка
+
+═══════════════════════════════════════════════════════════════════
+9. SKILL-УТИЛИТЫ (УРОВЕНЬ 3)
+═══════════════════════════════════════════════════════════════════
+
+9.1. pm-risk-register
+──────────────────────
+  ~/.hermes/skills/pm-risk-register/
+  ├── SKILL.md
+  ├── references/
+  │   ├── risk-taxonomy.md        # категории рисков
+  │   ├── probability-impact.md   # матрица P×I
+  │   └── response-strategies.md  # 4 стратегии (avoid, transfer, mitigate, accept)
+  ├── templates/
+  │   └── risk-register.md        # основной шаблон
+  └── scripts/
+      ├── risk_score.py           # расчёт risk score
+      └── risk_heatmap.py         # heatmap (graphviz)
+
+  Когда применять:
+    - Идентификация рисков в проекте
+    - Ежеквартальный review рисков
+    - После major incident (post-mortem)
+
+9.2. pm-wbs-builder
+────────────────────
+  ~/.hermes/skills/pm-wbs-builder/
+  ├── SKILL.md
+  ├── references/
+  │   ├── wbs-rules.md            # 100% rule, deliverables-oriented
+  │   └── decomposition.md        # методы декомпозиции
+  ├── templates/
+  │   └── wbs-tree.md             # древовидный шаблон
+  └── scripts/
+      └── wbs_to_gantt.py         # WBS → Gantt chart
+
+9.3. pm-stakeholder-map
+────────────────────────
+  ~/.hermes/skills/pm-stakeholder-map/
+  ├── SKILL.md
+  ├── references/
+  │   ├── power-interest.md       # матрица Power/Interest
+  │   └── engagement.md           # 5 уровней engagement
+  └── templates/
+      ├── stakeholder-list.md     # список стейкхолдеров
+      └── engagement-plan.md      # план вовлечения
+
+9.4. pm-raci-builder
+─────────────────────
+  RACI = Responsible / Accountable / Consulted / Informed
+
+  ~/.hermes/skills/pm-raci-builder/
+  ├── SKILL.md
+  ├── references/
+  │   ├── raci-rules.md           # правила (1 Accountable на задачу)
+  │   └── raci-variants.md        # RASCI, RACI-VS, DACI
+  ├── templates/
+  │   └── raci-matrix.md          # матрица
+  └── scripts/
+      └── raci_validator.py       # проверка правил
+
+═══════════════════════════════════════════════════════════════════
+10. ОБЩИЕ АРТЕФАКТЫ PM — КАК ИХ ХРАНИТЬ В HERMES
+═══════════════════════════════════════════════════════════════════
+
+10.1. Шаблоны
+─────────────
+  В папке templates/ каждого skill (см. структуру выше).
+
+10.2. Текущее состояние проекта
+────────────────────────────────
+  Вариант A: kanban.db (Hermes Kanban) — встроенный
+  Вариант B: project files в /root/projects/<slug>/
+  Вариант C: SQLite в MEMORY (если небольшой проект)
+
+  Рекомендация:
+    - Маленький проект → MEMORY.md project block
+    - Средний → SQLite в /root/projects/<slug>/project.db
+    - Большой → отдельная БД (Postgres) + интеграция
+
+10.3. История решений
+─────────────────────
+  В каждом проекте — файл DECISIONS.md (или ADR — Architecture
+  Decision Records):
+    /root/projects/<slug>/
+    ├── README.md
+    ├── DECISIONS.md       # журнал решений
+    ├── docs/
+    │   ├── adr/           # Architecture Decision Records
+    │   │   ├── 0001-use-postgres.md
+    │   │   ├── 0002-monolith-vs-microservices.md
+    │   │   └── ...
+    ├── meetings/          # протоколы встреч
+    │   ├── 2026-07-15-kickoff.md
+    │   └── ...
+    └── status/            # статусы проекта
+        ├── 2026-W28.md
+        ├── 2026-W29.md
+        └── ...
+
+10.4. Метрики
+─────────────
+  Дашборд (опционально):
+    - burndown/burnup charts (PNG/HTML)
+    - velocity trends
+    - risk heatmap
+    - budget burn-rate
+
+  Где хранить:
+    /root/projects/<slug>/metrics/
+    ├── weekly/
+    │   ├── 2026-W28.json
+    │   └── ...
+    └── monthly/
+        └── ...
+
+═══════════════════════════════════════════════════════════════════
+11. ИНТЕГРАЦИЯ PM С ДРУГИМИ ИНСТРУМЕНТАМИ HERMES
+═══════════════════════════════════════════════════════════════════
+
+11.1. С kanban.db
+──────────────────
+  На mima_g_01 уже есть Hermes Kanban (kanban.db SQLite).
+  PM-скиллы могут:
+    • Экспортировать WBS → Kanban tasks
+    • Импортировать Kanban status → PM status report
+    • Использовать Kanban WIP limits в Kanban-проектах
+
+11.2. С cron
+─────────────
+  Можно настроить:
+    • Ежедневный daily standup (cron job, отправляет в Telegram)
+    • Еженедельный sprint review reminder
+    • Ежемесячный project status report
+    • Ежеквартальный risk review
+
+11.3. С delegate_task
+──────────────────────
+  PM-ассистент может делегировать:
+    • Multi-project sync (subagent для каждого проекта)
+    • Risk assessment (subagent с pm-risk-register skill)
+    • Report generation (subagent с template)
+
+11.4. С GitHub
+──────────────
+  Для software-проектов:
+    • GitHub Issues → автоматически в Product Backlog
+    • GitHub Projects → Kanban board
+    • GitHub Actions → CI/CD = part of Definition of Done
+
+═══════════════════════════════════════════════════════════════════
+12. РЕКОМЕНДАЦИИ ПО ВНЕДРЕНИЮ
+═══════════════════════════════════════════════════════════════════
+
+Фаза 1 (минимум, сейчас):
+  • Создать skill project-management (gateway) с references/
+  • Создать шаблоны project-charter.md, status-report.md
+  • Связать с существующим kanban.db
+
+Фаза 2 (через 1-2 недели):
+  • Создать pm-scrum и pm-kanban (самые частые)
+  • Добавить pm-risk-register как утилиту
+  • Настроить cron для daily standup
+
+Фаза 3 (когда понадобится):
+  • Создать pm-pmbok для enterprise-проектов
+  • Добавить pm-stakeholder-map, pm-raci-builder
+  • Интеграция с GitHub Projects
+
+Фаза 4 (если много проектов):
+  • Multi-project dashboard
+  • Resource management (CCPM)
+  • Portfolio view
+
+═══════════════════════════════════════════════════════════════════
+13. АНТИ-ПАТТЕРНЫ В PM
+═══════════════════════════════════════════════════════════════════
+
+❌ Анти-паттерн 1: «Использовать Scrum для всего»
+   Scrum требует Product Owner. Без него — Kanban лучше.
+
+❌ Анти-паттерн 2: «WBS на 1000+ задач»
+   Декомпозиция не должна быть глубже 5-7 уровней.
+   Если глубже — разбить на под-проекты.
+
+❌ Анти-паттерн 3: «Игнорировать риски»
+   Реестр рисков обновляется минимум раз в неделю.
+   Top-3 риска — в каждом status report.
+
+❌ Анти-паттерн 4: «Стейкхолдеров не вовлекают»
+   Stakeholder map = обязательный артефакт.
+   Communication plan = обязательный.
+
+❌ Анти-паттерн 5: «Фиксированный scope + Agile»
+   Если scope фиксирован — это Waterfall/PMBOK, не Agile.
+
+❌ Анти-паттерн 6: «Project status раз в месяц»
+   Status report должен быть еженедельным (Scrum) или
+   ежемесячным (PMBOK), не «по запросу».
+
+❌ Анти-паттерн 7: «Lessons learned после проекта»
+   Уроки должны извлекаться ВО ВРЕМЯ проекта (retrospective
+   в Scrum, stage boundaries в PRINCE2).
+
+═══════════════════════════════════════════════════════════════════
+14. ГЛОССАРИЙ (ОСНОВНЫЕ ТЕРМИНЫ)
+═══════════════════════════════════════════════════════════════════
+
+  Sprint              — итерация в Scrum (1-4 недели)
+  Story Point         — относительная оценка сложности задачи
+  Velocity            — количество story points за спринт
+  Burndown            — график оставшейся работы по дням спринта
+  WBS                 — Work Breakdown Structure, иерархия задач
+  RACI                — Responsible/Accountable/Consulted/Informed
+  Stakeholder         — заинтересованная сторона проекта
+  Scope               — содержание работ проекта
+  Baseline            — утверждённый план (scope/schedule/cost)
+  Change Request      — запрос на изменение baseline
+  Risk Register       — реестр рисков проекта
+  Critical Path       — последовательность задач, определяющая срок
+  EVM                 — Earned Value Management
+  PV/EV/AC            — Planned/Actual/Earned Value
+  CPI/SPI             — Cost/Schedule Performance Index
+  Definition of Done  — критерии готовности задачи
+  Increment           — потенциально поставляемый продукт
+  Kaizen              — непрерывное улучшение (Lean)
+  WIP Limit           — Work In Progress limit
+  Lead Time           — время от запроса до поставки
+  Cycle Time          — время от старта работы до завершения
+  CFD                 — Cumulative Flow Diagram
+
+═══════════════════════════════════════════════════════════════════
+15. ЗАКЛЮЧЕНИЕ
+═══════════════════════════════════════════════════════════════════
+
+PM-скиллы в Hermes — это способ формализовать знания о
+проектном управлении и сделать их переиспользуемыми.
+
+Рекомендую начать с:
+  1. project-management (gateway)
+  2. pm-scrum (самый частый кейс для software)
+  3. pm-kanban (для operational work)
+  4. pm-risk-register (универсальная утилита)
+
+И только если реально нужны enterprise-проекты:
+  5. pm-pmbok
+  6. pm-stakeholder-map
+  7. pm-wbs-builder
+  8. pm-raci-builder
+
+Помните: лучшая методология — та, которая подходит под
+конкретный проект и команду, а не та, которая «правильная».
+
+═══════════════════════════════════════════════════════════════════
+Конец документа.
+Версия: 2026-07-17
+Hermes Agent v0.18.0 на mima_g_01
+═══════════════════════════════════════════════════════════════════

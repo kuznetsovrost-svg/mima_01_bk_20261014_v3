@@ -1,0 +1,249 @@
+================================================================
+СПИСОК СКИЛЛОВ HERMES AGENT
+================================================================
+
+Профиль:    fst-control
+Путь:       ~/.hermes/profiles/fst-control/skills/
+Всего:      78
+Категорий:  14
+Дата:       2026-08-03
+
+Формат: <категория>/<имя> — <назначение>
+
+================================================================
+
+
+### Базовые (без категории) (core) — 5 шт.
+
+• core/computer-use
+  Назначение: Drive the user's desktop in the background — clicking, typing, scrolling, dragging, and switching virtual desktops / Spaces. Cross-platform: macOS, Windows, Linux. Works with any tool-capable model. Load this skill whenever the computer_use tool is available.
+• core/dogfood
+  Назначение: Exploratory QA of web apps: find bugs, evidence, reports.
+• core/hermes-gateway-troubleshooting
+  Назначение: Use when a Hermes messaging gateway (Telegram, Discord, Slack, etc.) is misbehaving — startup fails, messages don't reach the bot, delivery is silent, or the user reports 'the bot doesn't respond'. Covers the diagnostic recipe, the .env-vs-config.yaml source-of-truth trap, and per-platform log signatures. Load for any 'why isn't my bot working' task.
+• core/mcp-server-probing
+  Назначение: Use when an MCP tool returns an unexpected error, the documented parameters don't work, you need to discover what a server actually exposes, or the wired-up tools misbehave. Covers direct SSE probing via curl, reading Pydantic validation errors to discover real parameter names, the mcp-session-id header dance, and the verify-after-write pattern. Loads when any mcp__<server>__* tool fails or when you need to understand a server's true schema vs its advertised one.
+• core/yuanbao
+  Назначение: Yuanbao (元宝) groups: @mention users, query info/members.
+
+
+### Автономные AI-агенты (autonomous-ai-agents) — 4 шт.
+
+• autonomous-ai-agents/claude-code
+  Назначение: Delegate coding to Claude Code CLI (features, PRs).
+• autonomous-ai-agents/codex
+  Назначение: Delegate coding to OpenAI Codex CLI (features, PRs).
+• autonomous-ai-agents/hermes-agent
+  Назначение: Configure, extend, or contribute to Hermes Agent.
+• autonomous-ai-agents/opencode
+  Назначение: Delegate coding to OpenCode CLI (features, PR review).
+
+
+### Креатив / визуал (creative) — 16 шт.
+
+• creative/architecture-diagram
+  Назначение: Dark-themed SVG architecture/cloud/infra diagrams as HTML.
+• creative/ascii-art
+  Назначение: ASCII art: pyfiglet, cowsay, boxes, image-to-ascii.
+• creative/ascii-video
+  Назначение: ASCII video: convert video/audio to colored ASCII MP4/GIF.
+• creative/baoyu-infographic
+  Назначение: Infographics: 21 layouts x 21 styles.
+• creative/claude-design
+  Назначение: Design one-off HTML artifacts (landing, deck, prototype).
+• creative/comfyui
+  Назначение: Generate images, video, and audio with ComfyUI — install, launch, manage nodes/models, run workflows with parameter injection. Uses the official comfy-cli for lifecycle and direct REST/WebSocket API for execution.
+• creative/design-md
+  Назначение: Author/validate/export Google's DESIGN.md token spec files.
+• creative/excalidraw
+  Назначение: Hand-drawn Excalidraw JSON diagrams (arch, flow, seq).
+• creative/humanizer
+  Назначение: Humanize text: strip AI-isms and add real voice.
+• creative/manim-video
+  Назначение: Manim CE animations: 3Blue1Brown math/algo videos.
+• creative/p5js
+  Назначение: p5.js sketches: gen art, shaders, interactive, 3D.
+• creative/popular-web-designs
+  Назначение: 54 real design systems (Stripe, Linear, Vercel) as HTML/CSS.
+• creative/pretext
+  Назначение: Use when building creative browser demos with @chenglou/pretext — DOM-free text layout for ASCII art, typographic flow around obstacles, text-as-geometry games, kinetic typography, and text-powered generative art. Produces single-file HTML demos by default.
+• creative/sketch
+  Назначение: Throwaway HTML mockups: 2-3 design variants to compare.
+• creative/songwriting-and-ai-music
+  Назначение: Songwriting craft and Suno AI music prompts.
+• creative/touchdesigner-mcp
+  Назначение: Control a running TouchDesigner instance via twozero MCP — create operators, set parameters, wire connections, execute Python, build real-time visuals. 36 native tools.
+
+
+### Data Science (data-science) — 1 шт.
+
+• data-science/jupyter-live-kernel
+  Назначение: Iterative Python via live Jupyter kernel (hamelnb).
+
+
+### Email (email) — 1 шт.
+
+• email/himalaya
+  Назначение: Himalaya CLI: IMAP/SMTP email from terminal.
+
+
+### GitHub (github) — 6 шт.
+
+• github/codebase-inspection
+  Назначение: Inspect codebases w/ pygount: LOC, languages, ratios.
+• github/github-auth
+  Назначение: GitHub auth setup: HTTPS tokens, SSH keys, gh CLI login.
+• github/github-code-review
+  Назначение: Review PRs: diffs, inline comments via gh or REST.
+• github/github-issues
+  Назначение: Create, triage, label, assign GitHub issues via gh or REST.
+• github/github-pr-workflow
+  Назначение: GitHub PR lifecycle: branch, commit, open, CI, merge.
+• github/github-repo-management
+  Назначение: Clone/create/fork repos; manage remotes, releases.
+
+
+### Медиа (media) — 4 шт.
+
+• media/gif-search
+  Назначение: Search/download GIFs from Tenor via curl + jq.
+• media/heartmula
+  Назначение: HeartMuLa: Suno-like song generation from lyrics + tags.
+• media/songsee
+  Назначение: Audio spectrograms/features (mel, chroma, MFCC) via CLI.
+• media/youtube-content
+  Назначение: YouTube transcripts to summaries, threads, blogs.
+
+
+### MLOps (mlops) — 7 шт.
+
+• mlops/audiocraft-audio-generation
+  Назначение: AudioCraft: MusicGen text-to-music, AudioGen text-to-sound.
+• mlops/evaluating-llms-harness
+  Назначение: lm-eval-harness: benchmark LLMs (MMLU, GSM8K, etc.).
+• mlops/huggingface-hub
+  Назначение: HuggingFace hf CLI: search/download/upload models, datasets.
+• mlops/llama-cpp
+  Назначение: llama.cpp local GGUF inference + HF Hub model discovery.
+• mlops/segment-anything-model
+  Назначение: SAM: zero-shot image segmentation via points, boxes, masks.
+• mlops/serving-llms-vllm
+  Назначение: vLLM: high-throughput LLM serving, OpenAI API, quantization.
+• mlops/weights-and-biases
+  Назначение: W&B: log ML experiments, sweeps, model registry, dashboards.
+
+
+### Заметки (note-taking) — 1 шт.
+
+• note-taking/obsidian
+  Назначение: Read, search, create, and edit notes in the Obsidian vault.
+
+
+### Продуктивность (productivity) — 17 шт.
+
+• productivity/airtable
+  Назначение: Airtable REST API via curl. Records CRUD, filters, upserts.
+• productivity/chat-history-export
+  Назначение: Use when the user asks to export, dump, archive, or audit their own chat history / requests / messages in a Hermes profile — 'собери мои обращения через бот', 'покажи всё что я писал', 'export my messages', 'audit my requests', 'дамп переписки', 'мои запросы за всё время'. Bypasses session_search truncation by querying the profile's SQLite state.db directly. Loads when the conversation is about extracting historical user messages or generating a chronological markdown of past requests, especially when session_search returns truncated first/last-20 messages.
+• productivity/fst-pmpractice
+  Назначение: Use when the user asks anything about Форсайт ПМ Практики, ИСУП «Форсайт», PMForesight, project management practice, project artifacts, tasks, deadlines, project plans, portfolio, or wants to call corporate PM tools via the fst-pmpractice MCP server. Provides the Russian-language workflows for MCP tools registered as mcp__fst_pmpractice__*.
+• productivity/google-workspace
+  Назначение: Gmail, Calendar, Drive, Docs, Sheets via gws CLI or Python.
+• productivity/maps
+  Назначение: Geocode, POIs, routes, timezones via OpenStreetMap/OSRM.
+• productivity/nano-pdf
+  Назначение: Edit PDF text/typos/titles via nano-pdf CLI (NL prompts).
+• productivity/notion
+  Назначение: Notion API + ntn CLI: pages, databases, markdown, Workers.
+• productivity/ocr-and-documents
+  Назначение: Extract text from PDFs/scans (pymupdf, marker-pdf).
+• productivity/petdex
+  Назначение: Install and select animated petdex mascots for Hermes.
+• productivity/powerpoint
+  Назначение: Create, read, edit .pptx decks, slides, notes, templates.
+• productivity/project-completeness-check
+  Назначение: Use when the user asks to verify/check the completeness of a Foresight PM Practice project. Generates a fixed-size table of indicators (Owner, Leader, Паспорт, Паспорт на стадии, Трудозатраты актуальны, Корректность графика платежей) with Да/Нет/категория verdicts.
+• productivity/project-effort-plan
+  Назначение: Plan/schedule effort hours for a Foresight PM Practice project on a date/Point. Loads when user says 'запланируй часы', 'plan hours', 'назначь ресурс', 'спланируй загрузку', 'resource planning', 'forecast effort'. Reads ResourcePlanningKp (forecast), needs PointId.
+• productivity/project-effort-write
+  Назначение: Log/report worked hours for a Foresight PM Practice project on a date. Loads when user says 'запиши трудозатраты', 'списать часы', 'worked on project X for Y hours'. Reads ResourcePlanning (fact), upserts for current user.
+• productivity/project-payment-schedule
+  Назначение: See payment schedule (график платежей) for a Foresight PM Practice project. Reads Payments filtered by Activities, groups by month. Also covers correctness check (сверка план/факт актов и оплат).
+• productivity/project-search
+  Назначение: Find a Foresight PM Practice project by name/code/ProjectId. Searches via get_view(Project, MyProject/AllProject), filters by Code or Name substring.
+• productivity/project-timing-control
+  Назначение: Foresight PM Practice project health by schedule — overdue КТ, Красный/Жёлтый/Синий classification, reports aggregate project status (БОЛЕН / ТРЕБУЕТ ВНИМАНИЯ / ЗДОРОВ).
+• productivity/teams-meeting-pipeline
+  Назначение: Operate the Teams meeting summary pipeline via Hermes CLI — summarize meetings, inspect pipeline status, replay jobs, manage Microsoft Graph subscriptions.
+
+
+### Research (research) — 5 шт.
+
+• research/arxiv
+  Назначение: Search arXiv papers by keyword, author, category, or ID.
+• research/blogwatcher
+  Назначение: Monitor blogs and RSS/Atom feeds via blogwatcher-cli tool.
+• research/llm-wiki
+  Назначение: Karpathy's LLM Wiki: build/query interlinked markdown KB.
+• research/polymarket
+  Назначение: Query Polymarket: markets, prices, orderbooks, history.
+• research/research-paper-writing
+  Назначение: Write ML papers for NeurIPS/ICML/ICLR: design→submit.
+
+
+### Умный дом (smart-home) — 1 шт.
+
+• smart-home/openhue
+  Назначение: Control Philips Hue lights, scenes, rooms via OpenHue CLI.
+
+
+### Соцсети (social-media) — 1 шт.
+
+• social-media/xurl
+  Назначение: X/Twitter via xurl CLI: post, search, DM, media, v2 API.
+
+
+### Software Development (software-development) — 9 шт.
+
+• software-development/hermes-agent-skill-authoring
+  Назначение: Author in-repo SKILL.md: frontmatter, validator, structure, and writing-quality principles.
+• software-development/node-inspect-debugger
+  Назначение: Debug Node.js via --inspect + Chrome DevTools Protocol CLI.
+• software-development/plan
+  Назначение: Plan mode: write an actionable markdown plan to .hermes/plans/, no execution. Bite-sized tasks, exact paths, complete code.
+• software-development/python-debugpy
+  Назначение: Debug Python: pdb REPL + debugpy remote (DAP).
+• software-development/requesting-code-review
+  Назначение: Pre-commit review: security scan, quality gates, auto-fix.
+• software-development/simplify-code
+  Назначение: Parallel 3-agent cleanup of recent code changes.
+• software-development/spike
+  Назначение: Throwaway experiments to validate an idea before build.
+• software-development/systematic-debugging
+  Назначение: 4-phase root cause debugging: understand bugs before fixing.
+• software-development/test-driven-development
+  Назначение: TDD: enforce RED-GREEN-REFACTOR, tests before code.
+
+
+================================================================
+ИТОГО ПО КАТЕГОРИЯМ
+================================================================
+
+Категория                      Кол-во
+--------------------------------------
+Базовые (без категории)             5
+Автономные AI-агенты                4
+Креатив / визуал                   16
+Data Science                        1
+Email                               1
+GitHub                              6
+Медиа                               4
+MLOps                               7
+Заметки                             1
+Продуктивность                     17
+Research                            5
+Умный дом                           1
+Соцсети                             1
+Software Development                9
+--------------------------------------
+ВСЕГО                              78

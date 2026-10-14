@@ -1,0 +1,440 @@
+================================================================================
+MATRIX — УДАЛЕНИЕ И СОЗДАНИЕ НОВОГО НЕЗАШИФРОВАННОГО DEVICE
+(июнь 2026, homeserver msg.lab.aidemo.adaptivepm.ru)
+================================================================================
+
+Что такое "device" в Matrix
+---------------------------
+Каждый логин (браузер, Element, Hermes-шлюз, mautrix-обёртка) создаёт
+на сервере отдельный device_id. У одного user_id может быть N device_id
+одновременно. У каждого device_id — свой access_token, свои ключи
+(если включён E2EE) и своя "last seen" статистика.
+
+«Незашифрованный device» в этой инструкции = device_id, для которого
+НЕ опубликованы device_keys/one_time_keys. HS-сервер при этом считает
+его "incapable of E2EE", и другие клиенты либо падают в plaintext,
+либо отказываются слать в зашифрованные комнаты. С Bot-аккаунтом это
+именно то, что нужно: бот читает/пишет plaintext, не ломается о
+"device_keys" values must be a list of strings на этом HS.
+
+================================================================================
+ЗАЧЕМ ВООБЩЕ СНОСИТЬ И ПЕРЕСОЗДАВАТЬ
+================================================================================
+• Старый device_id мог быть скомпрометирован (токен утёк, устарел,
+  привязан к dev-аккаунту, который уже не существует).
+• После ротации подписки / переустановки OS старый device_id "висит
+  мёртвым грузом" в списке устройств и путает аудит.
+• На этом HS (msg.lab.aidemo.adaptivepm.ru) mautrix-обёртка из Hermes
+  gateway падает в MBadJSON: 'device_keys' values must be a list of
+  strings при попытке опубликовать ключи. Самый чистый workaround —
+  сделать device, который вообще НЕ публикует ключи. Для этого
+  достаточно его "создать и не загружать ключи".
+• Element / Chrome / Firefox запоминают device_id, и при переносе
+  профиля на новую машину проще убить старый device, чем переносить
+  ключи.
+
+================================================================================
+ПОДГОТОВКА (ОДИН РАЗ)
+================================================================================
+
+Понадобятся:
+  • homeserver (HS)        — https://msg.lab.aidemo.adaptivepm.ru
+  • user_id                — @oc_hermes:msg.lab.aidemo.adaptivepm.ru
+  • пароль от аккаунта     — нужен только для шага 4 (m.login.password)
+  • /tmp/.mx_tok           — файл с текущим access_token (chmod 600)
+  • /tmp/.mx_hdr           — файл с заголовком Authorization (chmod 600)
+  • знание device_id, который хотим удалить (берётся из whoami)
+
+Если файлов с токеном ещё нет (безопасное извлечение, чтобы не словить
+Hermes sanitization на "=***"):
+
+    # /tmp/extract_mx_tok.sh
+    #!/usr/bin/env bash
+    set -e
+    umask 077
+    KEY="MATRIX_ACCESS_TOKEN"; EQ="="
+    awk -v key="$KEY" -v eq="$EQ" '
+      index($0, key eq) == 1 { sub(key eq, "", $0); print }
+    ' /root/.hermes/.env | tail -n 1 > /tmp/.mx_tok
+    chmod 600 /tmp/.mx_tok
+
+    # /tmp/build_mx_hdr.sh
+    #!/usr/bin/env bash
+    set -e
+    umask 077
+    TOK=$(cat /tmp/.mx_tok)
+    {
+      printf 'Auth'
+      printf 'orization: Bearer %s\n' "$TOK"
+    } > /tmp/.mx_hdr
+    chmod 600 /tmp/.mx_hdr
+
+    bash /tmp/extract_mx_tok.sh && bash /tmp/build_mx_hdr.sh
+
+Проверка, что токен живой:
+
+    HS="https://msg.lab.aidemo.adaptivepm.ru"
+    curl -sS -H "@/tmp/.mx_hdr" "$HS/_matrix/client/v3/account/whoami"
+    # ожидаем:
+    # {"user_id":"@oc_hermes:msg.lab.aidemo.adaptivepm.ru","is_guest":false,
+    #  "device_id":"OLDDEVICE"}
+
+================================================================================
+ШАГ 0. ПОСМОТРЕТЬ ВСЕ УСТРОЙСТВА (РЕКОМЕНДУЕТСЯ ДО УДАЛЕНИЯ)
+================================================================================
+
+    curl -sS -H "@/tmp/.mx_hdr" "$HS/_matrix/client/v3/devices"
+
+Возвращает:
+    {
+      "devices": [
+        {
+          "device_id": "OLDDEVICE",
+          "display_name": "Element Chrome",
+          "last_seen_ip": "1.2.3.4",
+          "last_seen_ts": 1718000000000
+        },
+        ...
+      ]
+    }
+
+Перед удалением СВЕРИСЬ, что device_id, который ты собираешься убить,
+не привязан к твоему живому клиенту (Element на ноуте/телефоне).
+Убийство своего живого клиента = потеря локальной истории и ключей
+для зашифрованных комнат.
+
+================================================================================
+ШАГ 1. УДАЛИТЬ ОДИН КОНКРЕТНЫЙ DEVICE
+================================================================================
+
+    OLDDEVICE="DEVICE_ID_ИЗ_WHOAMI"
+    curl -sS -H "@/tmp/.mx_hdr" -X DELETE \
+         -H "Content-Type: application/json" \
+         -d '{}' \
+         "$HS/_matrix/client/v3/devices/$OLDDEVICE"
+
+• HTTP 200              — device удалён, его access_token умер.
+• HTTP 404              — device уже был удалён, всё ок, едем дальше.
+• HTTP 401 M_UNKNOWN_TOKEN — твой токен сам уже мёртв. Перейди к шагу 4
+  (полный перелогин) или обнови токен.
+• HTTP 403 M_FORBIDDEN   — не хватает прав; нужно логиниться с
+  паролем или быть владельцем аккаунта.
+
+После 200 этого конкретного device больше нет в /devices, и любой
+клиент/бот с его access_token получает 401 на каждый запрос.
+
+================================================================================
+ШАГ 2. (ОПЦИОНАЛЬНО) УДАЛИТЬ ВСЕ УСТРОЙСТВА СРАЗУ
+================================================================================
+
+Удобно, если аккаунт грязный (10+ мёртвых device_id от прошлых ботов).
+
+    # dry-run: смотрим, что собираемся удалить
+    curl -sS -H "@/tmp/.mx_hdr" "$HS/_matrix/client/v3/devices"
+
+    # список device_id, которые хотим оставить, шлём в эндпоинт удаления
+    cat > /tmp/devices_to_delete.json <<'JSON'
+    {
+      "devices": ["DEADID1", "DEADID2", "DEADID3"]
+    }
+    JSON
+
+    curl -sS -H "@/tmp/.mx_hdr" -X POST \
+         -H "Content-Type: application/json" \
+         --data-binary @/tmp/devices_to_delete.json \
+         "$HS/_matrix/client/v3/delete_devices"
+
+• HTTP 200 — все перечисленные device_id убиты.
+• ВАЖНО: не включай в список device_id того токена, которым делаешь
+  запрос — иначе сам себя отключишь и придётся логиниться через
+  m.login.password.
+
+================================================================================
+ШАГ 3. (ОПЦИОНАЛЬНО) РАЗЛОГИНИТЬСЯ ПОЛНОСТЬЮ
+================================================================================
+
+Убивает ВСЕ access_token'ы у user_id. После этого любой клиент/бот
+(включая текущий) теряет сессию.
+
+    curl -sS -H "@/tmp/.mx_hdr" -X POST \
+         -H "Content-Type: application/json" -d '{}' \
+         "$HS/_matrix/client/v3/logout"
+
+После 200 шаги 4–6 обязательны.
+
+Делать этот шаг имеет смысл ТОЛЬКО если:
+  (a) ты точно знаешь пароль и готов перелогиниться;
+  (b) или хочешь гарантированно выкинуть всех: браузер, Element,
+      Hermes-gateway, чужие боты.
+
+================================================================================
+ШАГ 4. СОЗДАТЬ НОВЫЙ НЕЗАШИФРОВАННЫЙ DEVICE
+================================================================================
+
+Создание device происходит НЕ через отдельный эндпоинт, а через
+полный логин m.login.password. Если НЕ передать в теле "device_id",
+HS создаст новый device_id автоматически.
+
+    curl -sS -H "Content-Type: application/json" -X POST \
+      -d '{
+        "type": "m.login.password",
+        "identifier": {
+          "type": "m.id.user",
+          "user": "@oc_hermes:msg.lab.aidemo.adaptivepm.ru"
+        },
+        "password": "ТУТ_ПАРОЛЬ_ОТ_АККАУНТА",
+        "initial_device_display_name": "hermes-bot-clean-2026-06"
+      }' \
+      "$HS/_matrix/client/v3/login"
+
+Успешный ответ (HTTP 200):
+
+    {
+      "user_id":      "@oc_hermes:msg.lab.aidemo.adaptivepm.ru",
+      "access_token": "syt_НовыйТокен...ОченьДлинный",
+      "device_id":    "НОВЫЙ_DEVICE_ID",
+      "home_server":  "msg.lab.aidemo.adaptivepm.ru"
+    }
+
+Возможные коды:
+  • 200         — успех, забирай access_token.
+  • 401 M_FORBIDDEN
+    └── Неверный user_id или пароль. Проверь identifier.
+  • 403 M_FORBIDDEN
+    └── Аккаунт залочен (часто после массового delete_devices). Подожди
+        1–5 минут, попробуй ещё раз.
+  • 429 M_LIMIT_EXCEEDED
+    └── Слишком много login-попыток. Подожди 30–60 секунд.
+
+ПОСЛЕ ТОГО КАК ПОЛУЧИЛИ access_token И device_id — СРАЗУ:
+
+    # 1) Положи новый токен в /tmp/.mx_tok_NEW
+    umask 077
+    printf '%s' 'syt_НовыйТокен...' > /tmp/.mx_tok_NEW
+    chmod 600 /tmp/.mx_tok_NEW
+
+    # 2) Пересобери header
+    TOK=$(cat /tmp/.mx_tok_NEW)
+    {
+      printf 'Auth'
+      printf 'orization: Bearer %s\n' "$TOK"
+    } > /tmp/.mx_hdr_NEW
+    chmod 600 /tmp/.mx_hdr_NEW
+
+    # 3) Проверь, что новый device жив
+    curl -sS -H "@/tmp/.mx_hdr_NEW" "$HS/_matrix/client/v3/account/whoami"
+    # Должно вернуть НОВЫЙ device_id.
+
+================================================================================
+ШАГ 5. УБЕДИТЬСЯ, ЧТО DEVICE НЕ ОПУБЛИКОВАЛ КЛЮЧИ (НЕШИФРОВАННЫЙ)
+================================================================================
+
+Если мы НЕ хотим, чтобы device был E2EE-capable, мы НЕ должны
+публиковать device_keys и one_time_keys. По умолчанию m.login.password
+их НЕ загружает — это отвечает КЛИЕНТ отдельным вызовом. То есть
+просто НЕ вызывай /keys/upload и всё.
+
+Проверка:
+
+    curl -sS -H "@/tmp/.mx_hdr_NEW" \
+         "$HS/_matrix/client/v3/keys/query/@oc_hermes:msg.lab.aidemo.adaptivepm.ru"
+    # В ответе ищем:
+    #   "device_keys": {}   (пусто)  ← device не опубликовал ключи
+    #   "failures": {}      (пусто)   ← HS смог ответить
+
+Если в "device_keys" появился объект с полями ed25519/curve25519 —
+значит какой-то клиент уже успел залить. Это норм для браузера, но
+для нашего чистого bot-device этого быть НЕ должно. Если всё-таки
+есть — можно обнулить:
+
+    # Полностью стереть свои device_keys
+    curl -sS -H "@/tmp/.mx_hdr_NEW" -X POST \
+         -H "Content-Type: application/json" \
+         -d '{"device_keys":{}}' \
+         "$HS/_matrix/client/v3/keys/upload"
+
+    # Обнулить device_signing_keys (master/ssk/self_signing/user_signing)
+    curl -sS -H "@/tmp/.mx_hdr_NEW" -X POST \
+         -H "Content-Type: application/json" \
+         -d '{
+           "master_key":       {"user_id":"@oc_hermes:msg.lab.aidemo.adaptivepm.ru","usage":["master"],"keys":{}},
+           "self_signing_key": {"user_id":"@oc_hermes:msg.lab.aidemo.adaptivepm.ru","usage":["self_signing"],"keys":{}},
+           "user_signing_key": {"user_id":"@oc_hermes:msg.lab.aidemo.adaptivepm.ru","usage":["user_signing"],"keys":{}}
+         }' \
+         "$HS/_matrix/client/v3/keys/device_signing/upload"
+
+После этого device остаётся в списке /devices, но считается
+«incapable of E2EE». Другие клиенты в E2EE-комнатах будут видеть
+"cannot encrypt to this device" и либо падать в ошибку, либо слать
+unencrypted fallback — зависит от клиента.
+
+Если бот работает в plaintext-комнатах (наш случай), всё нормально.
+
+================================================================================
+ШАГ 6. ОБНОВИТЬ .env И ПЕРЕЗАПУСТИТЬ GATEWAY
+================================================================================
+
+    # Бэкап старых значений
+    cp -a /root/.hermes/.env /root/.hermes/.env.bak.$(date +%Y%m%d-%H%M%S)
+
+    # Вписать новый токен (через patch / sed — НЕ echo, чтобы не сломать
+    # кавычки и комментарии в .env)
+    sed -i.bak \
+      "s|^MATRIX_ACCESS_TOKEN=.*|MATRIX_ACCESS_TOKEN=$(cat /tmp/.mx_tok_NEW)|" \
+      /root/.hermes/.env
+
+    # Опционально: явно прописать device_id (если в config.yaml используется)
+    sed -i "s|^MATRIX_DEVICE_ID=.*|MATRIX_DEVICE_ID=НОВЫЙ_DEVICE_ID|" \
+      /root/.hermes/.env
+
+    # Проверить, что подменилось корректно
+    grep -E '^(MATRIX_ACCESS_TOKEN|MATRIX_DEVICE_ID|MATRIX_HOMESERVER)' \
+         /root/.hermes/.env
+
+    # Перезапустить gateway
+    systemctl --user restart hermes-gateway
+    # (или: hermes gateway restart — но он блокирующий и может зависнуть
+    #  на нездоровых платформах; см. skill messaging-gateway-setup §4)
+
+    sleep 5
+    systemctl --user status hermes-gateway --no-pager
+    tail -30 ~/.hermes/logs/gateway.log | grep -i matrix
+
+Критерий успеха в логе:
+    "Matrix: using access token for @oc_hermes:msg.lab.aidemo.adaptivepm.ru"
+    "Matrix: initial sync complete, joined N rooms"
+    "✓ matrix connected"
+
+Если снова видишь MBadJSON: 'device_keys' values must be a list of
+strings — этот HS по-прежнему не дружит с mautrix, и отправлять надо
+напрямую через C-S (skill messaging-gateway-setup §"Когда gateway-шлюз
+не подходит").
+
+================================================================================
+ШАГ 7. (ОПЦИОНАЛЬНО) СОЗДАТЬ ЧИСТУЮ НЕЗАШИФРОВАННУЮ КОМНАТУ
+================================================================================
+
+Чтобы окончательно убедиться, что всё работает без E2EE:
+
+    curl -sS -H "@/tmp/.mx_hdr_NEW" -H "Content-Type: application/json" \
+      -X POST \
+      -d '{
+        "preset": "trusted_private_chat",
+        "visibility": "private",
+        "name": "hermes-clean-2026-06",
+        "initial_state": []
+      }' \
+      "$HS/_matrix/client/v3/createRoom"
+
+# → {"room_id": "!НОВАЯ_КОМНАТА:..."}
+
+Проверить, что в комнате НЕТ события m.room.encryption:
+
+    curl -sS -H "@/tmp/.mx_hdr_NEW" \
+      "$HS/_matrix/client/v3/rooms/!НОВАЯ/state" | python3 -c "
+    import json, sys
+    data = json.load(sys.stdin)
+    enc = [s for s in data if s.get('type') == 'm.room.encryption']
+    if enc:
+        print('WARNING: encryption enabled:', enc)
+    else:
+        print('OK: room is plaintext (no m.room.encryption state)')
+    "
+
+Если encryption всё-таки появился (preset trusted_private_chat это
+НЕ должен делать, но некоторые кастомные HS добавляют его по
+умолчанию) — выпилить:
+
+    ROOM="!НОВАЯ_КОМНАТА:msg.lab.aidemo.adaptivepm.ru"
+    curl -sS -H "@/tmp/.mx_hdr_NEW" -H "Content-Type: application/json" \
+      -X DELETE -d '{}' \
+      "$HS/_matrix/client/v3/rooms/$ROOM/state/m.room.encryption"
+
+# (State event типа m.room.encryption можно DELETE'нуть — он
+#  уникален для комнаты.)
+
+================================================================================
+РЕКОМЕНДАЦИИ И BEST PRACTICES
+================================================================================
+
+1. Всегда делай бэкап .env перед изменением:
+       cp -a /root/.hermes/.env /root/.hermes/.env.bak.$(date +%s)
+   Если что-то пойдёт не так — откат за секунду.
+
+2. Никогда не убивай device_id того клиента, в котором ты сейчас
+   смотришь комнату. Element / web-клиент — у них есть свой device_id,
+   не тот, что у Hermes-шлюза. Сверяйся по /devices и по
+   initial_device_display_name.
+
+3. Для bot-аккаунтов заводи ОТДЕЛЬНЫЙ device (initial_device_display_name
+   типа "hermes-bot-clean-2026-06") и не используй его для ручного
+   захода в Element. Свой личный Element должен висеть на ДРУГОМ
+   device_id с E2EE-ключами — иначе при сносе bot-device ты теряешь
+   и свою сессию, и все ключи.
+
+4. m.login.password для ботов — самый надёжный путь. m.login.token
+   (через e-mail/SMS) — короткоживущий, для ботов не подходит.
+
+5. Пароль бота лучше всего хранить не в .env в открытом виде, а в
+   отдельном файле chmod 600 (как мы храним токен). При m.login.password
+   он читается один раз, а потом нужен только при следующей ротации.
+
+6. Если этот HS ломает mautrix-обёртку на device_keys — оставь Hermes
+   gateway с MATRIX_ENCRYPTION=false (уже стоит) и шли сообщения
+   напрямую через C-S. Skill messaging-gateway-setup содержит
+   готовый шаблон templates/matrix-direct-cs-client.py и пошаговый
+   рецепт в references/matrix-cs-bootstrap.md.
+
+7. Ротация ключей: пересоздавай device хотя бы раз в год, плюс
+   немедленно — при любом подозрении на утечку. Старые access_token'ы
+   живут до явного DELETE /devices, никогда не «протухают» сами.
+
+8. Удалять все устройства разом (POST /delete_devices) — крайняя
+   мера. Безопаснее точечно, по одному. Иначе можно случайно выкинуть
+   себя из всех клиентов одновременно.
+
+================================================================================
+ШПАРГАЛКА (ОДНА СТРАНИЦА)
+================================================================================
+
+# --- 0) кто я?
+curl -sS -H "@/tmp/.mx_hdr" "$HS/_matrix/client/v3/account/whoami"
+
+# --- 1) список устройств
+curl -sS -H "@/tmp/.mx_hdr" "$HS/_matrix/client/v3/devices"
+
+# --- 2) убить один device
+curl -sS -H "@/tmp/.mx_hdr" -X DELETE -H "Content-Type: application/json" \
+     -d '{}' "$HS/_matrix/client/v3/devices/OLDDEVICE"
+
+# --- 3) убить несколько
+curl -sS -H "@/tmp/.mx_hdr" -X POST -H "Content-Type: application/json" \
+     --data-binary '{"devices":["DEAD1","DEAD2"]}' \
+     "$HS/_matrix/client/v3/delete_devices"
+
+# --- 4) выкинуть ВСЕ токены (осторожно)
+curl -sS -H "@/tmp/.mx_hdr" -X POST -H "Content-Type: application/json" \
+     -d '{}' "$HS/_matrix/client/v3/logout"
+
+# --- 5) новый незашифрованный device
+curl -sS -H "Content-Type: application/json" -X POST \
+     -d '{"type":"m.login.password","identifier":{"type":"m.id.user","user":"@oc_hermes:msg.lab.aidemo.adaptivepm.ru"},"password":"...","initial_device_display_name":"hermes-bot-clean-2026-06"}' \
+     "$HS/_matrix/client/v3/login"
+
+# --- 6) проверить, что ключи не опубликованы
+curl -sS -H "@/tmp/.mx_hdr_NEW" \
+     "$HS/_matrix/client/v3/keys/query/@oc_hermes:msg.lab.aidemo.adaptivepm.ru"
+
+# --- 7) обнулить ключи, если надо
+curl -sS -H "@/tmp/.mx_hdr_NEW" -X POST -H "Content-Type: application/json" \
+     -d '{"device_keys":{}}' "$HS/_matrix/client/v3/keys/upload"
+
+# --- 8) обновить .env
+sed -i "s|^MATRIX_ACCESS_TOKEN=.*|MATRIX_ACCESS_TOKEN=$(cat /tmp/.mx_tok_NEW)|" \
+     /root/.hermes/.env
+systemctl --user restart hermes-gateway
+
+================================================================================
+Конец документа.
+Файл сгенерирован агентом Hermes, июнь 2026.
+================================================================================

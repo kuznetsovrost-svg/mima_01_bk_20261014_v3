@@ -1,0 +1,181 @@
+================================================================================
+КАК ОТПРАВИТЬ СООБЩЕНИЕ ИЗ MATRIX В HERMES
+(июнь 2026, homeserver msg.lab.aidemo.adaptivepm.ru)
+================================================================================
+
+Принцип
+-------
+Hermes gateway сидит в Matrix-комнате под user_id @oc_hermes
+(это бот-аккаунт). Когда кто-то пишет в ту же комнату —
+gateway подхватывает сообщение, прогоняет через LLM и
+отвечает в ту же комнату.
+
+Кто пишет → зависит от настроек:
+
+  • allowed_users — список user_id, от которых gateway принимает
+    сообщения (MATRIX_ALLOWED_USERS в .env);
+  • allowed_rooms / free_response_rooms — список room_id, в
+    которых gateway реагирует на сообщения (в config.yaml);
+  • require_mention — если true, нужно упомянуть бота
+    ("@Hermes привет..."), чтобы он ответил.
+
+================================================================================
+ТЕКУЩАЯ КОНФИГУРАЦИЯ
+================================================================================
+.env:
+    MATRIX_HOMESERVER=https://msg.lab.aidemo.adaptivepm.ru
+    MATRIX_USER_ID=@oc_hermes:msg.lab.aidemo.adaptivepm.ru
+    MATRIX_ENCRYPTION=false
+    MATRIX_ALLOWED_USERS=@oc_hermes:msg.lab.aidemo.adaptivepm.ru
+
+config.yaml (matrix:):
+    require_mention:    true
+    free_response_rooms: ''   ← пусто
+    allowed_rooms:       ''   ← пусто
+
+Поведение: gateway принимает сообщения ТОЛЬКО от @oc_hermes,
+НО от своего же юзера он реагировать не будет (анти-петля).
+На практике это значит, что для работы «Matrix → Hermes»
+нужен ВТОРОЙ user_id (твой личный).
+
+================================================================================
+ВАРИАНТ 1. СВОЙ ЛИЧНЫЙ АККАУНТ В MATRIX (рекомендуется)
+================================================================================
+
+Шаг 1. Зарегистрировать user_id в Matrix
+----------------------------------------
+Зайди в web-форму Synapse:
+    https://msg.lab.aidemo.adaptivepm.ru/_matrix/static/client/login/
+или просто на:
+    https://msg.lab.aidemo.adaptivepm.ru/
+
+Нажми Create Account. HS пришлёт email с verification-токеном
+(на HS включён m.login.email.identity). Введи токен → аккаунт
+создан. Запомни username — он станет @username:msg.lab.aidemo.adaptivepm.ru.
+
+Шаг 2. Добавить себя в MATRIX_ALLOWED_USERS
+--------------------------------------------
+На этом хосте:
+    nano /root/.hermes/.env
+    # найти строку:
+    MATRIX_ALLOWED_USERS=@oc_hermes:msg.lab.aidemo.adaptivepm.ru
+    # заменить на:
+    MATRIX_ALLOWED_USERS=@oc_hermes:msg.lab.aidemo.adaptivepm.ru,@ТВОЙ_ЮЗЕР:msg.lab.aidemo.adaptivepm.ru
+
+Сохранить (Ctrl+O, Enter, Ctrl+X), затем:
+    systemctl --user restart hermes-gateway
+
+Шаг 3. Залогиниться в Element
+-----------------------------
+На телефоне/десктопе открой Element. Сервер:
+    msg.lab.aidemo.adaptivepm.ru
+Логин — твой новый user_id, пароль — тот, что ввёл при регистрации.
+
+Шаг 4. Зайти в комнату бота
+----------------------------
+Найди в списке комнат:
+    !qtymGlxhfChwRcTygM:msg.lab.aidemo.adaptivepm.ru
+(или посмотри в Element, какие комнаты тебе доступны —
+бот @oc_hermes должен уже быть в одной, и ты можешь к ней
+подключиться через инвайт или поиск.)
+
+Шаг 5. Написать сообщение
+-------------------------
+В комнате набери:
+    @Hermes привет, что ты умеешь?
+(упоминание @Hermes обязательно, пока require_mention=true).
+
+Gateway подхватит, отправит в LLM, ответит в ту же комнату.
+В логе /root/.hermes/logs/gateway.log появится запись
+о полученном сообщении и об отправленном ответе.
+
+================================================================================
+ВАРИАНТ 2. ОТКРЫТЬ ВСЕ КОМНАТЫ БЕЗ УПОМИНАНИЯ
+================================================================================
+
+Если хочется, чтобы бот отвечал в любой комнате на любое
+сообщение (без @mention), отредактируй /root/.hermes/config.yaml:
+
+    matrix:
+      require_mention: false
+      allowed_rooms: '!qtymGlxhfChwRcTygM:msg.lab.aidemo.adaptivepm.ru'
+
+И обязательно добавь свой user_id в MATRIX_ALLOWED_USERS (см. шаг 2
+выше). После правки:
+    systemctl --user restart hermes-gateway
+
+ВНИМАНИЕ: при require_mention=false бот будет реагировать на
+ВСЕ сообщения в комнате, включая чужие разговоры. Используй
+только в личной/приватной комнате, где пишешь только ты.
+
+================================================================================
+ВАРИАНТ 3. ТЕСТ БЕЗ ELEMENT (через curl от ЛЮБОГО user_id)
+================================================================================
+
+Если у тебя уже есть Matrix-аккаунт, отличный от @oc_hermes,
+и его токен у тебя на руках, можешь прогнать такой curl:
+
+    HS="https://msg.lab.aidemo.adaptivepm.ru"
+    ROOM="!qtymGlxhfChwRcTygM:msg.lab.aidemo.adaptivepm.ru"
+    TXN="manual-$(date +%s)-$$"
+
+    python3 - > /tmp/m.json <<'PY'
+    import json
+    print(json.dumps({
+      "msgtype":"m.text",
+      "body":"@Hermes привет, что ты умеешь?"
+    }, ensure_ascii=False))
+    PY
+
+    curl -sS -H "Authorization: Bearer ВАШ_ТОКЕН" \
+      -H "Content-Type: application/json" \
+      -X PUT --data-binary @/tmp/m.json \
+      "$HS/_matrix/client/v3/rooms/$ROOM/send/m.room.message/$TXN"
+
+Если user_id из токена есть в MATRIX_ALLOWED_USERS — gateway
+ответит в ту же комнату.
+
+================================================================================
+ВАЖНЫЕ ОГРАНИЧЕНИЯ
+================================================================================
+
+• Hermes не пишет в Matrix-комнаты сам (его аккаунт там сидит
+  только как listener/responder). Если хочешь, чтобы Hermes
+  слал тебе сообщения по расписанию или по событию — это делается
+  через cron-скрипт, который в конце отправляет результат
+  в Matrix через прямой C-S (как мы делали в этой сессии).
+
+• Если перезапустить gateway без пересоздания device, на этом
+  HS всё ещё будет MBadJSON-ошибка. У нас сейчас device_id
+  IRGTQXZUZU — не пересоздавай его, иначе снова придётся
+  проходить миграцию.
+
+• Telegram-канал в gateway тоже сломан (отдельный сетевой блок).
+  Это не имеет отношения к Matrix.
+
+• Шифрованные комнаты (m.room.encryption) gateway с
+  MATRIX_ENCRYPTION=false читать не умеет — только plaintext.
+
+================================================================================
+БЫСТРАЯ ШПАРГАЛКА
+================================================================================
+
+# Добавить второго юзера в allowed:
+sed -i 's|^MATRIX_ALLOWED_USERS=.*|MATRIX_ALLOWED_USERS=@oc_hermes:...,@твой_юзер:...|' /root/.hermes/.env
+systemctl --user restart hermes-gateway
+
+# Смотреть, что gateway слушает Matrix:
+tail -f /root/.hermes/logs/gateway.log | grep -i matrix
+
+# Смотреть последние сообщения в комнате:
+curl -sS -H "@/tmp/.mx_hdr_NEW" \
+  "https://msg.lab.aidemo.adaptivepm.ru/_matrix/client/v3/rooms/!qtymGlxhfChwRcTygM:msg.lab.aidemo.adaptivepm.ru/messages?dir=b&limit=5" | python3 -m json.tool
+
+# Открыть все комнаты без упоминания (в config.yaml):
+matrix:
+  require_mention: false
+  allowed_rooms: '!qtymGlxhfChwRcTygM:msg.lab.aidemo.adaptivepm.ru'
+
+================================================================================
+Файл сгенерирован агентом Hermes, 14 июня 2026.
+================================================================================

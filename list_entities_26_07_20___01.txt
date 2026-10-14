@@ -1,0 +1,1135 @@
+==========================================================================================
+MCP сервер Форсайт ПМ Практики — список типов сущностей (list_entities)
+==========================================================================================
+
+Дата запроса:    2026-07-20 17:23:18
+Сервер:          PMForesight MCP v3.2.4
+Endpoint:        https://ppreplica.hera.pmpractice.ru/mcp
+Tool:            list_entities (параметры: не требуются)
+Всего сущностей: 194
+Структура ответа: { EntityId, Name (system), Title (ru), Description }
+
+Описание полей:
+  • EntityId    — UUID типа сущности
+  • Name        — системное имя (латиницей, используется в describe_entity/save_entity)
+  • Title       — отображаемое имя на русском
+  • Description — описание (может быть null)
+
+1. ОБЩАЯ ТАБЛИЦА (все сущности по алфавиту)
+------------------------------------------------------------------------------------------
+
+|  #  | Name (system)             | Title (RU)                          | Description
+|-----|---------------------------|-------------------------------------|------------------------------------------------------------
+|   1 | AccessPhaseRule           | ПравилаВМатрицеДоступа              | 
+|   2 | AccessRule                | Правило матрицы доступа             | 
+|   3 | ActivityFinanceLimit      | Значения финансовых лимитов активности | 
+|   4 | ActivityForSummaryReport  | Активности для сводных отчетов      | 
+|   5 | ActivityPhase             | Стадия жизненного цикла             | 
+|   6 | ActivityResult            | Результат                           | 
+|   7 | ActivityResultsType       | Перечень типов результатов проектов | 
+|   8 | ActivityResultValue       | Значения результата                 | 
+|   9 | AdditionalAgreement       | Дополнительное соглашение           | 
+|  10 | ADGroupMapping            | Маппинг групп АД                    | 
+|  11 | AgreementPlan             | План согласований                   | 
+|  12 | AgreementPlanItem         | План согласований. Элемент          | 
+|  13 | AgreementPlanType         | Тип мероприятия плана согласования  | 
+|  14 | AnalyseData               | Сравнение данных в БД               | 
+|  15 | ApprovedBudget            | Утвержденный бюджет                 | 
+|  16 | ApprovingDocument         | Утверждающий документ               | 
+|  17 | ApprovingDocumentDefault  | Утверждающий документ по умолчанию  | 
+|  18 | Attribute                 | Дополнительный атрибут              | 
+|  19 | AttributeValue            | Значение атрибута объекта           | 
+|  20 | BackupHistory             | Бэкапы                              | 
+|  21 | BasePlanVersion           | Версия базового плана               | 
+|  22 | BasePlanVersionItem       | Версия базового плана. Элемент      | 
+|  23 | CalendarException         | Календарь исключений рабочих/праздничных дней | 
+|  24 | ChangeCategory            | Категории изменений                 | 
+|  25 | ChangeManagement          | Проблемные вопросы и управление изменениями | 
+|  26 | ChangeRequest             | Пункт запроса на изменение          | 
+|  27 | ChangeRequestReview       | Запрос на изменение -согласующие    | 
+|  28 | ChangingActions           | Действия при изменении              | 
+|  29 | CommentListRead           | Чтение ленты комментариев           | 
+|  30 | CommunicationPlan         | План коммуникаций                   | 
+|  31 | Company                   | Юридическое лицо                    | 
+|  32 | ConsolidatedBudget        | Бюджет сводного плана               | 
+|  33 | ConsolidatedBudgetValue   | Бюджет сводного плана - значения    | 
+|  34 | ConsolidatedChangeRequest | Запрос на изменение                 | 
+|  35 | ContractFL                | Федеральный закон                   | 
+|  36 | Contractor                | Организации                         | 
+|  37 | ContractPlanSummaries     | Планирование/итоги по контрактам    | 
+|  38 | ContractPlanSummariesValue | Планирование/итоги по контрактам - значения | 
+|  39 | ContractStatus            | Статус контракта                    | 
+|  40 | ContractStepStatus        | Статус этапа контракта              | 
+|  41 | ContractType              | Тип контракта                       | 
+|  42 | ControlSubject            | Субъект управления                  | 
+|  43 | CourierOrder              | Заказ курьера                       | 
+|  44 | Course                    | Курсы                               | 
+|  45 | CourseWork                | Обучение                            | 
+|  46 | CourseWorkStatus          | Состояние обучения                  | 
+|  47 | CourseWorkUser            | Слушатели                           | 
+|  48 | CustomParameter           | Дополнительный параметр. Категория  | 
+|  49 | CustomParameterValue      | Дополнительный параметр. Значение   | 
+|  50 | delete_me_i_am_test       | Новая сущность                      | 
+|  51 | DesignTheme               | Тема                                | 
+|  52 | Document                  | Категория документа                 | 
+|  53 | DocumentFile              | Документ. Файлы                     | 
+|  54 | EntityIndicator           | Индикаторы сущностей                | 
+|  55 | EntityStateEdgeComment    | История переходов по стадиям/состояниям | 
+|  56 | EntityStateEdgeReason     | Переход между статусами. Обоснование | 
+|  57 | Event                     | Непроектное мероприятие             | 
+|  58 | EventLeisure              | Мероприятие/Досуг                   | 
+|  59 | EventLeisureParticipation | Мероприятие/Досуг - Участие         | 
+|  60 | EventType                 | Тип НМ                              | 
+|  61 | ExpertEntityIndicator     | Экспертный уровень эскалации        | 
+|  62 | FinanceExpense            | Финансы. Статья                     | 
+|  63 | FinanceGRBS               | Финансы. ГРБС                       | 
+|  64 | FinanceSource             | Финансы. Источники                  | 
+|  65 | Goal                      | Цель                                | 
+|  66 | Group                     | Группа                              | 
+|  67 | Hashtag                   | Тэги                                | 
+|  68 | ImpersonateRole           | Олицетворение подразделения         | 
+|  69 | InContract                | Доходный контракт                   | 
+|  70 | InitApproval              | Лист согласования предложения по проекту | 
+|  71 | InitClass                 | Классификатор проектного предложения. Пункты | 
+|  72 | InitClassCategory         | Классификатор проектного предложения. Признаки | 
+|  73 | Initiative                | Предложения по проекту              | 
+|  74 | InitiativeActivity        | ПП-Проект                           | 
+|  75 | InitiativeContent         | Предложения по проекту.Содержимое   | 
+|  76 | InitiativeGoal            | Предложения по проекту.Цель         | 
+|  77 | InitiativeKPI             | Предложения по проекту.Показатель   | 
+|  78 | InitiativeRisk            | Предложения по проекту.Риск         | 
+|  79 | InitPriority              | Классификатор проектного предложения. Приоритет | 
+|  80 | InitState                 | Состояния инициативы                | 
+|  81 | ITBenefit                 | ИТ Льгота                           | 
+|  82 | Itemadaptation            | Пункт адаптации                     | 
+|  83 | KPI                       | Показатель                          | 
+|  84 | KPIAggregationLevel       | Уровень агрегирования информации    | 
+|  85 | KPIType                   | Тип показателя                      | 
+|  86 | KPIValue                  | Достижение показателей              | 
+|  87 | LegalCategory             | Категория НМД                       | 
+|  88 | LegalDoc                  | НМД                                 | 
+|  89 | Lesson                    | Извлеченный урок                    | 
+|  90 | LinkType                  | Тип связи                           | 
+|  91 | Load                      | Загрузки                            | 
+|  92 | Log                       | Логи                                | 
+|  93 | Lov                       | Открытые вопросы                    | 
+|  94 | LovUrgency                | Срочность ОВ                        | 
+|  95 | LProgram                  | Программа                           | 
+|  96 | MailQueue                 | Письмо                              | 
+|  97 | MailSettings              | Почта. Настройки                    | 
+|  98 | MainChanges               | Основные изменения                  | 
+|  99 | Meeting                   | Совещание                           | 
+| 100 | MeetingResponse           | Приглашение на совещание            | 
+| 101 | MenuList                  | Меню. Список                        | 
+| 102 | MetaLock                  | Блокировка редактирования карточек  | 
+| 103 | MetaModel                 | Настройки системы                   | 
+| 104 | MetaPage                  | MetaPage                            | 
+| 105 | MPPImportLog              | История импорта КП (mpp файла)      | 
+| 106 | News                      | Общая рассылка                      | 
+| 107 | Notification              | Уведомления                         | 
+| 108 | NotificationSetting       | Уведомления. Настройки              | 
+| 109 | OKEI                      | ОКЕИ                                | 
+| 110 | Order                     | Поручения                           | 
+| 111 | OrgUnit                   | Подразделения                       | 
+| 112 | OutcomeContract           | Расходный контракт                  | 
+| 113 | PageTour                  | Тур по странице                     | 
+| 114 | Payments                  | Платежи                             | 
+| 115 | PeriodicityDataCapture    | Периодичность сбора данных          | 
+| 116 | PlanTemplate              | Шаблон плана                        | 
+| 117 | PlanTemplateItem          | Элемент шаблона плана               | 
+| 118 | Point                     | Этапы / Работы / КТ                 | При создании сущности Point необходимо передавать значение по умолчанию в поле PointKind: для этапа PointKind = 'stage', для работ PointKind = 'task', для КТ PointKind = 'point'. При запросе модели необходимо передавать @ProjectId сущности в которой необходимо создать Этап/Работу/КТ. При сохранении обязательно заполнять ProjectId сущностью к которой относится календарный план, ParentId заполнять вышестоящим этапом или идентификатором проекта, если работа/точка не вложена в этап. Для создания Этапа нужно сначала создать его как работу PointKind = 'task', после этого указать эту работу в ParentId у вложенных работ/кт - Исходная работа будет преобразована в Этап (stage) автоматически, даты этапа будут пересчитаны исходя из вложенных элементов
+| 119 | PointActivityType         | Тип активности КТ                   | 
+| 120 | PointColorDesign          | Цветовое оформление Этапов/КТ/работ | 
+| 121 | PointLevel                | Уровень контроля                    | 
+| 122 | PointPoint                | Предшественники КТ                  | 
+| 123 | PointQuestion             | Чек-лист                            | 
+| 124 | PointResult               | Связь КП и результатов              | 
+| 125 | PointTag                  | Метка                               | 
+| 126 | PointTagDefault           | Метки по умолчанию                  | 
+| 127 | PointType                 | Тип КТ                              | 
+| 128 | Portfolio                 | Портфель                            | 
+| 129 | PresaleState              | Состояние пресейла                  | 
+| 130 | Priority                  | Приоритет                           | 
+| 131 | ProbabilitySale           | Вероятность продажи                 | 
+| 132 | Project                   | Проект                              | 
+| 133 | ProjectCustomerType       | Тип заказчика проекта               | 
+| 134 | ProjectPassportSection    | Разделы паспорта проекта            | 
+| 135 | ProjectProfile            | Профили проектов                    | 
+| 136 | ProjectProfileAttribute   | Атрибуты проекта для профиля        | 
+| 137 | ProjectProfileRole        | Профили проектов - роль             | 
+| 138 | ProjectStageType          | Типы этапов                         | 
+| 139 | ProjectStageTypeCPM       | Типы этапов ЦПМ                     | 
+| 140 | ProjectType               | Тип проекта                         | 
+| 141 | Question                  | Вопрос совещания                    | 
+| 142 | repExpertStatus           | Экспертный статус активности        | 
+| 143 | repFormType               | Отчетные формы                      | 
+| 144 | ReportingFavorite         | ReportingFavorite                   | 
+| 145 | ReportListCategory        | Центр отчетов. Категория            | 
+| 146 | repReport                 | Статус-Отчёты                       | 
+| 147 | RepReportIssue            | Проблемы статус-отчётов             | 
+| 148 | repType                   | Отчетные мероприятия                | 
+| 149 | repTypeCalendar           | Календарь отчетных мероприятий      | 
+| 150 | RequestSource             | Источник запроса                    | 
+| 151 | Requirement               | Требование                          | 
+| 152 | Resource                  | Ресурс                              | 
+| 153 | ResourcePlanning          | Ресурсное планирование              | 
+| 154 | resourceplanningfact_userview | Фактические затраты - Отображение столбцов | 
+| 155 | ReviewCycle               | Цикл согласования                   | 
+| 156 | ReviewCycleCard           | Карточки ЗИ                         | 
+| 157 | Reviewer                  | Согласующий                         | 
+| 158 | Risk                      | Риски и возможности                 | 
+| 159 | RiskCategory              | Категория риска/возможности         | 
+| 160 | RiskDistribution          | Распределение                       | 
+| 161 | RiskImpact                | Воздействие риска                   | 
+| 162 | RiskMitigation            | Мероприятия воздействия             | 
+| 163 | RiskProbability           | Вероятность риска                   | 
+| 164 | RiskResponding            | Мероприятия реагирования на риск    | 
+| 165 | Scenario                  | Сценарий                            | 
+| 166 | SourceFormat              | Источник данных                     | 
+| 167 | Specialization            | Специализация                       | 
+| 168 | Speedtest                 | Speedtest                           | 
+| 169 | Statusadaptation          | Статус выполнения пункта адаптации  | 
+| 170 | StatusReportActivityResult | Результаты статус-отчета            | 
+| 171 | StatusReportBudget        | Бюджет статус-отчета проекта        | 
+| 172 | StatusReportKPI           | Показатели статус-отчета проекта    | 
+| 173 | StrategicDirection        | Направления стратегического развития | 
+| 174 | StrategyResponse          | Стратегия реагирования              | 
+| 175 | Substitution              | Замещение                           | 
+| 176 | Summary                   | Итоговый вывод                      | 
+| 177 | SummaryContractor         | Итоговый вывод по организации       | 
+| 178 | SummaryOrganization       | Итоговый вывод по организации       | 
+| 179 | Support                   | Техподдержка                        | 
+| 180 | Synccode_RoleAssignment   | Импортированные пользователи        | 
+| 181 | TokenAuthClient           | Клиенты jwt авторизации             | 
+| 182 | TypeFailureReason         | Тип причины невыполнения            | 
+| 183 | TypeOfIntegrationInformation | Тип интегрируемой информации        | 
+| 184 | User                      | Пользователь                        | 
+| 185 | UserCert                  | Сертификаты                         | 
+| 186 | UserGrade                 | Грейд                               | 
+| 187 | UserMailNotifyParams      | Настройка получения писем           | 
+| 188 | UserToken                 | Постоянные токены jwt авторизации   | 
+| 189 | UserVacation              | Отпуск сотрудника                   | 
+| 190 | UserVacationType          | Тип отпуска                         | 
+| 191 | Valueadaptation           | Оценка выполнения пункта адаптации  | 
+| 192 | version_dbstruct          | Версии структуры БД                 | 
+| 193 | Watch                     | Дежурства                           | 
+| 194 | Widget                    | Виджет                              | 
+
+
+2. ГРУППИРОВКА ПО ПРЕФИКСУ СИСТЕМНОГО ИМЕНИ
+------------------------------------------------------------------------------------------
+
+Всего групп: 101
+
+|  #  | Префикс          | Кол-во | Сущности
+|-----|------------------|--------|----------------------------------------------------------------------
+|   1 | Point            |     10 | Point, PointActivityType, PointColorDesign, PointLevel, PointPoint, PointQuestion, PointResult, PointTag, PointTagDefault, PointType
+|   2 | Project          |      9 | Project, ProjectCustomerType, ProjectPassportSection, ProjectProfile, ProjectProfileAttribute, ProjectProfileRole, ProjectStageType, ProjectStageTypeCPM, ProjectType
+|   3 | Risk             |      7 | Risk, RiskCategory, RiskDistribution, RiskImpact, RiskMitigation, RiskProbability, RiskResponding
+|   4 | User             |      7 | User, UserCert, UserGrade, UserMailNotifyParams, UserToken, UserVacation, UserVacationType
+|   5 | Activity         |      6 | ActivityFinanceLimit, ActivityForSummaryReport, ActivityPhase, ActivityResult, ActivityResultsType, ActivityResultValue
+|   6 | Contract         |      6 | ContractFL, ContractPlanSummaries, ContractPlanSummariesValue, ContractStatus, ContractStepStatus, ContractType
+|   7 | Initiative       |      6 | Initiative, InitiativeActivity, InitiativeContent, InitiativeGoal, InitiativeKPI, InitiativeRisk
+|   8 | Init             |      5 | InitApproval, InitClass, InitClassCategory, InitPriority, InitState
+|   9 | Change           |      4 | ChangeCategory, ChangeManagement, ChangeRequest, ChangeRequestReview
+|  10 | Course           |      4 | Course, CourseWork, CourseWorkStatus, CourseWorkUser
+|  11 | Event            |      4 | Event, EventLeisure, EventLeisureParticipation, EventType
+|  12 | K                |      4 | KPI, KPIAggregationLevel, KPIType, KPIValue
+|  13 | Type             |      4 | repType, repTypeCalendar, TypeFailureReason, TypeOfIntegrationInformation
+|  14 | Agreement        |      3 | AgreementPlan, AgreementPlanItem, AgreementPlanType
+|  15 | Consolidated     |      3 | ConsolidatedBudget, ConsolidatedBudgetValue, ConsolidatedChangeRequest
+|  16 | Entity           |      3 | EntityIndicator, EntityStateEdgeComment, EntityStateEdgeReason
+|  17 | Finance          |      3 | FinanceExpense, FinanceGRBS, FinanceSource
+|  18 | Meta             |      3 | MetaLock, MetaModel, MetaPage
+|  19 | Status           |      3 | StatusReportActivityResult, StatusReportBudget, StatusReportKPI
+|  20 | Summary          |      3 | Summary, SummaryContractor, SummaryOrganization
+|  21 | Access           |      2 | AccessPhaseRule, AccessRule
+|  22 | Approving        |      2 | ApprovingDocument, ApprovingDocumentDefault
+|  23 | Attribute        |      2 | Attribute, AttributeValue
+|  24 | Base             |      2 | BasePlanVersion, BasePlanVersionItem
+|  25 | Custom           |      2 | CustomParameter, CustomParameterValue
+|  26 | Document         |      2 | Document, DocumentFile
+|  27 | Expert           |      2 | ExpertEntityIndicator, repExpertStatus
+|  28 | Legal            |      2 | LegalCategory, LegalDoc
+|  29 | Lov              |      2 | Lov, LovUrgency
+|  30 | Mail             |      2 | MailQueue, MailSettings
+|  31 | Meeting          |      2 | Meeting, MeetingResponse
+|  32 | Notification     |      2 | Notification, NotificationSetting
+|  33 | Plan             |      2 | PlanTemplate, PlanTemplateItem
+|  34 | Report           |      2 | ReportListCategory, repReport
+|  35 | Resource         |      2 | Resource, ResourcePlanning
+|  36 | Review           |      2 | ReviewCycle, ReviewCycleCard
+|  37 | A                |      1 | ADGroupMapping
+|  38 | Additional       |      1 | AdditionalAgreement
+|  39 | Analyse          |      1 | AnalyseData
+|  40 | Approved         |      1 | ApprovedBudget
+|  41 | Backup           |      1 | BackupHistory
+|  42 | Calendar         |      1 | CalendarException
+|  43 | Changing         |      1 | ChangingActions
+|  44 | Comment          |      1 | CommentListRead
+|  45 | Communication    |      1 | CommunicationPlan
+|  46 | Company          |      1 | Company
+|  47 | Contractor       |      1 | Contractor
+|  48 | Control          |      1 | ControlSubject
+|  49 | Courier          |      1 | CourierOrder
+|  50 | Design           |      1 | DesignTheme
+|  51 | Form             |      1 | repFormType
+|  52 | Goal             |      1 | Goal
+|  53 | Group            |      1 | Group
+|  54 | Hashtag          |      1 | Hashtag
+|  55 | I                |      1 | ITBenefit
+|  56 | Impersonate      |      1 | ImpersonateRole
+|  57 | In               |      1 | InContract
+|  58 | Itemadaptation   |      1 | Itemadaptation
+|  59 | L                |      1 | LProgram
+|  60 | Lesson           |      1 | Lesson
+|  61 | Link             |      1 | LinkType
+|  62 | Load             |      1 | Load
+|  63 | Log              |      1 | Log
+|  64 | M                |      1 | MPPImportLog
+|  65 | Main             |      1 | MainChanges
+|  66 | Menu             |      1 | MenuList
+|  67 | News             |      1 | News
+|  68 | O                |      1 | OKEI
+|  69 | Order            |      1 | Order
+|  70 | Org              |      1 | OrgUnit
+|  71 | Outcome          |      1 | OutcomeContract
+|  72 | Page             |      1 | PageTour
+|  73 | Payments         |      1 | Payments
+|  74 | Periodicity      |      1 | PeriodicityDataCapture
+|  75 | Portfolio        |      1 | Portfolio
+|  76 | Presale          |      1 | PresaleState
+|  77 | Priority         |      1 | Priority
+|  78 | Probability      |      1 | ProbabilitySale
+|  79 | Question         |      1 | Question
+|  80 | Rep              |      1 | RepReportIssue
+|  81 | Reporting        |      1 | ReportingFavorite
+|  82 | Request          |      1 | RequestSource
+|  83 | Requirement      |      1 | Requirement
+|  84 | Reviewer         |      1 | Reviewer
+|  85 | Scenario         |      1 | Scenario
+|  86 | Source           |      1 | SourceFormat
+|  87 | Specialization   |      1 | Specialization
+|  88 | Speedtest        |      1 | Speedtest
+|  89 | Statusadaptation |      1 | Statusadaptation
+|  90 | Strategic        |      1 | StrategicDirection
+|  91 | Strategy         |      1 | StrategyResponse
+|  92 | Substitution     |      1 | Substitution
+|  93 | Support          |      1 | Support
+|  94 | Synccode         |      1 | Synccode_RoleAssignment
+|  95 | Token            |      1 | TokenAuthClient
+|  96 | Valueadaptation  |      1 | Valueadaptation
+|  97 | Watch            |      1 | Watch
+|  98 | Widget           |      1 | Widget
+|  99 | delete_me_i_am_test |      1 | delete_me_i_am_test
+| 100 | resourceplanningfact_userview |      1 | resourceplanningfact_userview
+| 101 | version_dbstruct |      1 | version_dbstruct
+
+
+3. ПОДРОБНЫЙ СПИСОК ПО ГРУППАМ
+------------------------------------------------------------------------------------------
+
+3.1. Point (10 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| Point             | Этапы / Работы / КТ         | 71dcb2f7-a542-4909-b4f4-3dcaf2b3b14c | При создании сущности Point необходимо передавать значение по умолчанию в поле PointKind: для этапа PointKind = 'stage', для работ PointKind = 'task', для КТ PointKind = 'point'. При запросе модели необходимо передавать @ProjectId сущности в которой необходимо создать Этап/Работу/КТ. При сохранении обязательно заполнять ProjectId сущностью к которой относится календарный план, ParentId заполнять вышестоящим этапом или идентификатором проекта, если работа/точка не вложена в этап. Для создания Этапа нужно сначала создать его как работу PointKind = 'task', после этого указать эту работу в ParentId у вложенных работ/кт - Исходная работа будет преобразована в Этап (stage) автоматически, даты этапа будут пересчитаны исходя из вложенных элементов
+| PointActivityType | Тип активности КТ           | 2091e7c3-261b-4837-8778-360d8a1c1507 | 
+| PointColorDesign  | Цветовое оформление Этапов/КТ/работ | 76e3d62b-3737-4976-bbd5-f839c3275859 | 
+| PointLevel        | Уровень контроля            | d17d24dd-1189-4382-9afe-a41c96fcf43e | 
+| PointPoint        | Предшественники КТ          | c52a4e8a-ab59-40f2-9716-cf28c07e7840 | 
+| PointQuestion     | Чек-лист                    | fb288674-c7a1-42e0-bfa6-462e2195c369 | 
+| PointResult       | Связь КП и результатов      | 0ce3d519-e6d6-4733-ba86-143a53974cc2 | 
+| PointTag          | Метка                       | c0c33435-275a-4598-8392-2600d21c74d1 | 
+| PointTagDefault   | Метки по умолчанию          | 46167a9e-493b-41aa-a876-13e6f893b95e | 
+| PointType         | Тип КТ                      | c78c9b54-79e5-41a8-97cc-4b6c0c147f4f | 
+
+3.2. Project (9 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| Project           | Проект                      | 46caa4ad-02b8-4d70-a1db-196bab860742 | 
+| ProjectCustomerType | Тип заказчика проекта       | 6b8439bf-87ec-4778-8bdf-e81241f63d49 | 
+| ProjectPassportSection | Разделы паспорта проекта    | 2b5ce62b-4d99-4f07-9950-dc1224756cb5 | 
+| ProjectProfile    | Профили проектов            | d7030e7c-6f29-4fea-a82b-7f3da9a3f06e | 
+| ProjectProfileAttribute | Атрибуты проекта для профиля | 4ed36429-5198-4f14-ac9d-1caf02f76068 | 
+| ProjectProfileRole | Профили проектов - роль     | 531fc262-bc39-4b56-9639-b9621ed31e5e | 
+| ProjectStageType  | Типы этапов                 | 1375ad99-b8b6-4707-8dcc-e5d40f0d0876 | 
+| ProjectStageTypeCPM | Типы этапов ЦПМ             | b75dc86d-720b-4a69-946a-53175157e282 | 
+| ProjectType       | Тип проекта                 | 6b32e5b6-32c8-4479-b384-bce83c412b7d | 
+
+3.3. Risk (7 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| Risk              | Риски и возможности         | e04443f9-ac2e-4d94-aedf-fe575f7287a8 | 
+| RiskCategory      | Категория риска/возможности | 82f122f3-605c-429d-98bb-eb042b876f43 | 
+| RiskDistribution  | Распределение               | c07fd246-b3ab-4c27-bcb1-4088a8e234a4 | 
+| RiskImpact        | Воздействие риска           | 9850f1b3-42a0-43f6-9334-a638dd4cb689 | 
+| RiskMitigation    | Мероприятия воздействия     | 720fa253-e3a8-4186-afe7-a3cb3c3e846a | 
+| RiskProbability   | Вероятность риска           | e4b4dcbc-e3e4-4998-abe9-6df5fe2f49f3 | 
+| RiskResponding    | Мероприятия реагирования на риск | d5dceaa7-7182-421e-b1a0-cf7d5cfdabf3 | 
+
+3.4. User (7 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| User              | Пользователь                | 66d6d76c-067c-4aa7-b334-4e2748be4fb9 | 
+| UserCert          | Сертификаты                 | aaa3c64c-bec7-405f-8e65-5c0fe558cee8 | 
+| UserGrade         | Грейд                       | 39dd136f-4f74-4b11-ad29-879bc8c40e3c | 
+| UserMailNotifyParams | Настройка получения писем   | 0c5f84dc-439d-4c17-99de-a06c9bab7c38 | 
+| UserToken         | Постоянные токены jwt авторизации | afd09643-93ae-459f-9fdd-404f1207799b | 
+| UserVacation      | Отпуск сотрудника           | 8fe9b8d9-61e2-475a-a979-e68744d790d9 | 
+| UserVacationType  | Тип отпуска                 | 21a92504-baab-438d-8015-738e9987d92e | 
+
+3.5. Activity (6 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| ActivityFinanceLimit | Значения финансовых лимитов активности | 3fca8f6f-f88a-47ee-91de-bc97d92307cd | 
+| ActivityForSummaryReport | Активности для сводных отчетов | 2b109943-fa5d-4900-b3ce-c6fd2466463a | 
+| ActivityPhase     | Стадия жизненного цикла     | 0e09bf3c-3bfb-4c46-9358-e1fed40f2ae1 | 
+| ActivityResult    | Результат                   | 0dfe52a5-cc07-4280-bf3d-d2d402bf58d4 | 
+| ActivityResultsType | Перечень типов результатов проектов | 58b9f58e-58a6-4f85-b009-c873a6ad24b1 | 
+| ActivityResultValue | Значения результата         | ebe8b576-3805-4e21-b01a-ed9f8b358084 | 
+
+3.6. Contract (6 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| ContractFL        | Федеральный закон           | ef67f4c8-a43e-4a86-9bcf-6337ffa1ffcd | 
+| ContractPlanSummaries | Планирование/итоги по контрактам | 0eecf9f7-7768-40ea-8e7d-92d982862fdf | 
+| ContractPlanSummariesValue | Планирование/итоги по контрактам - значения | 1f593c06-caac-493b-b15d-4cafbe8c1eac | 
+| ContractStatus    | Статус контракта            | 18842a45-e647-4234-b667-2038d39979c6 | 
+| ContractStepStatus | Статус этапа контракта      | 6197ebb4-587e-4e87-b95c-95e7d28ca430 | 
+| ContractType      | Тип контракта               | bb89c55b-c1f8-4dac-a590-a1e45440f134 | 
+
+3.7. Initiative (6 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| Initiative        | Предложения по проекту      | d83ce86f-32b3-4675-bdcf-7669e764b3fc | 
+| InitiativeActivity | ПП-Проект                   | 0e17c997-b50b-4ab8-9513-7bcd243e343d | 
+| InitiativeContent | Предложения по проекту.Содержимое | ac373788-ca8f-4e5f-94df-7b9080c4d8c9 | 
+| InitiativeGoal    | Предложения по проекту.Цель | 6835cee6-6704-4d73-bb61-4cc3a0989518 | 
+| InitiativeKPI     | Предложения по проекту.Показатель | 0238e0cf-f10f-4733-b198-66214af2e6b0 | 
+| InitiativeRisk    | Предложения по проекту.Риск | b49b2394-4f0d-4a41-8a80-d8e97103935a | 
+
+3.8. Init (5 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| InitApproval      | Лист согласования предложения по проекту | aa6dd805-5793-493d-a891-117b6a005548 | 
+| InitClass         | Классификатор проектного предложения. Пункты | c8821dae-780b-440d-b298-c447e77cdce9 | 
+| InitClassCategory | Классификатор проектного предложения. Признаки | d3b068b2-b7ae-43d7-87a4-b1e9661871c9 | 
+| InitPriority      | Классификатор проектного предложения. Приоритет | 3d175783-e530-49df-829b-8156da1204c7 | 
+| InitState         | Состояния инициативы        | 18bcecd3-c203-47f3-b178-5b9d47a7d232 | 
+
+3.9. Change (4 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| ChangeCategory    | Категории изменений         | b8cff14c-ba17-4b47-b3d3-26a9c429b075 | 
+| ChangeManagement  | Проблемные вопросы и управление изменениями | f2820bdc-81e6-4aa5-9581-fe57c94b90f5 | 
+| ChangeRequest     | Пункт запроса на изменение  | 38fca667-e7a2-4663-a1b3-79431c7601bd | 
+| ChangeRequestReview | Запрос на изменение -согласующие | 7980e93e-2638-4835-b86a-931d22591e0f | 
+
+3.10. Course (4 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| Course            | Курсы                       | c09d53f3-f0a2-4a77-b42e-c8e9573a3d8a | 
+| CourseWork        | Обучение                    | f6a33461-9ad1-4a81-bdb7-d23101588423 | 
+| CourseWorkStatus  | Состояние обучения          | 3d2d6df2-e1bc-474d-9f6e-a74ff0cbdc20 | 
+| CourseWorkUser    | Слушатели                   | 06a0fb6a-2a1e-4011-bddd-44bff1c28ed8 | 
+
+3.11. Event (4 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| Event             | Непроектное мероприятие     | 327c5b7d-47d0-4b13-8ea5-82bef6255ed9 | 
+| EventLeisure      | Мероприятие/Досуг           | 48f63f7e-8afc-41c5-8edc-90f9847d4bfc | 
+| EventLeisureParticipation | Мероприятие/Досуг - Участие | a17a6ee3-197e-4f47-bc39-b00d724724a0 | 
+| EventType         | Тип НМ                      | 6fc7289a-5fe8-43d3-a2d5-6da879364afb | 
+
+3.12. K (4 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| KPI               | Показатель                  | 15f27aa3-3a03-4832-b93e-2cbb7a49507a | 
+| KPIAggregationLevel | Уровень агрегирования информации | 55d0deb2-3a9b-4cad-b184-0a4710df3e67 | 
+| KPIType           | Тип показателя              | ed73c0e4-80b3-4807-b248-31d143a73ec1 | 
+| KPIValue          | Достижение показателей      | 10b4b594-2898-492f-a88f-1c2e6012f359 | 
+
+3.13. Type (4 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| repType           | Отчетные мероприятия        | 28b82f37-bbcf-4391-bfd2-e2674006dc2c | 
+| repTypeCalendar   | Календарь отчетных мероприятий | 984c91c9-0211-4691-afb8-b0854942d241 | 
+| TypeFailureReason | Тип причины невыполнения    | 3e4fc8d8-2947-4cb5-9aad-3d89941a7ecb | 
+| TypeOfIntegrationInformation | Тип интегрируемой информации | b14b8d84-53c9-4e2a-8001-049117d056a9 | 
+
+3.14. Agreement (3 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| AgreementPlan     | План согласований           | 60bcd31d-57d4-43a6-8f0d-089b28c9e2b8 | 
+| AgreementPlanItem | План согласований. Элемент  | da54189b-74cb-48dc-947f-657708d589b5 | 
+| AgreementPlanType | Тип мероприятия плана согласования | 74021fb7-ea88-4be3-ab9d-7414a454c1e1 | 
+
+3.15. Consolidated (3 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| ConsolidatedBudget | Бюджет сводного плана       | e2418fba-3774-44ef-8725-18a7f5d45365 | 
+| ConsolidatedBudgetValue | Бюджет сводного плана - значения | 8ebf5d52-1baf-495c-92de-803849a1c225 | 
+| ConsolidatedChangeRequest | Запрос на изменение         | 7ac09e3d-c10f-4720-8485-6fed02289592 | 
+
+3.16. Entity (3 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| EntityIndicator   | Индикаторы сущностей        | 76685a1c-260a-4317-94f7-ccb36a4ac27a | 
+| EntityStateEdgeComment | История переходов по стадиям/состояниям | 2ad1fe24-25ee-4307-8c01-0ab5cf11a791 | 
+| EntityStateEdgeReason | Переход между статусами. Обоснование | 0bf07651-06dd-48c9-8d24-fce4b49badd5 | 
+
+3.17. Finance (3 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| FinanceExpense    | Финансы. Статья             | 2fed77ce-d44f-43d9-89c0-8eafa8fe97c6 | 
+| FinanceGRBS       | Финансы. ГРБС               | 166b3047-768c-4f03-8ac5-ab688b3f9fdd | 
+| FinanceSource     | Финансы. Источники          | fa04316b-b83f-4689-809e-1e4b6406c978 | 
+
+3.18. Meta (3 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| MetaLock          | Блокировка редактирования карточек | e37cb9ee-63a8-4e53-a6fc-fb3c4a2a5d23 | 
+| MetaModel         | Настройки системы           | 2a90755c-480f-4ab5-8d17-8a5f1135f833 | 
+| MetaPage          | MetaPage                    | 9e9221d6-cf5d-4f89-8bf5-ba44e37fd56d | 
+
+3.19. Status (3 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| StatusReportActivityResult | Результаты статус-отчета    | 41c7c162-36d2-48df-9804-9891232f392b | 
+| StatusReportBudget | Бюджет статус-отчета проекта | 51975da1-c449-4450-b870-670313a60708 | 
+| StatusReportKPI   | Показатели статус-отчета проекта | 2c5c79ae-a36f-4cce-8a4b-b0237c78e8fd | 
+
+3.20. Summary (3 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| Summary           | Итоговый вывод              | 57747682-102e-4ffa-9d0c-99d6f477cc0c | 
+| SummaryContractor | Итоговый вывод по организации | ad79261b-57b3-4266-8471-fe2b5b6bdcfa | 
+| SummaryOrganization | Итоговый вывод по организации | d7c4060b-121a-46d5-bb5d-ef5e36b67bca | 
+
+3.21. Access (2 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| AccessPhaseRule   | ПравилаВМатрицеДоступа      | a24de56e-7120-499a-b4b1-c384bf04f88d | 
+| AccessRule        | Правило матрицы доступа     | fe52edc4-2c2b-48f5-889c-443eb02e9984 | 
+
+3.22. Approving (2 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| ApprovingDocument | Утверждающий документ       | 0a02cc79-e68c-4f88-84a1-b0db6018134f | 
+| ApprovingDocumentDefault | Утверждающий документ по умолчанию | 9bd0444d-c3ed-4442-a15a-44f6eee0fc03 | 
+
+3.23. Attribute (2 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| Attribute         | Дополнительный атрибут      | b779d174-1be1-425e-9899-eb15735c5c5e | 
+| AttributeValue    | Значение атрибута объекта   | cb750276-58b1-4a65-a71d-a81a6aac2727 | 
+
+3.24. Base (2 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| BasePlanVersion   | Версия базового плана       | 7a7240f8-44b1-4037-b032-8bba46b3f30a | 
+| BasePlanVersionItem | Версия базового плана. Элемент | 9250e418-ab08-4a57-83bd-e34e2a932a02 | 
+
+3.25. Custom (2 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| CustomParameter   | Дополнительный параметр. Категория | c0748669-e348-4251-b490-dbb5d53f598b | 
+| CustomParameterValue | Дополнительный параметр. Значение | c07cd292-f4ea-4454-a30a-83031cc0e048 | 
+
+3.26. Document (2 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| Document          | Категория документа         | c98c1b07-0af9-4738-8582-5e26443b534a | 
+| DocumentFile      | Документ. Файлы             | 2cfa3ba9-c879-4278-9396-6eedb97eea95 | 
+
+3.27. Expert (2 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| ExpertEntityIndicator | Экспертный уровень эскалации | e5ec2095-4f58-4bea-9740-ddd566678e78 | 
+| repExpertStatus   | Экспертный статус активности | 10deb8ac-2e68-4600-a517-8d6ea83f5fe4 | 
+
+3.28. Legal (2 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| LegalCategory     | Категория НМД               | 42e09f27-a013-4c72-853e-a97ba56f6e4b | 
+| LegalDoc          | НМД                         | ba181ad4-bc6b-4ee2-84ff-9a35e2809cb5 | 
+
+3.29. Lov (2 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| Lov               | Открытые вопросы            | 2a86bf8d-f005-4005-984a-ab55631f8a75 | 
+| LovUrgency        | Срочность ОВ                | 7f0fbc52-a9aa-4d3c-becd-743fd45c966a | 
+
+3.30. Mail (2 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| MailQueue         | Письмо                      | c698fb75-e4af-4f76-a128-14dbf8e8ee49 | 
+| MailSettings      | Почта. Настройки            | 6786f685-9f12-4720-90e7-b32616d03d07 | 
+
+3.31. Meeting (2 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| Meeting           | Совещание                   | a1fc47d2-2d97-42a8-8a60-93998c68f6f3 | 
+| MeetingResponse   | Приглашение на совещание    | c4eade9f-be37-4cab-9814-7956e38783b5 | 
+
+3.32. Notification (2 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| Notification      | Уведомления                 | f8bac112-f403-4bc3-98f6-1dfb34fe1fd1 | 
+| NotificationSetting | Уведомления. Настройки      | 6a02623d-1583-495f-b027-de3d27581065 | 
+
+3.33. Plan (2 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| PlanTemplate      | Шаблон плана                | f41a23e2-4881-4efd-9691-3b0656d33f6c | 
+| PlanTemplateItem  | Элемент шаблона плана       | 57906a9a-0be4-426c-82a0-e85b5f2e5605 | 
+
+3.34. Report (2 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| ReportListCategory | Центр отчетов. Категория    | f29dadda-c115-4938-b7f2-82c41e5fae22 | 
+| repReport         | Статус-Отчёты               | 4e3cf5dc-91b8-40ad-b799-f20dc6a604a2 | 
+
+3.35. Resource (2 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| Resource          | Ресурс                      | 99123126-23f7-45b3-9efc-ecbef0f64a0b | 
+| ResourcePlanning  | Ресурсное планирование      | 1c90bd30-a2af-4e24-accd-d4c4eba97aad | 
+
+3.36. Review (2 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| ReviewCycle       | Цикл согласования           | 964381a0-d21b-4728-a77b-cbac342acfbb | 
+| ReviewCycleCard   | Карточки ЗИ                 | fbbd5dbe-a916-4ce8-ba0d-d15497af97b6 | 
+
+3.37. A (1 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| ADGroupMapping    | Маппинг групп АД            | 1ea41141-50a8-4de3-b177-e248534a7742 | 
+
+3.38. Additional (1 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| AdditionalAgreement | Дополнительное соглашение   | 94c1165e-3f61-4013-9f01-8d97e7860d88 | 
+
+3.39. Analyse (1 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| AnalyseData       | Сравнение данных в БД       | e262a9af-ce80-4b05-83be-be196dde2cb1 | 
+
+3.40. Approved (1 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| ApprovedBudget    | Утвержденный бюджет         | 712cdbb5-874b-4923-b45a-314e0250dd59 | 
+
+3.41. Backup (1 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| BackupHistory     | Бэкапы                      | dea755ab-dd2a-401a-a41b-36833f568a9f | 
+
+3.42. Calendar (1 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| CalendarException | Календарь исключений рабочих/праздничных дней | 57a25179-09bd-4297-be40-6f1a4e3c7718 | 
+
+3.43. Changing (1 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| ChangingActions   | Действия при изменении      | 25b9c215-86ea-425a-a1c5-eb5de9f6e36a | 
+
+3.44. Comment (1 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| CommentListRead   | Чтение ленты комментариев   | ca3d9085-3d9f-486d-9367-c9bfdf381358 | 
+
+3.45. Communication (1 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| CommunicationPlan | План коммуникаций           | cfdb91c1-e7fa-474d-8a1d-9642cd674dd1 | 
+
+3.46. Company (1 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| Company           | Юридическое лицо            | 18cc4f56-78fd-4968-a755-f70e5aa0aedb | 
+
+3.47. Contractor (1 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| Contractor        | Организации                 | 4c17d9d0-0e60-4f8d-a7ec-dd04db1683c1 | 
+
+3.48. Control (1 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| ControlSubject    | Субъект управления          | 4dd7b4a2-ae2e-44eb-95af-864276bbedf9 | 
+
+3.49. Courier (1 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| CourierOrder      | Заказ курьера               | 3589b98f-9365-4e50-8079-56e15c44e5b0 | 
+
+3.50. Design (1 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| DesignTheme       | Тема                        | 437f2b94-9196-4bad-9c41-3209176b23bb | 
+
+3.51. Form (1 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| repFormType       | Отчетные формы              | c41363fa-3857-40c6-afc4-f304a2750cbc | 
+
+3.52. Goal (1 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| Goal              | Цель                        | a7db6e46-462a-4087-a7e3-d5623648cca0 | 
+
+3.53. Group (1 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| Group             | Группа                      | 4984e295-7c5e-4dff-86e3-5dac593533ea | 
+
+3.54. Hashtag (1 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| Hashtag           | Тэги                        | 82b50a96-7ff2-4464-8b6c-0884b6f7cfee | 
+
+3.55. I (1 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| ITBenefit         | ИТ Льгота                   | f36c7970-eadf-4f07-9c65-133cde60ca1a | 
+
+3.56. Impersonate (1 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| ImpersonateRole   | Олицетворение подразделения | fba4765f-a615-43dd-b007-c0b24f84d5c0 | 
+
+3.57. In (1 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| InContract        | Доходный контракт           | fddcbf01-d68f-4579-8ef6-0318948ed9e2 | 
+
+3.58. Itemadaptation (1 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| Itemadaptation    | Пункт адаптации             | b29925ac-341b-445b-8376-8c6c667e2c9d | 
+
+3.59. L (1 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| LProgram          | Программа                   | 396abf01-5bf3-46a3-b4a5-a7ef4cdb8859 | 
+
+3.60. Lesson (1 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| Lesson            | Извлеченный урок            | 43773282-4310-4055-b833-02bae73a7892 | 
+
+3.61. Link (1 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| LinkType          | Тип связи                   | 175cd5fa-3eb8-4047-abd0-1029147f0268 | 
+
+3.62. Load (1 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| Load              | Загрузки                    | e83bce6e-a589-40c9-a0bd-4cc438490498 | 
+
+3.63. Log (1 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| Log               | Логи                        | e32d1286-1c1a-431b-b70a-64aa5f1bfb1c | 
+
+3.64. M (1 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| MPPImportLog      | История импорта КП (mpp файла) | ec9754b1-f0c6-467c-bdb9-7adfab808d02 | 
+
+3.65. Main (1 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| MainChanges       | Основные изменения          | 85d381c5-48a3-4ed3-ac28-c689579d5b60 | 
+
+3.66. Menu (1 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| MenuList          | Меню. Список                | a320616d-e9cc-44de-9883-5db288da3bba | 
+
+3.67. News (1 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| News              | Общая рассылка              | 381a46e6-6d6b-4670-975f-a67db8855e3d | 
+
+3.68. O (1 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| OKEI              | ОКЕИ                        | 8011efe4-542e-40b1-846a-12c2b18f5dc5 | 
+
+3.69. Order (1 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| Order             | Поручения                   | f3a8e8b9-3b3c-4ab7-8065-477e332b8757 | 
+
+3.70. Org (1 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| OrgUnit           | Подразделения               | c7d081c7-9bf6-43b5-b8b1-08c8633c512f | 
+
+3.71. Outcome (1 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| OutcomeContract   | Расходный контракт          | bfd68b25-f70c-4c2f-96e3-c4cb976a6ec0 | 
+
+3.72. Page (1 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| PageTour          | Тур по странице             | 9b2c8a6a-ab70-4482-be3f-9a5d8172686c | 
+
+3.73. Payments (1 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| Payments          | Платежи                     | 93f322df-275e-422b-8225-609225f2f1b2 | 
+
+3.74. Periodicity (1 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| PeriodicityDataCapture | Периодичность сбора данных  | ce24aa30-a8c0-42a1-a233-7067cf7a87a6 | 
+
+3.75. Portfolio (1 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| Portfolio         | Портфель                    | bfed1f68-33a7-4428-855f-799640070a53 | 
+
+3.76. Presale (1 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| PresaleState      | Состояние пресейла          | 3637f085-b017-4488-89da-5dead00f314f | 
+
+3.77. Priority (1 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| Priority          | Приоритет                   | c0060b77-48bc-4a4e-8f43-ce2edb8b6535 | 
+
+3.78. Probability (1 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| ProbabilitySale   | Вероятность продажи         | 37594001-356e-47e0-b9cf-a98dfc1c69f1 | 
+
+3.79. Question (1 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| Question          | Вопрос совещания            | 056b8fed-862f-4157-be8f-4c48d135084b | 
+
+3.80. Rep (1 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| RepReportIssue    | Проблемы статус-отчётов     | a4f12fed-1dd7-4664-b11b-611195d6a0e0 | 
+
+3.81. Reporting (1 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| ReportingFavorite | ReportingFavorite           | 70d47bdf-3ac1-44e2-8758-cf8ed49ae79f | 
+
+3.82. Request (1 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| RequestSource     | Источник запроса            | 49795672-32cf-4fc3-a8b6-d6172674998d | 
+
+3.83. Requirement (1 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| Requirement       | Требование                  | 04a5fe08-f5d8-4a27-9c0e-a9e4fea35a45 | 
+
+3.84. Reviewer (1 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| Reviewer          | Согласующий                 | d1bce5a7-4383-418f-9023-6d030be0276a | 
+
+3.85. Scenario (1 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| Scenario          | Сценарий                    | bb61c7e8-9621-492e-beb7-ce6a09b941c2 | 
+
+3.86. Source (1 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| SourceFormat      | Источник данных             | 200f9331-cda3-4e21-94ae-737c781cf0af | 
+
+3.87. Specialization (1 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| Specialization    | Специализация               | 037c0cc6-3782-40a7-925e-0a65ed39535d | 
+
+3.88. Speedtest (1 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| Speedtest         | Speedtest                   | b15c381a-1fc0-4872-83f0-4fef67b797a1 | 
+
+3.89. Statusadaptation (1 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| Statusadaptation  | Статус выполнения пункта адаптации | 53423215-52ae-47c1-8311-a9e8927aecea | 
+
+3.90. Strategic (1 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| StrategicDirection | Направления стратегического развития | 890fe8ec-dddd-4624-9b96-b8e5ee3b212a | 
+
+3.91. Strategy (1 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| StrategyResponse  | Стратегия реагирования      | 10bd23a2-3014-4b39-a0e9-11ff82f05ba2 | 
+
+3.92. Substitution (1 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| Substitution      | Замещение                   | 0a6a906b-f243-4e00-93b8-aff9b383521b | 
+
+3.93. Support (1 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| Support           | Техподдержка                | 31bc6d03-b45c-467f-a450-2c1efa4f8ab2 | 
+
+3.94. Synccode (1 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| Synccode_RoleAssignment | Импортированные пользователи | 4e717fb4-fcf4-4387-9297-4c821f1006d9 | 
+
+3.95. Token (1 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| TokenAuthClient   | Клиенты jwt авторизации     | 19a8e75e-be1b-42ea-b7d4-b48226f4e4bd | 
+
+3.96. Valueadaptation (1 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| Valueadaptation   | Оценка выполнения пункта адаптации | ccabcd49-c726-4138-aa01-30b2fe7b395f | 
+
+3.97. Watch (1 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| Watch             | Дежурства                   | 713fb728-30ea-4565-91c4-ae582de3c5d8 | 
+
+3.98. Widget (1 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| Widget            | Виджет                      | db087fc4-e632-4a55-bb8a-607d975811c4 | 
+
+3.99. delete_me_i_am_test (1 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| delete_me_i_am_test | Новая сущность              | 63266840-3d1d-4f0e-ad80-0c8aa2ce694e | 
+
+3.100. resourceplanningfact_userview (1 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| resourceplanningfact_userview | Фактические затраты - Отображение столбцов | 2aa51e1d-fa6c-4899-920c-6257db6877bc | 
+
+3.101. version_dbstruct (1 шт.)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name              | Title (RU)                  | EntityId                           | Description
+|-------------------|-----------------------------|------------------------------------|--------------------------------------------------
+| version_dbstruct  | Версии структуры БД         | a11cab1f-971b-4d97-a563-592bf5cb1783 | 
+
+
+==========================================================================================
+Конец отчёта
+==========================================================================================

@@ -1,0 +1,604 @@
+# AGENTS.md — что это, где лежит, как заполнять, пример
+## Полный гайд на основе исходного кода и официальной документации Hermes Agent
+
+────────────────────────────────────────────────────────────────────────────
+0. КОРОТКО
+────────────────────────────────────────────────────────────────────────────
+
+**AGENTS.md** — это context-файл, который Hermes автоматически подмешивает
+в system prompt при старте сессии в конкретном каталоге. Это **проектный
+контекст**: правила репозитория, conventions, deployment notes. В отличие
+от SOUL.md (которое про личность агента) и MEMORY.md (факты о мире),
+AGENTS.md — это **«что важно знать про этот проект / директорию»**.
+
+Главное правило, прямо из официальной документации Hermes:
+
+> «Если что-то должно следовать за вами повсюду — это в SOUL.md.
+>  Если это принадлежит проекту — это в AGENTS.md.»
+
+────────────────────────────────────────────────────────────────────────────
+1. НАЗНАЧЕНИЕ
+────────────────────────────────────────────────────────────────────────────
+
+1.1. Для чего AGENTS.md.
+   - Дать агенту понять **архитектуру конкретного проекта**.
+   - Зафиксировать **conventions** (стиль, форматирование, и т.п.).
+   - Указать **команды запуска**, пути, env-переменные проекта.
+   - Описать **deployment notes** (как деплоить, как откатывать).
+   - Запретить/предупредить о **специфических рисках** (например,
+     «не коммитить .env», «не тестировать на prod-стенде»).
+   - Связать проект с **внешними сервисами** (URL, secrets locations).
+
+1.2. Кто использует.
+   - **Hermes Agent** (этот код).
+   - **Codex CLI** от OpenAI (`codex`).
+   - **Claude Code** от Anthropic.
+   - **Cursor / Windsurf / Cline** (через `.cursorrules` —
+     аналогичная концепция).
+
+   Все эти инструменты умеют читать `AGENTS.md` (или файл с тем же
+   смыслом) из рабочей директории. Поэтому **AGENTS.md — это
+   портативный контекст**, не зависит от конкретного агента.
+
+1.3. Чем AGENTS.md НЕ является.
+   - Не личность (→ SOUL.md).
+   - Не факты о пользователе (→ USER.md).
+   - Не runtime-факты о мире (→ MEMORY.md).
+   - Не процедурные инструкции (→ SKILL.md).
+   - Не задача (→ task.md в inbox/).
+
+────────────────────────────────────────────────────────────────────────────
+2. ГДЕ ЛЕЖИТ
+────────────────────────────────────────────────────────────────────────────
+
+2.1. Поиск иерархический.
+   Hermes ищет AGENTS.md по **первому совпадению** в такой цепочке
+   (см. `personality.md` в официальной документации, раздел
+   «SOUL.md vs AGENTS.md»):
+
+```
+   AGENTS.md  ←── основное имя
+   CLAUDE.md  ←── альтернативное имя для Claude Code
+   .hermes.md ←── альтернатива
+   .cursorrules  ←── Cursor-формат
+```
+
+   Переменная окружения `HERMES_MD_NAMES` позволяет переопределить
+   список имён (через запятую).
+
+2.2. Где размещать.
+
+   a) **В корне проекта** (рекомендуется):
+      `/path/to/project/AGENTS.md` — самый сильный сигнал.
+
+   b) **В подкаталогах** (для больших моно-репо):
+      `/path/to/project/services/api/AGENTS.md` — переопределяет
+      корневой. Hermes делает **прогрессивное обнаружение**:
+      «Subdirectory AGENTS.md files are discovered progressively as
+       the agent navigates into folders.» (см. tips.py:220).
+
+   c) **В личных проектах**:
+      `~/projects/mything/AGENTS.md`.
+
+   d) **Для профиля Hermes** (опционально):
+      `~/.hermes/profiles/<name>/AGENTS.md` — если профиль
+      подключён через `--workspace-target=<path>`, то
+      Hermes будет грузить AGENTS.md из этого пути.
+
+2.3. **Что НЕ работает**.
+   - Положить AGENTS.md в `~/.hermes/` без `--workspace-target`
+     не сработает — это не рабочая директория CLI.
+   - В `~/.hermes/profiles/<name>/` без `--workspace-target`
+     тоже не загрузится (профильная директория != cwd).
+   - В `/tmp/` — каждый раз новый cwd, ничего не подгрузится.
+
+────────────────────────────────────────────────────────────────────────────
+3. КОГДА АВТОМАТИЧЕСКИ ГРУЗИТСЯ
+────────────────────────────────────────────────────────────────────────────
+
+3.1. Авто-загрузка.
+   Hermes загружает AGENTS.md автоматически, **когда запускается из
+   каталога**, содержащего AGENTS.md. Это по умолчанию для:
+
+   - `hermes chat` в директории проекта.
+   - `hermes --profile=X chat` в директории проекта.
+   - `hermes cron` с `--workdir=<path>` (явно указано).
+   - Любая команда в shell, если cwd — это директория проекта.
+
+3.2. Как грузится (технически).
+   Через `build_context_files_prompt()` в
+   `agent/prompt_builder.py`. Алгоритм (см. официальную доку):
+
+   1. Определяется cwd (текущая рабочая директория).
+   2. Сканируются файлы из `HERMES_MD_NAMES`
+      (по умолчанию: AGENTS.md, CLAUDE.md, .cursorrules, SOUL.md).
+   3. **Первый найденный файл** грузится в context (priority system).
+   4. Применяется head/tail truncation (если файл большой).
+   5. Проходит **prompt-injection scanning** (см. tips.py:212).
+   6. Подмешивается в system prompt.
+
+3.3. Когда НЕ грузится.
+   - Запущен `--ignore-rules` (или `HERMES_IGNORE_RULES=1`).
+   - В режиме `--safe-mode` (отключает все кастомизации).
+   - В subagent / delegated контексте (где `skip_context_files=True`).
+   - Если cwd не содержит AGENTS.md в цепочке поиска.
+
+3.4. Прогрессивное обнаружение.
+   Когда агент делает `cd services/api` и запускает новую команду,
+   Hermes может подгрузить новый AGENTS.md из этой директории. Это
+   **per-directory контекст** — навигация в подкаталог перезагружает
+   правила.
+
+3.5. Security: prompt-injection scanning.
+   Hermes сканирует AGENTS.md на типовые паттерны prompt injection
+   (см. `tips.py:212` и `context-files.md:167`). Это не панацея,
+   но от явных атак защищает. **Если в чужих проектах видите
+   странные AGENTS.md — не доверяйте на 100%, проверяйте вручную.**
+
+────────────────────────────────────────────────────────────────────────────
+4. СТРУКТУРА ФАЙЛА
+────────────────────────────────────────────────────────────────────────────
+
+4.1. Что НЕ должно быть в AGENTS.md (типичные ошибки).
+
+   • Секреты (`.env`, токены, пароли).
+   • Большие куски кода (вынести в `references/` или `MEMORY.md`).
+   • Простыни «что такое проект» (это в README.md).
+   • То, что должно следовать за вами (→ SOUL.md).
+   • Эфемерные состояния («сейчас идёт деплой»).
+
+4.2. Рекомендуемая структура (для project-level AGENTS.md).
+
+   1. Заголовок и краткое описание проекта (1-3 строки).
+   2. Архитектура (какие компоненты, как они связаны).
+   3. Commands (как поднять dev, как тестировать, как деплоить).
+   4. Conventions (стиль кода, naming, форматирование).
+   5. Tools / dependencies (что должно быть установлено).
+   6. Risks / Don'ts (чего нельзя делать).
+   7. Layout (древо каталогов).
+   8. Links (внешние сервисы, документы).
+
+4.3. Раздел «Don'ts» — критически важен.
+   AGENTS.md — лучшее место для «никогда не делай X»:
+
+   - Никогда не коммить .env.
+   - Никогда не делай push в main без PR.
+   - Никогда не запускай миграции в прод без подтверждения.
+   - Никогда не рестарть prod-сервис в рабочее время.
+
+   Hermes видит это в каждой сессии проекта.
+
+────────────────────────────────────────────────────────────────────────────
+5. СВЯЗЬ С ДРУГИМИ КОНТЕКСТ-ФАЙЛАМИ
+────────────────────────────────────────────────────────────────────────────
+
+Из официальной документации (`features/personality.md`):
+
+   ┌──────────────┬────────────────────────┬──────────────────────┐
+   │              │ Применимость           │ Содержимое           │
+   ├──────────────┼────────────────────────┼──────────────────────┤
+   │ SOUL.md      │ стабильна, универс.    │ identity, tone       │
+   │ MEMORY.md    │ развивается            │ факты о мире         │
+   │ USER.md      │ развивается            │ факты о пользователе │
+   │ SKILL.md     │ добавляется             │ процедура «как»     │
+   │ AGENTS.md    │ проектно-специфичная    │ архитектура,         │
+   │              │                        │ conventions,         │
+   │              │                        │ risks                │
+   └──────────────┴────────────────────────┴──────────────────────┘
+
+Если сомневаетесь — пройдите тест: «должно ли это следовать за
+мной в любом проекте?» — если да, SOUL.md. Если «только в этом
+проекте» — AGENTS.md.
+
+────────────────────────────────────────────────────────────────────────────
+6. ПРИМЕР (ПОЛНЫЙ, ПРОВЕРЕННЫЙ)
+────────────────────────────────────────────────────────────────────────────
+
+Ниже — реальный пример AGENTS.md для проекта `kuznetsovrost-svg/photo-tools`
+(вымышленный, но реалистичный Python-проект).
+
+```markdown
+# Photo Tools — Agent Guide
+
+Photo Tools is a small Python 3.11+ project: EXIF readers, simple image
+transformations, and a CLI wrapper.
+
+## Stack
+
+- Python 3.11+.
+- uv for dependency management (NOT pip, NOT poetry).
+- Click for the CLI.
+- pytest + xdist for tests.
+- ruff for lint + format (replaces flake8 / black / isort).
+- mypy --strict for type checking.
+
+## Architecture
+
+```
+photo-tools/
+├── pyproject.toml          # deps + ruff + mypy config
+├── src/photo_tools/
+│   ├── exif/
+│   ├── transforms/
+│   └── cli.py
+├── tests/
+└── AGENTS.md              # this file
+```
+
+Layering:
+- `exif/` only reads JPEG headers — no transformations, no IO outside reading.
+- `transforms/` takes PIL.Image, returns PIL.Image — pure functions.
+- `cli.py` orchestrates: parse args → call exif or transforms → write output.
+
+## Commands
+
+```bash
+# Setup (uv, fast)
+uv sync
+
+# Run unit tests (parallel, fast)
+uv run pytest -n auto
+
+# Lint and format
+uv run ruff check .
+uv run ruff format .
+
+# Type check (strict)
+uv run mypy src/photo_tools
+
+# Run CLI
+uv run photo-tools --help
+uv run photo-tools exif photo.jpg
+```
+
+Run `precommit` before commit:
+```bash
+uv run pre-commit run --all-files
+```
+
+## Conventions
+
+- File names: `snake_case`.
+- Module names: singular nouns where possible (`exif.py`, not `exifs.py`).
+- Test names: `test_<unit>_<scenario>` (e.g., `test_exif_read_no_orientation`).
+- Type hints on ALL public functions.
+- Docstrings on ALL public functions, Google style.
+- No `print()`, use `logging`.
+- No `assert` in production code; tests OK.
+- No `try/except: pass` — always specify exception type.
+- Magic numbers as named constants.
+- No "we'll fix it later" comments — fix it now or open an issue.
+
+## Tests
+
+- New code must come with tests.
+- Edge cases > happy paths.
+- Use `tmp_path` fixture for any FS work.
+- One test concept per test function.
+
+## DON'Ts
+
+- **Never** commit `.env` files.
+- **Never** push directly to `main`. Always PR.
+- **Never** add `print()` to production code (even for debugging —
+  use `logging.debug` or your IDE debugger).
+- **Never** widen exception types in `except` clauses.
+- **Never** install via `pip install` — always go through `uv sync`.
+- **Never** add a dependency without updating `pyproject.toml`.
+- **Never** delete a test without an explicit reason in the PR description.
+- **Don't** use `# noqa` or `# type: ignore` without a comment explaining why.
+
+## Key files
+
+- `pyproject.toml` — single source of truth for deps, ruff, mypy.
+- `src/photo_tools/cli.py` — entrypoint; this is where agents spend time.
+- `tests/conftest.py` — shared fixtures.
+
+## Links
+
+- Project README: `README.md`.
+- CHANGELOG: `CHANGELOG.md`.
+- Issue tracker: GitHub Issues (link).
+
+## Out of scope
+
+- Performance optimization beyond O(n) reading EXIF headers.
+- GPU/TPU support.
+- Cloud storage adapters (S3, GCS) — not needed for v1.
+```
+
+────────────────────────────────────────────────────────────────────────────
+7. ВАРИАЦИИ AGENTS.MD
+────────────────────────────────────────────────────────────────────────────
+
+7.1. **Минимальный AGENTS.md** (5-15 строк) — для крошечных проектов.
+
+```markdown
+# tiny-utils
+
+Python 3.11+ utility lib. uv-managed. pytest + ruff + mypy.
+
+## Commands
+- `uv sync`
+- `uv run pytest`
+- `uv run ruff check .`
+
+## Don'ts
+- No pip; no print; no untyped public functions.
+- No direct push to main.
+```
+
+7.2. **Для монорепо** (на верхнем уровне).
+
+```markdown
+# monorepo-name
+
+Poly-repo with services in `/services/*`.
+
+## Layout
+- /services/api — FastAPI service.
+- /services/web — Next.js frontend.
+- /services/worker — Celery worker.
+- /libs/ — shared Python libs.
+
+## Top-level rules
+- uv everywhere (no pip, no poetry).
+- One pyproject.toml per service.
+- Test before push (CI runs pytest, ruff, mypy).
+
+## Per-service AGENTS.md
+Each service has its own AGENTS.md. Read it before touching that service.
+```
+
+7.3. **Для однозадачного скрипта** (1 service).
+
+```markdown
+# my-script
+
+Single-file Python script. pytest for the one helper.
+
+## Goal
+Parse daily logs from `/var/log/x.log` and post a summary to Telegram.
+
+## Run
+`uv run python -m my-script`
+
+## Don't
+- Don't hardcode the Telegram token — use env var `TELEGRAM_BOT_TOKEN`.
+- Don't run as root — install via systemd `User=myscript`.
+```
+
+────────────────────────────────────────────────────────────────────────────
+8. РАЗМЕР И ТРАНКЕЙШН
+────────────────────────────────────────────────────────────────────────────
+
+8.1. Идеальный размер.
+   - 0.5-4 КБ для большинства проектов.
+   - 8-16 КБ максимум (больше — рискованно).
+
+8.2. Truncation (head/tail).
+   Hermes автоматически обрезает большие AGENTS.md
+   (см. `configuration.md:617`):
+
+   > Controls how much content Hermes loads from each automatic
+   > context file before applying head/tail truncation.
+
+   Если ваш файл > 16 КБ — обрежется с потерей середины.
+   Сделайте короче или вынесите длинные секции.
+
+8.3. Безопасность прежде всего.
+   - Если в файле обнаружены injection-паттерны, Hermes
+     может его отклонить. Не пытайтесь обходить сканер.
+   - Если вы нашли чужой AGENTS.md в публичном репо с
+     странными инструкциями — отправьте PR с исправлением.
+
+────────────────────────────────────────────────────────────────────────────
+9. КОМАНДЫ И ПЕРЕМЕННЫЕ ОКРУЖЕНИЯ
+────────────────────────────────────────────────────────────────────────────
+
+9.1. CLI-флаги.
+   - `--ignore-rules` — пропустить загрузку AGENTS.md (и SOUL.md,
+     .cursorrules, memory, preloaded skills).
+   - `--ignore-user-config` — пропустить пользовательский конфиг.
+
+9.2. ENV-переменные.
+   - `HERMES_MD_NAMES` — список имён context-файлов через запятую.
+     Default: `AGENTS.md,CLAUDE.md,.cursorrules,SOUL.md`.
+   - `HERMES_IGNORE_RULES=1` — эквивалент `--ignore-rules`.
+
+9.3. Чтение `~/.hermes/HERMES_MD_NAMES`.
+   Можно переопределить в конфиге профиля, если хочется
+   специфических имён под этот профиль.
+
+────────────────────────────────────────────────────────────────────────────
+10. ШАБЛОН AGENTS.MD (ДЛЯ КОПИРОВАНИЯ)
+────────────────────────────────────────────────────────────────────────────
+
+Скопируйте текст ниже в `AGENTS.md` вашего проекта и заполните.
+
+```markdown
+# <Project name> — Agent Guide
+
+<1-3 строки: что это, на чём написано, зачем оно существует>
+
+## Stack
+
+- <язык и версия>
+- <package manager>
+- <test framework>
+- <lint/format>
+- <type checker>
+
+## Architecture
+
+<древо каталогов с пояснением, что где>
+
+## Commands
+
+```bash
+# Setup
+<cmd>
+
+# Test
+<cmd>
+
+# Lint / format
+<cmd>
+
+# Type check
+<cmd>
+
+# Run
+<cmd>
+```
+
+## Conventions
+
+- <naming files>
+- <naming modules>
+- <style rules>
+- <и т.п.>
+
+## DON'Ts
+
+- **Never** <первый запрет>
+- **Never** <второй>
+- **Don't** <третий>
+
+## Key files
+
+- <path> — <что здесь>
+
+## Links
+
+- README: `README.md`
+- CHANGELOG: `CHANGELOG.md`
+- Issue tracker: <link>
+```
+
+────────────────────────────────────────────────────────────────────────────
+11. СВЯЗЬ С ДРУГИМИ ИНСТРУМЕНТАМИ
+────────────────────────────────────────────────────────────────────────────
+
+`AGENTS.md` — это **открытый стандарт**, не только Hermes.
+
+  • **Codex CLI** (`codex` от OpenAI):
+    Respects AGENTS.md, CLAUDE.md, AGENTS.md в cwd.
+    https://github.com/openai/codex
+
+  • **Claude Code** (`claude` от Anthropic):
+    Читает `CLAUDE.md` или `AGENTS.md`.
+    https://www.anthropic.com/claude-code
+
+  • **Cursor**:
+    Читает `.cursorrules` или `.cursor/rules/*.mdc`.
+    Для совместимости: rename в `AGENTS.md`.
+
+  • **Windsurf / Codeium**:
+    Поддерживает `.windsurfrules`.
+    Можно конвертировать в `AGENTS.md`.
+
+  • **Cline / Roo Code**:
+    Читает `.clinerules`.
+
+  • **Continue.dev**:
+    Использует `.continuerc.yaml` (не `AGENTS.md` напрямую).
+
+  Это значит: **один AGENTS.md работает в разных инструментах**.
+  Удобнее всего для проектов, где вы переключаетесь между ними.
+
+────────────────────────────────────────────────────────────────────────────
+12. BEST PRACTICES (ПО ОФИЦИАЛЬНОЙ ДОКУМЕНТАЦИИ)
+────────────────────────────────────────────────────────────────────────────
+
+Из `hermes-agent/website/docs/user-guide/features/personality.md`:
+
+  1. AGENTS.md — это про проект, не про вас.
+     - Если правило должно следовать за вами → SOUL.md.
+     - Если правило про конкретный репо → AGENTS.md.
+
+  2. AGENTS.md — это проектная **намерения** (intent layer).
+     - Что мы хотим в этом проекте.
+     - Что мы НЕ хотим (don'ts).
+     - Конвенции и правила.
+
+  3. AGENTS.md обновляется вместе с проектом.
+     - Новые конвенции → обновите файл.
+     - Новые don'ts → обновите файл.
+     - Версионируйте в git.
+
+  4. AGENTS.md — не документация проекта.
+     - Документация — README.md, docs/.
+     - AGENTS.md — только то, что нужно агенту.
+
+  5. Большие репо используют **per-directory AGENTS.md**.
+     - Один в корне (общие правила).
+     - Один в `/services/api/` (особые правила для API).
+
+────────────────────────────────────────────────────────────────────────────
+13. ЧАСТЫЕ ОШИБКИ
+────────────────────────────────────────────────────────────────────────────
+
+13.1. Дублирование SOUL.md.
+   → AGENTS.md — это про **проект**, не про личность.
+
+13.2. Секреты в AGENTS.md.
+   → Никогда. Секреты в .env или vault.
+
+13.3. Простыня «что такое проект».
+   → Это README.md. AGENTS.md — короткий.
+
+13.4. AGENTS.md в git без ревью.
+   → Если в публичный репо коммитят AGENTS.md с prompt
+     injection, агент может быть атакован.
+
+13.5. Забыли обновить при изменении стека.
+   → Если мигрировали с poetry на uv, обновите AGENTS.md.
+
+13.6. Не очищали устаревшие don'ts.
+   → Если «don't use pip» уже неактуально, удалите.
+
+13.7. AGENTS.md не нашли.
+   → Проверьте, что cwd — это корень проекта.
+   → Проверьте, что файл точно называется `AGENTS.md` (без расширений).
+
+13.8. Использование неправильного имени.
+   → `AGENTS.md` (с большой) ≠ `Agents.md` (Unix: различаются).
+   → Hermes ищет точно по списку `HERMES_MD_NAMES`.
+
+13.9. Не учли прогрессивное обнаружение.
+   → Если cd в подкаталог перезагружает AGENTS.md, не удивляйтесь,
+     что правила внезапно изменились.
+
+13.10. Размер > 16 КБ.
+   → Truncation обрежет середину — вы потеряете важное.
+      Делите.
+
+────────────────────────────────────────────────────────────────────────────
+14. ЗАКЛЮЧЕНИЕ
+────────────────────────────────────────────────────────────────────────────
+
+`AGENTS.md` — это **открытый стандарт** проектного контекста для
+AI-агентов. Hermes автоматически загружает его в system prompt,
+когда запускается из директории с этим файлом.
+
+Главные правила (из официальной документации):
+
+  1. В AGENTS.md — проект, в SOUL.md — личность, в MEMORY.md — мир.
+  2. Не дублируйте SOUL.md.
+  3. Не кладите секреты.
+  4. Don'ts раздел — самое ценное.
+  5. Держите < 8 КБ.
+  6. Версионируйте в git.
+  7. Для монорепо — per-directory AGENTS.md.
+
+Если вы работаете над проектом, в котором AGENTS.md будет полезен:
+  • Создайте файл в корне.
+  • Используйте шаблон из секции 10.
+  • Заполните только нужные разделы.
+  • Зафиксируйте в git.
+  • Обновляйте при изменении правил.
+
+Если вы **не** создаёте AGENTS.md — это тоже ок. Но если вы
+работаете над проектом регулярно и замечаете, что каждый раз
+объясняете агенту одно и то же — пора создать.

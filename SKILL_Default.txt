@@ -1,0 +1,141 @@
+==========================================
+  СПИСОК СКИЛЛОВ ПРОФИЛЯ default
+  Hermes Agent · ~/.hermes/skills/
+  Сгенерировано: 2026-07-13 20:43:11
+==========================================
+
+── apple ─────────────────────────────────
+
+  · apple/apple-platform                         | "macOS / Apple-platform tools — manage Apple Notes via memo, Apple Reminders via remindctl, track devices/AirTags via Find My + AppleScript/peekaboo, send/receive iMessage & SMS via imsg, and drive the macOS desktop with the universal computer_use tool. Use when the user asks to read or write Apple Notes, manage Reminders, locate devices/AirTags, send or read iMessages, or automate any native macOS app."
+
+── autonomous-ai-agents ─────────────────────────────────
+
+  · autonomous-ai-agents/claude-code             | "Delegate coding to Claude Code CLI (features, PRs)."
+  · autonomous-ai-agents/codex                   | "Delegate coding to OpenAI Codex CLI (features, PRs)."
+  · autonomous-ai-agents/hermes-agent            | "Configure, extend, or contribute to Hermes Agent."
+  · autonomous-ai-agents/opencode                | "Delegate coding to OpenCode CLI (features, PR review)."
+
+── computer-use ─────────────────────────────────
+
+  · computer-use                                 | |
+
+── creative ─────────────────────────────────
+
+  · creative/architecture-diagram                | "Dark-themed SVG architecture/cloud/infra diagrams as HTML."
+  · creative/ascii-art                           | "ASCII art: pyfiglet, cowsay, boxes, image-to-ascii."
+  · creative/ascii-video                         | "ASCII video: convert video/audio to colored ASCII MP4/GIF."
+  · creative/baoyu-infographic                   | "Infographics: 21 layouts x 21 styles (信息图, 可视化)."
+  · creative/claude-design                       | Design one-off HTML artifacts (landing, deck, prototype).
+  · creative/comfyui                             | "Generate images, video, and audio with ComfyUI — install, launch, manage nodes/models, run workflows with parameter injection. Uses the official comfy-cli for lifecycle and direct REST/WebSocket API for execution."
+  · creative/design-md                           | Author/validate/export Google's DESIGN.md token spec files.
+  · creative/excalidraw                          | "Hand-drawn Excalidraw JSON diagrams (arch, flow, seq)."
+  · creative/humanizer                           | "Humanize text: strip AI-isms and add real voice."
+  · creative/manim-video                         | "Manim CE animations: 3Blue1Brown math/algo videos."
+  · creative/p5js                                | "p5.js sketches: gen art, shaders, interactive, 3D."
+  · creative/popular-web-designs                 | 54 real design systems (Stripe, Linear, Vercel) as HTML/CSS.
+  · creative/pretext                             | "Use when building creative browser demos with @chenglou/pretext — DOM-free text layout for ASCII art, typographic flow around obstacles, text-as-geometry games, kinetic typography, and text-powered generative art. Produces single-file HTML demos by default."
+  · creative/sketch                              | "Throwaway HTML mockups: 2-3 design variants to compare."
+  · creative/songwriting-and-ai-music            | "Songwriting craft and Suno AI music prompts."
+  · creative/touchdesigner-mcp                   | "Control a running TouchDesigner instance via twozero MCP — create operators, set parameters, wire connections, execute Python, build real-time visuals. 36 native tools."
+
+── data-science ─────────────────────────────────
+
+  · data-science/jupyter-live-kernel             | "Iterative Python via live Jupyter kernel (hamelnb)."
+
+── devops ─────────────────────────────────
+
+  · devops/kanban-orchestrator                   | Decomposition playbook + anti-temptation rules for an orchestrator profile routing work through Kanban. The "don't do the work yourself" rule and the basic lifecycle are auto-injected into every kanban worker's system prompt; this skill is the deeper playbook when you're specifically playing the orchestrator role.
+  · devops/kanban-worker                         | Pitfalls, examples, and edge cases for Hermes Kanban workers. The lifecycle itself is auto-injected into every worker's system prompt as KANBAN_GUIDANCE (from agent/prompt_builder.py); this skill is what you load when you want deeper detail on specific scenarios.
+  · devops/ssh-remote-audit                      | "Use when a user asks to connect to a remote host over SSH and run a check, audit, or service inspection (e.g. 'проверь настройку', 'check server health', 'audit service on host X'). Covers key-auth setup, config sanity, login failures, service probes, log reads, and SSH hardening — across one or many hosts."
+
+── dogfood ─────────────────────────────────
+
+  · dogfood                                      | "Exploratory QA of web apps: find bugs, evidence, reports."
+
+── email ─────────────────────────────────
+
+  · email/himalaya                               | "Himalaya CLI: IMAP/SMTP email from terminal."
+
+── github ─────────────────────────────────
+
+  · github/codebase-inspection                   | "Inspect codebases w/ pygount: LOC, languages, ratios."
+  · github/github-contents-api                   | "Create or update a file in a GitHub repo (and the folder that contains it) with a single PUT against the Contents API. The minimal, headless-friendly way for an agent to drop a file into a repo without cloning it. Falls back to `gh api` or pure `curl`."
+  · github/github-pr-workflow                    | "Complete GitHub workflows: auth, repo management, code review, issue triage, and the PR lifecycle. Most operations are pure `git`; the `gh` CLI is preferred when present; `curl` is the universal fallback."
+
+── hermes-agent-vcs-portability ─────────────────────────────────
+
+  · hermes-agent-vcs-portability                 | "Backup, share, import, and roll back Hermes Agent 'agent packages' (skills + memories + config snippets + cron + mcp) via a Git remote (GitHub / Gitea / GitLab). Use when the user wants to: back up a Hermes install to a Git repo, publish an agent as a portable package, import a third-party agent package from a Git URL into a live Hermes, or roll back a botched import. The class is 'how to move a Hermes agent through Git round-trips' — not how to use `gh`, how to write a skill, or how to use a specific messaging platform."
+
+── hermes-internals-inspection ─────────────────────────────────
+
+  · hermes-internals-inspection                  | "Investigate the architecture and internals of a live Hermes Agent install. Use when the user asks 'how does Hermes do X', 'where is Y implemented', 'which module handles Z', 'what memory providers exist', 'how does RAG / vector search / FTS5 work in Hermes', or wants a code-grounded answer grounded in the actual installed package rather than docs. Covers the canonical recipe for locating the real source tree on editable-uv installs, walking the package, and mapping feature areas (gateway, tools, memory providers, session store)."
+
+── media ─────────────────────────────────
+
+  · media/gif-search                             | "Search/download GIFs from Tenor via curl + jq."
+  · media/heartmula                              | "HeartMuLa: Suno-like song generation from lyrics + tags."
+  · media/songsee                                | "Audio spectrograms/features (mel, chroma, MFCC) via CLI."
+  · media/youtube-content                        | "YouTube transcripts to summaries, threads, blogs."
+
+── mlops ─────────────────────────────────
+
+  · mlops/huggingface-hub                        | "HuggingFace hf CLI: search/download/upload models, datasets."
+
+── note-taking ─────────────────────────────────
+
+  · note-taking/obsidian                         | Read, search, create, and edit notes in the Obsidian vault.
+
+── productivity ─────────────────────────────────
+
+  · productivity/airtable                        | Airtable REST API via curl. Records CRUD, filters, upserts.
+  · productivity/google-workspace                | "Gmail, Calendar, Drive, Docs, Sheets via gws CLI or Python."
+  · productivity/maps                            | "Geocode, POIs, routes, timezones via OpenStreetMap/OSRM."
+  · productivity/notion                          | "Notion API + ntn CLI: pages, databases, markdown, Workers."
+  · productivity/pdf-toolkit                     | "Operate on PDF files: extract text (pymupdf / marker-pdf / web_extract), edit existing PDFs in place (nano-pdf natural-language edits), or reverse-engineer a PDF's visual style into a portable spec (CSS / DESIGN.md / Typst / HTML). Use when the user wants to read content out of a PDF, change text/typos/titles inside a PDF, or recover the visual design of a PDF so they can produce more documents that look like it. NOT for: DOCX (use python-docx), PPTX (use the powerpoint skill), or generating a design from a vibe without a sample (use design-md)."
+  · productivity/petdex                          | Install and select animated petdex mascots for Hermes.
+  · productivity/powerpoint                      | "Create, read, edit .pptx decks, slides, notes, templates."
+  · productivity/teams-meeting-pipeline          | "Operate the Teams meeting summary pipeline via Hermes CLI — summarize meetings, inspect pipeline status, replay jobs, manage Microsoft Graph subscriptions."
+
+── red-teaming ─────────────────────────────────
+
+  · red-teaming/godmode                          | "Jailbreak LLMs: Parseltongue, GODMODE, ULTRAPLINIAN."
+
+── research ─────────────────────────────────
+
+  · research/arxiv                               | "Search arXiv papers by keyword, author, category, or ID."
+  · research/blogwatcher                         | "Monitor blogs and RSS/Atom feeds via blogwatcher-cli tool."
+  · research/llm-wiki                            | "Karpathy's LLM Wiki: build/query interlinked markdown KB."
+  · research/polymarket                          | "Query Polymarket: markets, prices, orderbooks, history."
+  · research/research-paper-writing              | "Write ML papers for NeurIPS/ICML/ICLR: design→submit."
+
+── smart-home ─────────────────────────────────
+
+  · smart-home/openhue                           | "Control Philips Hue lights, scenes, rooms via OpenHue CLI."
+
+── social-media ─────────────────────────────────
+
+  · social-media/messaging-gateway-setup         | "Configure and troubleshoot the Hermes Agent messaging gateway — Telegram, Discord, Slack, WhatsApp, Signal, Matrix, Email, etc. Use when the user asks to set up, edit, or debug a chat-platform integration in Hermes."
+  · social-media/xurl                            | "X/Twitter via xurl CLI: post, search, DM, media, v2 API."
+
+── software-development ─────────────────────────────────
+
+  · software-development/diagram-format-conversion | Convert diagrams between formats — BPMN ↔ DrawIO, BPMN ↔ Mermaid, Mermaid ↔ DrawIO, SVG ↔ any, BPMN ↔ Camunda 7/8. Use when the user asks "конвертируй X в Y", "convert this diagram to <format>", "BPMN в drawio", "drawio в mermaid", or hands you a `.bpmn`/`.drawio`/`.mmd`/`.svg` file and asks for a specific target format. Captures format quirks (mxGraph root-cell id reservation, BPMN DI coordinates, namespace maps), the verified scripts, and the "no ready-made npm package exists for BPMN→DrawIO" reality that pushes you toward Python+xml.etree.
+  · software-development/guide-authoring-for-hermes | Use when the user asks for a подробный гайд / detailed how-to on a Hermes-internal topic (profiles, memory, skills, gateway, .MD files, projects, BPMN-and-Hermes, etc.) and specifies a filename ending in `_NN.txt` (e.g. `ЧАНКИ01.txt`) plus Telegram file delivery. Triggers are Russian or English phrasings like "подробно опиши", "приведи примеры", "запиши в файл <name>.txt и пришли в телеграм как файл". Captures the workflow, the verified-by-research structure, the filename convention, the Telegram delivery format, and the recurring token-sanitization pitfall in `terminal()` calls.
+  · software-development/hermes-agent-skill-authoring | "Author in-repo SKILL.md: frontmatter, validator, structure, and writing-quality principles."
+  · software-development/node-inspect-debugger   | "Debug Node.js via --inspect + Chrome DevTools Protocol CLI."
+  · software-development/plan                    | "Plan mode: write an actionable markdown plan to .hermes/plans/, no execution. Bite-sized tasks, exact paths, complete code."
+  · software-development/python-debugpy          | "Debug Python: pdb REPL + debugpy remote (DAP)."
+  · software-development/requesting-code-review  | "Pre-commit review: security scan, quality gates, auto-fix."
+  · software-development/simplify-code           | "Parallel 3-agent cleanup of recent code changes."
+  · software-development/spike                   | "Throwaway experiments to validate an idea before build."
+  · software-development/systematic-debugging    | "4-phase root cause debugging: understand bugs before fixing."
+  · software-development/test-driven-development | "TDD: enforce RED-GREEN-REFACTOR, tests before code."
+  · software-development/tool-output-injection-defense | >-
+
+── yuanbao ─────────────────────────────────
+
+  · yuanbao                                      | "Yuanbao (元宝) groups: @mention users, query info/members."
+
+==========================================
+ИТОГО: 69 скиллов (с описанием: 69)
+==========================================

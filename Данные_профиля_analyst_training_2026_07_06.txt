@@ -1,0 +1,640 @@
+# Полный каталог профиля analyst_training
+## Состояние на 2026-07-06
+
+────────────────────────────────────────────────────────────────────────────
+0. ОБЩАЯ СВОДКА
+────────────────────────────────────────────────────────────────────────────
+
+Путь: /root/.hermes/profiles/analyst_training/
+Размер: **29 МБ**
+Файлов: **465** (включая runtime)
+Каталогов: **175**
+SKILL.md (навыки): **72** в 17 категориях
+Маркеры состояния (state.db, gateway.*, .clean_shutdown): **6 файлов**
+
+Профиль создан 2026-07-02 21:27 (на основании `~/.env` mode `2026-07-02
+21:27`, `SOUL.md` mode `2026-07-02 21:27`). Последние изменения
+в skills/ — 2026-07-06 20:13.
+
+Каталог skills/ — самая «жирная» часть: 7 МБ, 448 файлов, 72 SKILL.md.
+Остальное — runtime-артефакты Hermes-gateway.
+
+────────────────────────────────────────────────────────────────────────────
+1. ДЕРЕВО ВЕРХНЕГО УРОВНЯ
+────────────────────────────────────────────────────────────────────────────
+
+```
+/root/.hermes/profiles/analyst_training/
+├── .clean_shutdown          (0 Б, 2026-07-02 21:40)
+├── .env                     (165 Б, 2026-07-02 21:27)
+├── SOUL.md                  (513 Б, 2026-07-02 21:27)
+├── audio_cache/             (4 КБ, пусто)
+├── bin/                     (22 МБ — tirith)
+├── channel_directory.json   (628 Б, 2026-07-02 21:36)
+├── cron/                    (4 файла, 16 КБ)
+├── gateway.lock             (136 Б, 2026-07-02 21:36)
+├── gateway_state.json       (279 Б, 2026-07-02 21:40)
+├── home/                    (4 КБ, пусто)
+├── hooks/                   (4 КБ, пусто)
+├── image_cache/             (4 КБ, пусто)
+├── logs/                    (5 файлов, 44 КБ)
+├── memories/                (4 КБ, пусто)
+├── pairing/                 (4 КБ, пусто)
+├── plans/                   (4 КБ, пусто)
+├── platforms/               (8 КБ, подкаталог pairing)
+├── sandboxes/               (8 КБ, singularity/)
+├── sessions/                (4 КБ, пусто)
+├── skills/                  (7 МБ, 448 файлов, 72 SKILL.md, 17 категорий)
+├── skins/                   (4 КБ, пусто)
+├── state.db                 (139 КБ, 2026-07-02 21:40)
+└── workspace/               (4 КБ, пусто)
+```
+
+────────────────────────────────────────────────────────────────────────────
+2. ОПИСАНИЕ КАЖДОГО ОБЪЕКТА ВЕРХНЕГО УРОВНЯ
+────────────────────────────────────────────────────────────────────────────
+
+2.1. **.clean_shutdown** (0 Б)
+   Маркер штатного завершения gateway. Создаётся при clean-shutdown.
+   Сейчас существует (создан 21:40 в день инсталляции профиля),
+   значит последний shutdown был штатный.
+
+2.2. **.env** (165 Б, mode 600)
+   Переменные окружения для профиля. Минимальный (165 Б) — содержит
+   только базовые настройки (без TELEGRAM_BOT_TOKEN — этот профиль
+   НЕ подключён к Telegram-боту).
+
+2.3. **SOUL.md** (513 Б)
+   Личность профиля. Тот же базовый размер, что у default —
+   короткий пресет, без расширенной кастомизации.
+
+2.4. **audio_cache/** (4 КБ, пусто)
+   Кэш озвучки (text-to-speech). Не использовался — TTS у этого
+   профиля не задействован.
+
+2.5. **bin/** (22 МБ)
+   Внутри: бинарь `tirith` (22 МБ). Это security-сканер
+   предустановленных secrets в файлах. Используется `hermes security`.
+   Это **большой** объект, доминирует в размере профиля.
+
+2.6. **channel_directory.json** (628 Б)
+   Список каналов (messaging platforms), с которыми профиль
+   работает. Скорее всего, пустой/минимальный (628 Б).
+
+2.7. **cron/** (4 файла, 16 КБ)
+   Содержит:
+   - `output/` (каталог для результатов cron-задач).
+   - `ticker_heartbeat` (18 Б).
+   - `ticker_last_success` (18 Б).
+   Маркеры активности cron'а.
+
+2.8. **gateway.lock** (136 Б)
+   Lock-файл, указывающий, что gateway-процесс запущен.
+   Создан 21:36 в день инсталляции; сейчас процесс остановлен
+   (`hermes status`: analyst_training gateway stopped), но lock
+   остался (возможно, остаточное состояние).
+
+2.9. **gateway_state.json** (279 Б)
+   Машиночитаемое состояние gateway:
+   - `pid`, `start_time`, `state` ("stopped").
+   - Сохранено 21:40 — последний clean-shutdown.
+
+2.10. **home/** (4 КБ, пусто)
+    HOME-каталог для sandbox-окружений.
+
+2.11. **hooks/** (4 КБ, пусто)
+    Pre/post-tool события. Не настроены.
+
+2.12. **image_cache/** (4 КБ, пусто)
+    Кэш сгенерированных изображений.
+
+2.13. **logs/** (5 файлов, 44 КБ)
+    Подробнее в секции 4.
+
+2.14. **memories/** (4 КБ, пусто)
+    Здесь должны быть MEMORY.md и USER.md, но они отсутствуют.
+    Это означает: модель не дописывала память для этого профиля.
+
+2.15. **pairing/** (4 КБ, пусто)
+    Для OAuth-pairing (matrix/discord/etc). Не использовался.
+
+2.16. **plans/** (4 КБ, пусто)
+    Журналы задач. Ни одной задачи не было запущено.
+
+2.17. **platforms/** (8 КБ)
+    Каталог platform-specific state. Содержит подкаталог
+    `pairing/` (тоже пустой).
+
+2.18. **sandboxes/** (8 КБ)
+    Изолированные окружения (Singularity/контейнеры). Содержит
+    `singularity/` — заглушка для будущего использования.
+
+2.19. **sessions/** (4 КБ, пусто)
+    Журнал чат-сессий. Пусто — сессий не было.
+
+2.20. **skills/** (7 МБ, 448 файлов, 72 SKILL.md, 17 категорий)
+    Самый большой каталог. Содержит все навыки профиля.
+    Подробная декомпозиция — в секции 5.
+
+2.21. **skins/** (4 КБ, пусто)
+    Темы/скины UI.
+
+2.22. **state.db** (139 КБ)
+    SQLite-база сессий и истории. Создана 21:40.
+
+2.23. **workspace/** (4 КБ, пусто)
+    Рабочее пространство профиля. Не использовалось — нет ни
+    inbox/, ни results/, ни references/.
+
+────────────────────────────────────────────────────────────────────────────
+3. СВОДНАЯ ТАБЛИЦА ПО КАТАЛОГАМ ВЕРХНЕГО УРОВНЯ
+────────────────────────────────────────────────────────────────────────────
+
+  ┌──────────────────┬─────────────┬───────┬──────────────────────────────────┐
+  │ Каталог/файл     │ Размер      │ Файлов│ Что внутри                       │
+  ├──────────────────┼─────────────┼───────┼──────────────────────────────────┤
+  │ .clean_shutdown  │ 0 Б         │ 0     │ маркер clean-shutdown           │
+  │ .env             │ 165 Б       │ 0     │ секреты профиля (mode 600)      │
+  │ SOUL.md          │ 513 Б       │ 0     │ личность агента                 │
+  │ audio_cache/     │ 4 КБ        │ 0     │ кэш TTS (не используется)        │
+  │ bin/             │ 22 МБ       │ 1     │ tirith security-сканер          │
+  │ channel_dir.json │ 628 Б       │ 0     │ реестр каналов                  │
+  │ cron/            │ 16 КБ       │ 4     │ cron-маркеры                    │
+  │ gateway.lock     │ 136 Б       │ 0     │ lock gateway-процесса           │
+  │ gateway_state    │ 279 Б       │ 0     │ machine state                   │
+  │ home/            │ 4 КБ        │ 0     │ HOME для sandbox                │
+  │ hooks/           │ 4 КБ        │ 0     │ pre/post events                 │
+  │ image_cache/     │ 4 КБ        │ 0     │ кэш картинок                    │
+  │ logs/            │ 44 КБ       │ 5     │ runtime-логи                    │
+  │ memories/        │ 4 КБ        │ 0     │ (пусто, нет MEMORY/USER)        │
+  │ pairing/         │ 4 КБ        │ 0     │ OAuth-pairing                   │
+  │ plans/           │ 4 КБ        │ 0     │ (пусто, задач не было)          │
+  │ platforms/       │ 8 КБ        │ 0     │ platform state                  │
+  │ sandboxes/       │ 8 КБ        │ 0     │ singularity-окружения           │
+  │ sessions/        │ 4 КБ        │ 0     │ (пусто)                         │
+  │ skills/          │ 7 МБ        │ 448   │ 72 навыка, 17 категорий         │
+  │ skins/           │ 4 КБ        │ 0     │ (пусто)                         │
+  │ state.db         │ 139 КБ      │ 0     │ SQLite БД                       │
+  │ workspace/       │ 4 КБ        │ 0     │ (пусто, задач не было)          │
+  └──────────────────┴─────────────┴───────┴──────────────────────────────────┘
+
+────────────────────────────────────────────────────────────────────────────
+4. LOGS/ — ДЕТАЛИ
+────────────────────────────────────────────────────────────────────────────
+
+```
+logs/
+├── agent.log                 (12 КБ)
+├── curator/                  (4 КБ)
+├── errors.log                (1.3 КБ)
+├── gateway-exit-diag.log     (705 Б)
+├── gateway-shutdown-diag.log (6.6 КБ)
+└── gateway.log               (2.4 КБ)
+```
+
+4.1. **agent.log** (12 КБ) — главный лог agent-циклов.
+4.2. **curator/** — подкаталог для curator'а (skill-manager).
+4.3. **errors.log** (1.3 КБ) — только ошибки (короткий, значит мало).
+4.4. **gateway-exit-diag.log** (705 Б) — диагностика при выходе.
+4.5. **gateway-shutdown-diag.log** (6.6 КБ) — диагностика shutdown.
+4.6. **gateway.log** (2.4 КБ) — главный лог gateway.
+
+Совокупно 44 КБ — профиль почти не работал (это тестовый/обучающий
+профиль, а не production).
+
+────────────────────────────────────────────────────────────────────────────
+5. SKILLS/ — ДЕРЕВО ПОЛНОЕ (17 КАТЕГОРИЙ, 72 SKILL.MD)
+────────────────────────────────────────────────────────────────────────────
+
+Это самая «живая» часть профиля — 448 файлов, 7 МБ. Структура
+по категориям:
+
+```
+skills/
+├── apple/                          (4 SKILL.md)
+│   ├── DESCRIPTION.md              (137 Б)
+│   ├── apple-notes/SKILL.md        (2.1 КБ)
+│   ├── apple-reminders/SKILL.md    (3.5 КБ)
+│   ├── findmy/SKILL.md             (3.6 КБ)
+│   └── imessage/SKILL.md           (2.4 КБ)
+│
+├── autonomous-ai-agents/           (4 SKILL.md)
+│   ├── DESCRIPTION.md              (211 Б)
+│   ├── claude-code/SKILL.md        (33 КБ) — крупнейший
+│   ├── codex/SKILL.md              (5.3 КБ)
+│   ├── hermes-agent/SKILL.md       (50 КБ) — крупнейший 2-й
+│   ├── hermes-agent/references/    (4 КБ)
+│   └── opencode/SKILL.md           (7.1 КБ)
+│
+├── computer-use/                   (1 SKILL.md)
+│   └── SKILL.md                    (11 КБ)
+│
+├── creative/                       (16 SKILL.md — самая крупная)
+│   ├── DESCRIPTION.md              (116 Б)
+│   ├── architecture-diagram/
+│   │   ├── SKILL.md                (5.7 КБ)
+│   │   └── templates/              (4 КБ)
+│   ├── ascii-art/SKILL.md          (10 КБ)
+│   ├── ascii-video/
+│   │   ├── README.md               (16 КБ)
+│   │   ├── SKILL.md                (15 КБ)
+│   │   └── references/             (4 КБ)
+│   ├── baoyu-infographic/
+│   │   ├── PORT_NOTES.md           (1.7 КБ)
+│   │   ├── SKILL.md                (10 КБ)
+│   │   └── references/             (4 КБ)
+│   ├── claude-design/SKILL.md      (25 КБ)
+│   ├── comfyui/
+│   │   ├── SKILL.md                (24 КБ)
+│   │   ├── references/             (4 КБ)
+│   │   ├── scripts/                (4 КБ)
+│   │   ├── tests/                  (4 КБ)
+│   │   └── workflows/              (4 КБ)
+│   ├── design-md/
+│   │   ├── SKILL.md                (6.9 КБ)
+│   │   └── templates/              (4 КБ)
+│   ├── excalidraw/
+│   │   ├── SKILL.md                (7.1 КБ)
+│   │   ├── references/             (4 КБ)
+│   │   └── scripts/                (4 КБ)
+│   ├── humanizer/
+│   │   ├── LICENSE                 (1.0 КБ)
+│   │   └── SKILL.md                (29 КБ)
+│   ├── manim-video/
+│   │   ├── README.md               (886 Б)
+│   │   ├── SKILL.md                (12 КБ)
+│   │   ├── references/             (4 КБ)
+│   │   └── scripts/                (4 КБ)
+│   ├── p5js/
+│   │   ├── README.md               (3.2 КБ)
+│   │   ├── SKILL.md                (27 КБ)
+│   │   ├── references/             (4 КБ)
+│   │   ├── scripts/                (4 КБ)
+│   │   └── templates/              (4 КБ)
+│   ├── popular-web-designs/SKILL.md (9.5 КБ)
+│   ├── pretext/                     (4 КБ)
+│   ├── sketch/                      (4 КБ)
+│   ├── songwriting-and-ai-music/    (4 КБ)
+│   └── touchdesigner-mcp/           (4 КБ)
+│
+├── data-science/                   (1 SKILL.md)
+│   └── jupyter-live-kernel/SKILL.md
+│
+├── dogfood/                        (1 SKILL.md)
+│   └── SKILL.md
+│
+├── email/                          (1 SKILL.md)
+│   └── himalaya/SKILL.md
+│
+├── github/                         (6 SKILL.md)
+│   ├── codebase-inspection/SKILL.md
+│   ├── github-auth/SKILL.md
+│   ├── github-code-review/SKILL.md
+│   ├── github-issues/SKILL.md
+│   ├── github-pr-workflow/SKILL.md
+│   └── github-repo-management/SKILL.md
+│
+├── media/                          (4 SKILL.md)
+│   ├── gif-search/SKILL.md
+│   ├── heartmula/SKILL.md
+│   ├── songsee/SKILL.md
+│   └── youtube-content/SKILL.md
+│
+├── mlops/                          (7 SKILL.md — много подкатегорий)
+│   ├── evaluation/
+│   │   ├── lm-evaluation-harness/SKILL.md
+│   │   └── weights-and-biases/SKILL.md
+│   ├── huggingface-hub/SKILL.md
+│   ├── inference/
+│   │   ├── llama-cpp/
+│   │   │   ├── SKILL.md
+│   │   │   └── references/         (6 файлов: advanced-usage, hub-discovery,
+│   │   │                           optimization, quantization, server,
+│   │   │                           troubleshooting)
+│   │   └── vllm/
+│   │       ├── SKILL.md
+│   │       └── references/         (4 файла)
+│   └── models/
+│       ├── audiocraft/SKILL.md
+│       └── segment-anything/SKILL.md
+│
+├── note-taking/                    (1 SKILL.md)
+│   └── obsidian/SKILL.md
+│
+├── productivity/                   (9 SKILL.md)
+│   ├── airtable/SKILL.md
+│   ├── google-workspace/SKILL.md
+│   ├── maps/SKILL.md
+│   ├── nano-pdf/SKILL.md
+│   ├── notion/SKILL.md
+│   ├── ocr-and-documents/SKILL.md
+│   ├── petdex/SKILL.md
+│   ├── powerpoint/SKILL.md
+│   └── teams-meeting-pipeline/SKILL.md
+│
+├── research/                       (5 SKILL.md)
+│   ├── arxiv/SKILL.md
+│   ├── blogwatcher/SKILL.md
+│   ├── llm-wiki/SKILL.md
+│   ├── polymarket/SKILL.md
+│   └── research-paper-writing/SKILL.md
+│
+├── smart-home/                     (1 SKILL.md)
+│   └── openhue/SKILL.md
+│
+├── social-media/                   (1 SKILL.md)
+│   └── xurl/SKILL.md
+│
+├── software-development/           (9 SKILL.md)
+│   ├── hermes-agent-skill-authoring/SKILL.md
+│   ├── node-inspect-debugger/SKILL.md
+│   ├── plan/SKILL.md
+│   ├── python-debugpy/SKILL.md
+│   ├── requesting-code-review/SKILL.md
+│   ├── simplify-code/SKILL.md
+│   ├── spike/SKILL.md
+│   ├── systematic-debugging/SKILL.md
+│   └── test-driven-development/SKILL.md
+│
+└── yuanbao/                        (1 SKILL.md)
+    └── SKILL.md
+```
+
+────────────────────────────────────────────────────────────────────────────
+6. СВОДКА ПО КАТЕГОРИЯМ SKILLS
+────────────────────────────────────────────────────────────────────────────
+
+  ┌────────────────────────────┬───────────┬───────────────────────────┐
+  │ Категория                  │ SKILL.md  │ Что внутри                │
+  ├────────────────────────────┼───────────┼───────────────────────────┤
+  │ apple                      │ 4         │ macOS-интеграция          │
+  │ autonomous-ai-agents       │ 4         │ Claude Code, Codex,       │
+  │                            │           │ Hermes, OpenCode          │
+  │ computer-use               │ 1         │ управление компьютером    │
+  │ creative                   │ 16        │ ASCII, p5js, Manim,       │
+  │                            │           │ Excalidraw, ComfyUI, ...  │
+  │ data-science               │ 1         │ Jupyter kernel            │
+  │ dogfood                    │ 1         │ QA Hermes                 │
+  │ email                      │ 1         │ Himalaya CLI              │
+  │ github                     │ 6         │ PR, code review, issues   │
+  │ media                      │ 4         │ YouTube, GIF, HeartMuLa   │
+  │ mlops                      │ 7         │ HF Hub, vLLM, llama.cpp  │
+  │ note-taking                │ 1         │ Obsidian                  │
+  │ productivity               │ 9         │ Airtable, Notion, Maps    │
+  │ research                   │ 5         │ arXiv, Polymarket, Blog   │
+  │ smart-home                 │ 1         │ Philips Hue               │
+  │ social-media               │ 1         │ xurl (X / Twitter)        │
+  │ software-development       │ 9         │ TDD, debug, simplify      │
+  │ yuanbao                    │ 1         │ Yuanbao groups            │
+  ├────────────────────────────┼───────────┼───────────────────────────┤
+  │ ИТОГО                      │ 72        │                           │
+  └────────────────────────────┴───────────┴───────────────────────────┘
+
+────────────────────────────────────────────────────────────────────────────
+7. КРУПНЕЙШИЕ SKILL.MD
+────────────────────────────────────────────────────────────────────────────
+
+Топ-10 по размеру:
+
+  ┌───────────────────────────────────────────────┬────────┐
+  │ SKILL.md                                      │ Размер │
+  ├───────────────────────────────────────────────┼────────┤
+  │ autonomous-ai-agents/hermes-agent/SKILL.md    │ 50 КБ  │
+  │ autonomous-ai-agents/claude-code/SKILL.md     │ 33 КБ  │
+  │ creative/humanizer/SKILL.md                   │ 29 КБ  │
+  │ creative/p5js/SKILL.md                        │ 27 КБ  │
+  │ creative/claude-design/SKILL.md               │ 25 КБ  │
+  │ creative/comfyui/SKILL.md                     │ 24 КБ  │
+  │ creative/ascii-video/SKILL.md                 │ 15 КБ  │
+  │ creative/manim-video/SKILL.md                 │ 12 КБ  │
+  │ computer-use/SKILL.md                         │ 11 КБ  │
+  │ creative/ascii-art/SKILL.md                   │ 10 КБ  │
+  │ creative/baoyu-infographic/SKILL.md           │ 10 КБ  │
+  └───────────────────────────────────────────────┴────────┘
+
+────────────────────────────────────────────────────────────────────────────
+8. ЧТО ВЫВОДИТСЯ ИЗ АНАЛИЗА
+────────────────────────────────────────────────────────────────────────────
+
+8.1. **Профиль почти не использовался**.
+   - workspace/ пусто — задач не было.
+   - plans/ пусто — журналов нет.
+   - memories/ пусто — модель не дописывала MEMORY.md/USER.md.
+   - sessions/ пусто — сессий не было.
+   - hooks/ пусто — нет кастомных событий.
+
+8.2. **Это «обучающий» профиль** (по имени `analyst_training`).
+   Готов как «набор готовых навыков для тренировки аналитика»,
+   но реальная работа ещё не проводилась.
+
+8.3. **Skills — это главный актив**.
+   72 навыка в 17 категориях — покрывают почти все домены:
+   - GitHub, GitLab-style работа.
+   - ML-ops (HuggingFace, vLLM, llama.cpp, evaluation).
+   - Productivity (Notion, Airtable, Obsidian, Maps).
+   - Creative (рисование, видео, дизайн, музыка).
+   - Research (arXiv, Polymarket).
+   - Software-dev (TDD, debugging, planning).
+
+8.4. **Telegram НЕ настроен**.
+   .env всего 165 Б (без TELEGRAM_BOT_TOKEN), channel_directory.json
+   628 Б (минимум). Этот профиль — НЕ messaging-агент, а
+   tool-агент.
+
+8.5. **Gateway был запущен один раз** (тестовый).
+   - `gateway.lock` создан 21:36.
+   - `gateway_state.json` обновлён 21:40.
+   - `.clean_shutdown` маркер стоит → корректно остановлен.
+
+8.6. **Самое тяжёлое в профиле — bin/tirith (22 МБ)**.
+   Это security-сканер. Все остальное — лёгкое.
+
+────────────────────────────────────────────────────────────────────────────
+9. СРАВНЕНИЕ С ДРУГИМИ ПРОФИЛЯМИ
+────────────────────────────────────────────────────────────────────────────
+
+На этом хосте:
+
+  ┌──────────────────────┬──────────────┬─────────────┬───────────────┐
+  │ Профиль              │ Размер       │ Файлов      │ Skills        │
+  ├──────────────────────┼──────────────┼─────────────┼───────────────┤
+  │ default              │ ~150 МБ      │ ~2000       │ 18 категорий  │
+  │ analyst_training     │ 29 МБ        │ 465         │ 17 категорий  │
+  │ mi_mg_01             │ ~5 МБ        │ ~30         │ 16 категорий  │
+  │                      │              │             │ (clone от def)│
+  └──────────────────────┴──────────────┴─────────────┴───────────────┘
+
+analyst_training — «средний» по насыщенности: меньше default, но
+больше mi_mg_01.
+
+────────────────────────────────────────────────────────────────────────────
+10. ПОЛНЫЙ TREE (ДО 4 УРОВНЕЙ, С РАЗМЕРАМИ)
+────────────────────────────────────────────────────────────────────────────
+
+```
+[4.0K]  /root/.hermes/profiles/analyst_training
+├── [ 513]  SOUL.md
+├── [   0]  .clean_shutdown
+├── [ 165]  .env
+├── [ 628]  channel_directory.json
+├── [ 136]  gateway.lock
+├── [ 279]  gateway_state.json
+├── [139K]  state.db
+├── [4.0K]  audio_cache
+├── [4.0K]  home
+├── [4.0K]  hooks
+├── [4.0K]  image_cache
+├── [4.0K]  memories
+├── [4.0K]  pairing
+├── [4.0K]  plans
+├── [4.0K]  sessions
+├── [4.0K]  skins
+├── [4.0K]  workspace
+├── [ 22M]  bin
+│   └── [ 22M]  tirith
+├── [ 16K]  cron
+│   ├── [   0]  output
+│   ├── [  18]  ticker_heartbeat
+│   └── [  18]  ticker_last_success
+├── [ 44K]  logs
+│   ├── [ 12K]  agent.log
+│   ├── [4.0K]  curator
+│   ├── [1.3K]  errors.log
+│   ├── [ 705]  gateway-exit-diag.log
+│   ├── [6.6K]  gateway-shutdown-diag.log
+│   └── [2.4K]  gateway.log
+├── [8.0K]  platforms
+│   └── [4.0K]  pairing
+├── [8.0K]  sandboxes
+│   └── [4.0K]  singularity
+└── [7.0M]  skills
+    ├── [4.0K]  apple
+    │   ├── [ 137]  DESCRIPTION.md
+    │   ├── [4.0K]  apple-notes
+    │   │   └── [2.1K]  SKILL.md
+    │   ├── [4.0K]  apple-reminders
+    │   │   └── [3.5K]  SKILL.md
+    │   ├── [4.0K]  findmy
+    │   │   └── [3.6K]  SKILL.md
+    │   └── [4.0K]  imessage
+    │       └── [2.4K]  SKILL.md
+    ├── [4.0K]  autonomous-ai-agents
+    │   ├── [ 211]  DESCRIPTION.md
+    │   ├── [4.0K]  claude-code
+    │   │   └── [ 33K]  SKILL.md
+    │   ├── [4.0K]  codex
+    │   │   └── [5.3K]  SKILL.md
+    │   ├── [4.0K]  hermes-agent
+    │   │   ├── [ 50K]  SKILL.md
+    │   │   └── [4.0K]  references
+    │   └── [4.0K]  opencode
+    │       └── [7.1K]  SKILL.md
+    ├── [4.0K]  computer-use
+    │   └── [ 11K]  SKILL.md
+    ├── [4.0K]  creative
+    │   ├── [ 116]  DESCRIPTION.md
+    │   ├── [4.0K]  architecture-diagram
+    │   ├── [4.0K]  ascii-art
+    │   ├── [4.0K]  ascii-video
+    │   ├── [4.0K]  baoyu-infographic
+    │   ├── [4.0K]  claude-design
+    │   ├── [4.0K]  comfyui
+    │   ├── [4.0K]  design-md
+    │   ├── [4.0K]  excalidraw
+    │   ├── [4.0K]  humanizer
+    │   ├── [4.0K]  manim-video
+    │   ├── [4.0K]  p5js
+    │   ├── [4.0K]  popular-web-designs
+    │   ├── [4.0K]  pretext
+    │   ├── [4.0K]  sketch
+    │   ├── [4.0K]  songwriting-and-ai-music
+    │   └── [4.0K]  touchdesigner-mcp
+    ├── [4.0K]  data-science
+    │   └── [4.0K]  jupyter-live-kernel
+    ├── [4.0K]  dogfood
+    │   └── [   ?]  SKILL.md
+    ├── [4.0K]  email
+    │   └── [4.0K]  himalaya
+    ├── [4.0K]  github
+    │   ├── [4.0K]  codebase-inspection
+    │   ├── [4.0K]  github-auth
+    │   ├── [4.0K]  github-code-review
+    │   ├── [4.0K]  github-issues
+    │   ├── [4.0K]  github-pr-workflow
+    │   └── [4.0K]  github-repo-management
+    ├── [4.0K]  media
+    │   ├── [4.0K]  gif-search
+    │   ├── [4.0K]  heartmula
+    │   ├── [4.0K]  songsee
+    │   └── [4.0K]  youtube-content
+    ├── [4.0K]  mlops
+    │   ├── [4.0K]  evaluation
+    │   ├── [4.0K]  huggingface-hub
+    │   ├── [4.0K]  inference
+    │   │   ├── [4.0K]  llama-cpp
+    │   │   └── [4.0K]  vllm
+    │   └── [4.0K]  models
+    │       ├── [4.0K]  audiocraft
+    │       └── [4.0K]  segment-anything
+    ├── [4.0K]  note-taking
+    │   ├── [ 146]  DESCRIPTION.md
+    │   └── [4.0K]  obsidian
+    ├── [4.0K]  productivity
+    │   ├── [ 114]  DESCRIPTION.md
+    │   ├── [4.0K]  airtable
+    │   ├── [4.0K]  google-workspace
+    │   ├── [4.0K]  maps
+    │   ├── [4.0K]  nano-pdf
+    │   ├── [4.0K]  notion
+    │   ├── [4.0K]  ocr-and-documents
+    │   ├── [4.0K]  petdex
+    │   ├── [4.0K]  powerpoint
+    │   └── [4.0K]  teams-meeting-pipeline
+    ├── [4.0K]  research
+    │   ├── [ 179]  DESCRIPTION.md
+    │   ├── [4.0K]  arxiv
+    │   ├── [4.0K]  blogwatcher
+    │   ├── [4.0K]  llm-wiki
+    │   ├── [4.0K]  polymarket
+    │   └── [4.0K]  research-paper-writing
+    ├── [4.0K]  smart-home
+    │   └── [4.0K]  openhue
+    ├── [4.0K]  social-media
+    │   └── [4.0K]  xurl
+    ├── [4.0K]  software-development
+    │   ├── [4.0K]  hermes-agent-skill-authoring
+    │   ├── [4.0K]  node-inspect-debugger
+    │   ├── [4.0K]  plan
+    │   ├── [4.0K]  python-debugpy
+    │   ├── [4.0K]  requesting-code-review
+    │   ├── [4.0K]  simplify-code
+    │   ├── [4.0K]  spike
+    │   ├── [4.0K]  systematic-debugging
+    │   └── [4.0K]  test-driven-development
+    └── [4.0K]  yuanbao
+        └── [   ?]  SKILL.md
+```
+
+────────────────────────────────────────────────────────────────────────────
+11. ЗАКЛЮЧЕНИЕ
+────────────────────────────────────────────────────────────────────────────
+
+Профиль `analyst_training` — **готовый набор инструментов** для
+аналитика / разработчика / исследователя, с 72 навыками в 17
+категориях, но **ещё не запускавшийся в реальную работу**.
+
+Ключевые цифры:
+  • 29 МБ / 465 файлов / 175 каталогов.
+  • 72 SKILL.md в 17 категориях.
+  • Крупнейший навык: hermes-agent (50 КБ).
+  • Самый тяжёлый файл: tirith (22 МБ, security-сканер).
+  • Ни одной сессии, ни одной задачи, ни одного skill-вызова.
+
+Если хотите «оживить» профиль:
+  1. Добавить .env с API-ключами (если нужны модели).
+  2. Создать первую задачу в `workspace/inbox/<id>/task.md`.
+  3. Запустить через `hermes --profile=analyst_training chat`.
+
+Это даст baseline активности. После чего появятся sessions/,
+plans/, memories/ (когда модель допишет факты), и
+`logs/` начнут расти.

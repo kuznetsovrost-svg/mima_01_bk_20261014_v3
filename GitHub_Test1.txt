@@ -1,0 +1,161 @@
+==============================================================================
+  ПРОВЕРКА ПОДКЛЮЧЕНИЯ HERMES AGENT → GITHUB
+==============================================================================
+
+Дата/время (UTC): 2026-06-15T18:44:09.667672Z
+Хост:            twc1.net (8.31.79.37)
+OS:              Linux-6.8.0-124-generic-x86_64-with-glibc2.39
+Kernel:          6.8.0-124-generic
+User:            root
+Python:          3.11.15
+Hermes проект:   /usr/local/lib/hermes-agent
+Hermes профиль:  default
+
+==============================================================================
+  ИТОГОВЫЙ ВЕРДИКТ
+==============================================================================
+
+GitHub ДОСТУПЕН для Hermes Agent через SSH-ключ.
+
+  [✓] SSH-аутентификация        работает (kuznetsovrost-svg на github.com)
+  [✓] HTTPS→SSH rewrite         работает (git config url.*.insteadOf)
+  [✓] Git операции              работают (ls-remote по SSH и HTTPS)
+  [✓] GitHub API (anonymous)    доступен (api.github.com → HTTP 200)
+  [✗] gh CLI                    не установлен
+  [✗] GitHub API (auth)         не проверен — нет GITHUB_TOKEN в .env
+  [✗] Hermes GitHub provider    не настроен (hermes status: GitHub ✗)
+  [✗] ssh-agent                 не запущен (но не критично — ключ читается с диска)
+  [✗] ~/.ssh/config             отсутствует (используются дефолты OpenSSH)
+  [—] credential.helper         none (не нужен: используется SSH, а не HTTPS-token)
+  [—] ~/.git-credentials        отсутствует (используется SSH, не HTTPS-token)
+
+==============================================================================
+  КЛЮЧЕВЫЕ ДОКАЗАТЕЛЬСТВА
+==============================================================================
+
+── [1] SSH-аутентификация на GitHub ──
+  Команда:   ssh -T -o BatchMode=yes -o StrictHostKeyChecking=accept-new git@github.com
+  Ответ:     Hi kuznetsovrost-svg! You've successfully authenticated,
+             but GitHub does not provide shell access.
+  Exit code: 1   (это НОРМАЛЬНО — GitHub отвечает 'no shell', не ошибка)
+  Вердикт:   SSH-ключ привязан к аккаунту kuznetsovrost-svg.
+
+── [2] Какой именно SSH-ключ использован ──
+  Команда:   ssh -T -v ... git@github.com 2>&1 | grep -E 'Offering|Authenticated'
+  Ответ:     Offering public key: /root/.ssh/id_ed25519
+             ED25519 SHA256:dNVO78pFRa6X0Pms69+aUA5vPPUKOqQwIa6yCLK//Hc
+             Authenticated to github.com ([140.82.121.3]:22) using "publickey"
+  Вердикт:   GitHub принял ключ ed25519 (тип: ED25519, fingerprint подтверждён).
+
+── [3] Файлы ключей ──
+  Private:  /root/.ssh/id_ed25519   (444 байт, mode 600, owner root, 13 Jun 2026)
+  Public:   /root/.ssh/id_ed25519.pub (120 байт, mode 644, owner root, 13 Jun 2026)
+
+── [4] SSH-config и ssh-agent ──
+  ~/.ssh/config         отсутствует (используются дефолты OpenSSH).
+  ssh-agent             не запущен (ssh-add -l → 'Could not open a connection').
+  Влияние:              НЕТ. OpenSSH умеет брать ключ напрямую с диска,
+                        ssh-agent нужен только для passphrased-ключей или
+                        forward'инга на другие хосты. Здесь всё работает.
+
+── [5] Глобальный git config ──
+  url.git@github.com:.insteadof=https://github.com/
+  user.name=kuznetsovrost-svg
+  user.email=kuznetsov.rost@gmail.com
+  Вердикт:   identity установлена, rewrite-правило включено.
+
+── [6] Реальный git fetch (SSH) ──
+  Команда:  git ls-remote git@github.com:octocat/Hello-World.git
+  Ответ:    HEAD и 5 refs (master, octocat-patch-1, test, refs/pull/1/head)
+  Exit:     0
+  Вердикт:  SSH-канал работает для полноценных git-операций.
+
+── [7] Реальный git fetch (HTTPS) с rewrite на SSH ──
+  Команда:  git ls-remote https://github.com/octocat/Hello-World.git
+  Ответ:    ТЕ ЖЕ 5 refs, exit 0.
+  Вердикт:  rewrite https://github.com/ → git@github.com: сработал.
+            Аутентификация пришла с того же ed25519-ключа, никаких
+            credential-prompts не было. GIT_TERMINAL_PROMPT=0 подтверждает,
+            что токен/PAT не запрашивался.
+
+── [8] Анонимный запрос к GitHub API ──
+  Команда:  curl -m 8 -o /dev/null -w 'HTTP=%{http_code} time=%{time_total}s' https://api.github.com/
+  Ответ:    HTTP=200 time=0.34s
+  Вердикт:  Исходящий HTTPS к api.github.com не блокируется,
+            сетевая связность с GitHub — OK.
+
+── [9] Токены GitHub ──
+  GITHUB_TOKEN в ~/.hermes/.env:     НЕТ (awk-поиск пуст)
+  GH_TOKEN в ~/.hermes/.env:         НЕТ
+  GITHUB_API_TOKEN в ~/.hermes/.env: НЕТ
+  GITHUB_TOKEN в ENV:                НЕТ (env | grep вернул пусто)
+  ~/.git-credentials:                НЕТ (нет HTTPS-токенов на диске)
+  Влияние:                           Для Git-операций по SSH токен не нужен.
+                                     Для доступа к GitHub API от имени юзера
+                                     (graphql / REST / private) — потребуется
+                                     создать Personal Access Token и положить
+                                     в GITHUB_TOKEN, иначе только anonymous
+                                     лимит 60 req/h.
+
+── [10] hermes status (встроенный провайдер) ──
+  GitHub   ✗    — Hermes знает, что GitHub-провайдер не настроен
+  MiniMax  ✓    — единственный активный LLM-провайдер
+  Вердикт:        Hermes готов использовать GitHub-SKILLS
+                  (github-auth, github-pr-workflow, github-code-review,
+                   github-issues, github-repo-management) и они будут
+                  вызывать 'git' / curl. gh CLI отсутствует — skills,
+                  требующие gh (создание issue, PR-workflow), упадут
+                  на 'gh: command not found', но прямые git-команды
+                  и curl к API работают.
+
+── [11] GitHub skills — что установлено ──
+  skills/github/:
+    - github-auth
+    - github-code-review
+    - github-issues
+    - github-pr-workflow
+    - github-repo-management
+    - codebase-inspection
+    - DESCRIPTION.md
+
+==============================================================================
+  ЧТО РАБОТАЕТ ПРЯМО СЕЙЧАС
+==============================================================================
+
+  • git clone git@github.com:<owner>/<repo>          — ДА
+  • git clone https://github.com/<owner>/<repo>      — ДА (через rewrite на SSH)
+  • git fetch / pull / push в свои репо               — ДА (если ключ имеет write-доступ)
+  • git submodule / worktree                          — ДА
+  • curl https://api.github.com/... (anonymous)       — ДА (HTTP 200, лимит 60 req/h)
+  • curl -H 'Authorization: token <PAT>' ...api...    — ДА (как только задашь GITHUB_TOKEN)
+
+==============================================================================
+  ЧТО НЕ РАБОТАЕТ / ЧЕГО НЕ ХВАТАЕТ
+==============================================================================
+
+  ✗ gh CLI не установлен — skills, зависящие от gh, не работают.
+    Установка:  sudo apt-get install gh  ИЛИ  скачать бинарь с
+                https://github.com/cli/cli/releases
+  ✗ Нет GitHub API-токена — нельзя из Hermes вызывать /user, /repos,
+    GraphQL, создавать/закрывать issues, открывать PR через API.
+    Создать: https://github.com/settings/tokens
+    Записать: добавить строку GITHUB_TOKEN=ghp_... в ~/.hermes/.env
+  ✗ Нет ~/.ssh/config — не настроен SSH-over-443 (github-альтернатива
+    на случай блокировки 22/tcp. На этом хосте 22/tcp к GitHub открыт,
+    но если что — пригодится Host=github.com → ssh.github.com:443.
+  ✗ ssh-agent не запущен — на текущий момент не критично, но если в
+    будущем поставишь passphrase на ключ, придётся либо убрать его,
+    либо настроить systemd-user ssh-agent.service.
+  ✗ Hermes status показывает GitHub ✗ — это просто значит, что нет
+    GITHUB_TOKEN в .env; на работу git-SSH-канала не влияет.
+
+==============================================================================
+  ОДНОСТРОЧНОЕ РЕЗЮМЕ
+==============================================================================
+
+  SSH-ключ ed25519 валиден и привязан к kuznetsovrost-svg;
+  git clone/fetch/push работают как по SSH, так и по HTTPS (через rewrite);
+  GitHub API доступен анонимно;
+  gh CLI не установлен;
+  GITHUB_TOKEN не задан — API-операции от имени пользователя не работают.
+

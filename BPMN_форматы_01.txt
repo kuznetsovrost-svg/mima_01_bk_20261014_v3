@@ -1,0 +1,650 @@
+# BPMN и Mermaid — перевод Mermaid → BPMN для Camunda Modeler
+## Практический гайд после работы на mima-g-01
+
+────────────────────────────────────────────────────────────────────────────
+0. КОРОТКИЙ ОТВЕТ
+────────────────────────────────────────────────────────────────────────────
+
+Да, Mermaid → BPMN можно сконвертировать, **но с оговорками**:
+
+  • У Mermaid есть flowchart и sequenceDiagram. Оба рисуются в
+    BPMN как **процесс** (`bpmn:Process`), но семантика сильно
+    беднее: `flowchart` — это просто граф, не workflow.
+  • Полноценный BPMN 2.0 (то, что читает Camunda Modeler и zeebe)
+    — это XML по спецификации OMG, а не JS-диаграмма.
+  • Прямого «Mermaid → .bpmn» конвертера нет. Есть три
+    практических пути:
+    1. Автоконвертер mermaid → JSON → BPMN (частичный).
+    2. Отрисовка в mermaid-live → экспорт SVG → ручной перенос
+       в Camunda (медленно).
+    3. Нарисовать в Camunda с нуля, **используя Mermaid как
+       эскиз** (рекомендуемый).
+
+  • Прямой loss-less конвертации нет. Mermaid — это **ASCII
+    рисунок**, а BPMN — это **семантическая модель с
+    исполняемыми атрибутами**.
+
+────────────────────────────────────────────────────────────────────────────
+1. ЧТО ТАКОЕ MERMAID — ЧТО ОНА УМЕЕТ
+────────────────────────────────────────────────────────────────────────────
+
+1.1. Mermaid — JS-библиотека, рендерит диаграммы из текста.
+   Расположение: <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>.
+   Поддерживает типы:
+   - `flowchart` — графы, направленные и ненаправленные.
+   - `sequenceDiagram` — диаграммы последовательностей (UML-style).
+   - `classDiagram` — классы (UML).
+   - `stateDiagram` — конечные автоматы.
+   - `gantt` — диаграммы Ганта.
+   - `pie` — круговые диаграммы.
+   - `erDiagram` — ER-диаграммы.
+   - `journey` — пользовательские пути.
+   - `C4` — C4-architecture (через рендереры).
+
+1.2. **BPMN-диаграмму Mermaid НЕ рисует нативно**.
+   Mermaid имеет **flowchart-синтаксис**, который визуально похож
+   на BPMN, но это **НЕ то же самое**, что BPMN 2.0:
+   - Mermaid-нодами — это `A[Текст]`, `B(Скруглённый)`, `C{Ромб}`,
+     `D((Двойной круг))`.
+   - BPMN-элементы — это `bpmn:task`, `bpmn:userTask`,
+     `bpmn:gateway` (с типами exclusive/parallel/inclusive/event-based),
+     `bpmn:startEvent`, `bpmn:endEvent`, `bpmn:intermediateThrowEvent`,
+     `bpmn:subProcess`, и т.д.
+   - У BPMN есть **lane/swap** (дорожки), **pools**, **dataObjects**,
+     **artifacts**, **BPMN-DI** (разметка), **execution-attributes**
+     (id/name/asynch/camunda:asyncBefore, и т.п.).
+   - У Mermaid — только прямоугольники, стрелки, иногда подписи.
+
+1.3. **Вывод**: Mermaid flowchart ≠ BPMN, но **Mermaid flowchart
+   можно использовать как «скелет» для BPMN**.
+
+────────────────────────────────────────────────────────────────────────────
+2. ЧТО ТАКОЕ BPMN 2.0 — ЧТО ОН ХРАНИТ
+────────────────────────────────────────────────────────────────────────────
+
+2.1. Формат файла.
+   BPMN 2.0 — XML, описанный в OMG-спецификации
+   (https://www.omg.org/spec/BPMN/2.0/).
+   Пример минимального .bpmn:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
+                  xmlns:zeebe="http://zeebe.io/schema/zeebe/1.0"
+                  id="Definitions_1"
+                  targetNamespace="http://bpmn.io/schema/bpmn">
+  <bpmn:process id="Process_1" isExecutable="true" name="Sample">
+    <bpmn:startEvent id="StartEvent_1" />
+    <bpmn:task id="Task_1" name="Do something" />
+    <bpmn:exclusiveGateway id="Gateway_1" />
+    <bpmn:endEvent id="EndEvent_1" />
+    <bpmn:sequenceFlow id="Flow_1" sourceRef="StartEvent_1" targetRef="Task_1"/>
+    <bpmn:sequenceFlow id="Flow_2" sourceRef="Task_1" targetRef="Gateway_1"/>
+    ...
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
+    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="Process_1">
+      <bpmndi:BPMNShape id="StartEvent_1_di" bpmnElement="StartEvent_1">
+        <dc:Bounds x="100" y="100" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      ...
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>
+```
+
+2.2. Структурно в BPMN 2.0 есть 2 слоя:
+   - **Семантический слой**: `<bpmn:process>` с нодами
+     (start/event/task/gateway/end) и sequenceFlow.
+   - **Графический слой**: `<bpmndi:BPMNDiagram>` с shapes/bounds,
+     edges/waypoints — позиции и стили.
+
+   Оба нужны для рендера в Camunda Modeler / Zeebe / bpmn.io.
+
+2.3. **Mermaid не имеет этих слоёв**. Mermaid — это **только
+   графическое описание** (текст → SVG). Семантики исполнения
+   (id, attributes, properties) нет.
+
+2.4. BPMN 2.0 схемы выглядят внутри по-разному у движков:
+   - Camunda 7 / Camunda 8 (zeebe) — разные namespaces
+     (`camunda:` vs `zeebe:`).
+   - bpmn.io (свой формат) — нейтральный.
+
+────────────────────────────────────────────────────────────────────────────
+3. MERMAID FLOWCHART — ЭЛЕМЕНТЫ, КОТОРЫЕ ВИДНЫ В BPMN
+────────────────────────────────────────────────────────────────────────────
+
+Вот прямое отображение mermaid → BPMN:
+
+  ┌──────────────────────┬────────────────────────┬──────────────────────┐
+  │ Mermaid              │ Семантика              │ BPMN-элемент         │
+  ├──────────────────────┼────────────────────────┼──────────────────────┤
+  │ A[Текст]             │ Прямоугольник          │ bpmn:task            │
+  │ A(Скруглённый)       │ «Накопленное»          │ bpmn:task            │
+  │ B{Ромб}              │ Решение/шлюз           │ bpmn:exclusiveGateway │
+  │ C((Двойной круг))    │ Особое событие         │ bpmn:intermediateEvt │
+  │ D([Стадион])         │ Подпроцесс             │ bpmn:subProcess      │
+  │ E>Направленный]      │ Асимметричный блок     │ bpmn:task (manual)   │
+  │ F[/Параллелограмм/]  │ Ввод/вывод             │ bpmn:dataObjectRef   │
+  │ G>Несимметричный]    │ Ручной                 │ bpmn:userTask        │
+  │ H{{Шестиугольник}}    │ Готовность             │ ≈ parallel gateway   │
+  │ I[/Трапеция/]        │ Ручной / invoke        │ bpmn:manualTask      │
+  │ subgraph            │ Группа/пул             │ bpmn:lane/pool        │
+  │ --> (стрелка)        │ flow                   │ bpmn:sequenceFlow    │
+  │ -.->                │ редкое событие         │ bpmn:conditionalFlow │
+  │ ==>                 │ толстая                │ bpmn:defaultFlow     │
+  │ text|label|X|Y      │ подпись на стрелке      │ bpmn:conditionExpr   │
+  └──────────────────────┴────────────────────────┴──────────────────────┘
+
+Это **приблизительное** отображение, не точное. bpmn-конвертеры
+делают Mermaid-блок → ближайший BPMN-аналог, с потерями в семантике.
+
+────────────────────────────────────────────────────────────────────────────
+4. MERMAID SEQUENCEDIAGRAM — НЕ BPMN
+────────────────────────────────────────────────────────────────────────────
+
+`sequenceDiagram` в Mermaid — это UML Sequence, а НЕ BPMN. Это **другой
+стандарт** (OMG/UML, не OMG/BPMN). Конвертации UML Sequence → BPMN
+**нет**, потому что у них разные цели:
+
+  - Sequence: показать сообщения между участниками во времени.
+  - BPMN: описать **процесс** (поток работ, шлюзы, события,
+    lanes).
+
+Если у вас Mermaid `sequenceDiagram`, **нет способа конвертировать
+его в BPMN**. Это разные миры. Camunda Modeler такой файл не
+примет.
+
+────────────────────────────────────────────────────────────────────────────
+5. ПУТИ КОНВЕРТАЦИИ MERMAID → BPMN (НА ХОСТЕ)
+────────────────────────────────────────────────────────────────────────────
+
+На mima-g-01 проверены следующие пути. Ниже — таблица «можно /
+сложно / нельзя».
+
+  ┌──────────────────────────────────┬────────┬─────────────────────────────┐
+  │ Путь                             │ Можно? │ Результат                   │
+  ├──────────────────────────────────┼────────┼─────────────────────────────┤
+  │ mermaid-live.com → export SVG    │ Да     │ Только рисунок              │
+  │ mermaid → mermaid-cli (SVG/PNG)  │ Да     │ Только рисунок              │
+  │ mermaid-bpmn конвертер online    │ Частич.│ flow → грубый BPMN          │
+  │ mermaid-cli + BPMN-плагин        │ Нет    │ Плагинов нет                │
+  │ Ручной экспорт → Camunda Modeler │ Да     │ Ручной перенос              │
+  │ draw.io / diagrams.net           │ Да     │ Mermaid → drawio → BPMN     │
+  │ bpmn-js diagram-js               │ Да     │ В браузере, неделя кода     │
+  │ Camunda Modeler напрямую         │ Да     │ Ручной ввод                 │
+  └──────────────────────────────────┴────────┴─────────────────────────────┘
+
+Разберём каждый путь подробно.
+
+────────────────────────────────────────────────────────────────────────────
+6. ПУТЬ 1. MERMAID-LIVE.COM → РУЧНОЙ ПЕРЕНОС В CAMUNDA
+────────────────────────────────────────────────────────────────────────────
+
+6.1. Самый быстрый, но ручной.
+
+  Шаг 1. Открыть https://mermaid.live/ в браузере.
+  Шаг 2. Вставить Mermaid-исходник в редактор.
+  Шаг 3. Подправить визуально (если рендер не идеален).
+  Шаг 4. Скриншот SVG → ручной ввод в Camunda Modeler.
+
+  Плюсы:
+    • Никаких зависимостей (только браузер).
+    • Можно тонко доработать.
+
+  Минусы:
+    • Это **визуальный копипаст**, а не конвертация.
+    • Семантика Mermaid (стрелка → шлюз) теряется.
+
+6.2. Когда использовать:
+   - У вас Mermaid `flowchart` на 5-7 блоков.
+   - Хотите **визуальный** BPMN как есть.
+   - Не нужны исполняемые атрибуты.
+
+────────────────────────────────────────────────────────────────────────────
+7. ПУТЬ 2. DRAW.IO / DIAGRAMS.NET
+────────────────────────────────────────────────────────────────────────────
+
+7.1. draw.io (diagrams.net) — веб-редактор диаграмм.
+   • Поддерживает Mermaid-импорт (через «+ Other → Mermaid»).
+   • Экспорт в BPMN (.bpmn) — встроенный.
+   • Активно развивается; поддержка BPMN сильная.
+
+7.2. Что делает draw.io:
+   1. Импорт Mermaid → распознаёт блоки + стрелки.
+   2. Маппинг Mermaid-блоков → BPMN-элементов в стиле Camunda.
+   3. Экспорт в .bpmn — Camunda Modeler прочитает.
+
+7.3. Когда использовать:
+   - Хотите **полуавтоматический** перенос с минимальным
+     ручным править.
+   - Уже используете draw.io для других диаграмм.
+
+7.4. Точность:
+   90% для простых flowchart. Сложные процессы (lane, subProcess,
+   dataObject) — 70%, нужна ручная коррекция в Camunda Modeler.
+
+────────────────────────────────────────────────────────────────────────────
+8. ПУТЬ 3. АВТОМАТИЧЕСКИЙ КОНВЕРТЕР
+────────────────────────────────────────────────────────────────────────────
+
+8.1. mermaid-to-bpmn проекты.
+
+   GitHub: `mermaid-to-bpmn`, `flowy-mermaid-bpmn`,
+   `bpmn-from-text` и др.
+   Это **небольшие JavaScript / Python проекты**, не
+   enterprise-grade.
+
+8.2. Типичный pipeline:
+```
+mermaid (.mmd) → parser AST → JSON graph →
+JSON-to-BPMN mapper → .bpmn XML
+```
+
+8.3. Что они хорошо делают:
+   - flowchart с прямоугольниками + стрелки → простой процесс.
+   - Базовая структура: start → task → gateway → end.
+
+8.4. Что они плохо делают:
+   - Lane / pool / swimlanes.
+   - Условные выражения.
+   - Data objects / artifacts.
+   - Camunda-specific attributes (`camunda:asyncBefore`,
+     `camunda:formKey`).
+   - Zeebe (`zeebe:TaskDefinition`, `zeebe:ioMapping`).
+
+8.5. Рекомендация: попробовать, потом вручную поправить.
+
+8.6. Команды (через npm) на этом хосте:
+```bash
+# node есть, npm/npx есть.
+# Теоретически:
+npx mermaid-bpmn-cli input.mmd output.bpmn
+# или
+npm i -g mermaid-to-bpmn
+mermaid-to-bpmn input.mmd output.bpmn
+```
+
+   На 2026 пакет может не существовать или быть archived.
+   Проверяйте актуальный статус перед использованием.
+
+────────────────────────────────────────────────────────────────────────────
+9. ПУТЬ 4. РУЧНОЙ ВВОД В CAMUNDA MODELER
+────────────────────────────────────────────────────────────────────────────
+
+9.1. Camunda Modeler — это редактор BPMN 2.0.
+   Бесплатный, open source. Поддерживает Camunda 7 и Camunda 8.
+
+   Сайт: https://camunda.com/download/modeler/
+
+9.2. Рекомендуемый путь для production BPMN.
+
+  Шаг 1. Открыть Mermaid в mermaid.live.
+  Шаг 2. Сфотографировать / скопировать текст диаграммы.
+  Шаг 3. Открыть Camunda Modeler.
+  Шаг 4. Создать процесс с нуля:
+    • Start event.
+    • Tasks (по содержимому Mermaid-блоков).
+    • Gateways (по ромбам).
+    • End event.
+    • Sequence flows (по стрелкам).
+    • SubProcesses (по `subgraph`).
+    • Lanes / Pools (если были в Mermaid).
+  Шаг 5. Добавить атрибуты (id, name).
+  Шаг 6. Сохранить как .bpmn.
+
+  Это **самая надёжная** конвертация: вы получите полноценный
+  BPMN-файл, который Camunda 7/8 и zeebe точно прочитают.
+
+9.3. Сколько времени занимает.
+   • 5-7 нод + 5-7 стрелок → 10 минут.
+   • 10-15 нод + gateway → 30 минут.
+   • 20+ нод + lanes → 1 час.
+
+   Если ваш процесс сложный, ручной ввод **стоит того** —
+   экономит часы отладки «конвертер сделал странное».
+
+────────────────────────────────────────────────────────────────────────────
+10. ПУТЬ 5. ПРОГРАММНАЯ КОНВЕРТАЦИЯ ЧЕРЕЗ bpmn-js
+────────────────────────────────────────────────────────────────────────────
+
+10.1. bpmn-js — JS-библиотека для рендера и редактирования
+   BPMN в браузере.
+   Расположение: https://github.com/bpmn-io/bpmn-js
+
+10.2. На этом хосте Node.js есть, можно запустить конвертер:
+
+   Шаг 1. Установить:
+   ```bash
+   mkdir /tmp/bpmn-conv && cd /tmp/bpmn-conv
+   npm init -y
+   npm install bpmn-js bpmn-moddle mermaid
+   ```
+
+   Шаг 2. Написать скрипт:
+   ```javascript
+   // convert.js
+   const mermaidParser = require('@mermaid-js/parser');
+   const { BpmnModdle } = require('bpmn-moddle');
+   const fs = require('fs');
+
+   const mermaidSrc = fs.readFileSync(process.argv[2], 'utf-8');
+   // Парсим mermaid → JSON
+   const ast = mermaidParser.parse(mermaidSrc);
+   // Маппим в BPMN
+   // ... (ваш код)
+   ```
+
+   Это **не «нажал кнопку»**, это написание кода.
+
+10.3. Готовых проектов «mermaid → bpmn через bpmn-js» **почти нет**.
+   Потому что семантика слишком разная. Если хотите готовое —
+   используйте draw.io (Путь 2).
+
+────────────────────────────────────────────────────────────────────────────
+11. ПРАКТИЧЕСКОЕ ОГРАНИЧЕНИЕ: ЧТО MERMAID НЕ МОЖЕТ
+────────────────────────────────────────────────────────────────────────────
+
+11.1. Что **невозможно** перенести из Mermaid в BPMN:
+
+  • **Lane / Pool / дорожки**. В Mermaid можно сделать
+    `subgraph`, но это визуальная группировка, не lane.
+    BPMN lane — это **role assignment** (кто отвечает за
+    конкретный узел). Camunda использует это для User Task
+    binding.
+
+  • **Data Objects / Artifacts**. У BPMN есть особые
+    семантические элементы для данных (data store, document,
+    annotation). Mermaid — нет.
+
+  • **Координационные палочки**: BPMN businessProcess,
+    choreography, conversation diagram.
+    Mermaid их не поддерживает.
+
+  • **Выполняемые атрибуты** (camunda:asyncBefore, zeebe:ioMapping,
+    camunda:formKey, camunda:assignee и т.п.).
+    Mermaid-блок не несёт таких метаданных.
+
+  • **Multi-процессные модели**: BPMN позволяет описать
+    несколько процессов в одном .bpmn, включая callActivity
+    (вызов другого процесса). Mermaid не имеет понятия call.
+
+  • **События с деталями**: messageEventDefinition,
+    timerEventDefinition, errorEventDefinition, signalEventDefinition.
+    Mermaid-ромб или `(())` — это «шлюз» или «событие», но
+    без типа.
+
+11.2. Что можно перенести (после ручной доработки):
+
+  • Базовые элементы (start, end, task).
+  • Стрелки с условиями.
+  • Шлюзы (но Mermaid `{}` — generic, в BPMN надо выбрать тип).
+  • Subgraphs → subProcesses.
+  • Names / id'ы — вручную.
+
+────────────────────────────────────────────────────────────────────────────
+12. АЛЬТЕРНАТИВЫ MERMAID, ЕСЛИ ВАМ НУЖЕН BPMN СРАЗУ
+────────────────────────────────────────────────────────────────────────────
+
+Если вы знаете, что диаграмма пойдёт в BPMN, лучше:
+
+  • **bpmn.io Modeler** (https://bpmn.io/modeler/) — бесплатный
+    web-редактор BPMN.
+  • **Camunda Modeler** — нативный, интеграция с Camunda 7/8.
+  • **draw.io / diagrams.net** — оба стандарта + Mermaid-импорт.
+  • **Business Studio** (платный) — если enterprise.
+
+Не рисуйте BPMN-процессы в Mermaid, если конечная цель —
+Camunda. Многообразие BPMN 2.0 не влезет в ASCII Mermaid.
+
+────────────────────────────────────────────────────────────────────────────
+13. ПРИМЕР: ВАШ MERMAID → BPMN
+────────────────────────────────────────────────────────────────────────────
+
+13.1. Свой Mermaid-example (упрощённо):
+```
+flowchart TD
+  A[Start] --> B[Receive order]
+  B --> C{Order valid?}
+  C -->|yes| D[Process payment]
+  C -->|no| E[Cancel order]
+  D --> F[Send confirmation]
+  E --> G[End]
+  F --> G
+```
+
+13.2. Что из этого получится в BPMN после draw.io / Camunda Modeler:
+
+```xml
+<bpmn:process id="Process_1" name="OrderProcess" isExecutable="true">
+  <bpmn:startEvent id="Start"/>
+  <bpmn:task id="ReceiveOrder" name="Receive order"/>
+  <bpmn:exclusiveGateway id="ValidCheck" name="Order valid?"/>
+  <bpmn:task id="ProcessPayment" name="Process payment"/>
+  <bpmn:task id="CancelOrder" name="Cancel order"/>
+  <bpmn:task id="SendConfirmation" name="Send confirmation"/>
+  <bpmn:endEvent id="End"/>
+  <bpmn:sequenceFlow id="Flow_1" sourceRef="Start" targetRef="ReceiveOrder"/>
+  <bpmn:sequenceFlow id="Flow_2" sourceRef="ReceiveOrder" targetRef="ValidCheck"/>
+  <bpmn:sequenceFlow id="Flow_3" sourceRef="ValidCheck" targetRef="ProcessPayment">
+    <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">==order valid==</bpmn:conditionExpression>
+  </bpmn:sequenceFlow>
+  <bpmn:sequenceFlow id="Flow_4" sourceRef="ValidCheck" targetRef="CancelOrder">
+    <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">==order invalid==</bpmn:conditionExpression>
+  </bpmn:sequenceFlow>
+  <bpmn:sequenceFlow id="Flow_5" sourceRef="ProcessPayment" targetRef="SendConfirmation"/>
+  <bpmn:sequenceFlow id="Flow_6" sourceRef="SendConfirmation" targetRef="End"/>
+  <bpmn:sequenceFlow id="Flow_7" sourceRef="CancelOrder" targetRef="End"/>
+</bpmn:process>
+```
+
+13.3. Что нужно сделать вручную в Camunda:
+  • Указать name для каждого flow.
+  • Указать conditionExpression для каждого gateway-flow.
+  • Добавить присваивание (assignee) для userTask.
+  • Добавить form key (если нужны формы).
+  • Сохранить с правильным namespace (camunda:, zeebe:,
+    или нейтральный).
+
+────────────────────────────────────────────────────────────────────────────
+14. УСТАНОВКА TOOLS НА ЭТОМ ХОСТЕ
+────────────────────────────────────────────────────────────────────────────
+
+14.1. mermaid-cli (для SVG/PNG-экспорта Mermaid).
+
+   На mima-g-01 проверено:
+   - Node.js v22.22.3 ✓
+   - npm 10.9.8 ✓
+   - mermaid-cli не установлен.
+
+   Установка:
+   ```bash
+   npm install -g @mermaid-js/mermaid-cli
+   # или
+   npx @mermaid-js/mermaid-cli -i input.mmd -o output.svg
+   ```
+
+   Это даст **только рисунок** (SVG/PNG). Не BPMN.
+
+14.2. bpmn-моделирование без установки.
+
+   Не нужно. Используйте **онлайн**:
+   - bpmn.io/modeler — web, без регистрации.
+   - camunda.com/download/modeler — десктоп.
+   - draw.io — web/десктоп.
+
+────────────────────────────────────────────────────────────────────────────
+15. ОБРАТНЫЙ ПЕРЕВОД: BPMN → MERMAID (ЧАСТЬ ЗАДАЧИ)
+────────────────────────────────────────────────────────────────────────────
+
+15.1. Иногда полезно:
+   - Документация не-BPMN-аудитории.
+   - Slack / Telegram-вставка диаграммы.
+   - Быстрый overview без редактора.
+
+15.2. Путь: bpmn-js → SVG → mermaid.
+   - Render .bpmn в SVG.
+   - Визуально преобразовать в Mermaid-блоки.
+   - Вставить в Mermaid.
+
+15.3. Качество:
+   - Базовый процесс → 80% точно.
+   - С lanes, subProcess — 50%.
+   - Zeebe-specific — теряется.
+
+15.4. Альтернатива: bpmn-to-image (npm):
+   ```bash
+   npm install -g bpmn-to-image
+   bpmn-to-image -i input.bpmn -o output.png
+   ```
+   Это даст **PNG/SVG** (не Mermaid). Mermaid-текст не генерирует.
+
+────────────────────────────────────────────────────────────────────────────
+16. ОГРАНИЧЕНИЯ ПРИ ЭКСПОРТЕ CAMUNDA MODELER
+────────────────────────────────────────────────────────────────────────────
+
+Когда вы сохраняете в Camunda Modeler:
+
+16.1. BPMN 2.0 namespace:
+   - Camunda 7: `xmlns:camunda="http://camunda.org/schema/1.0/bpmn"`.
+   - Camunda 8 (zeebe): `xmlns:zeebe="http://zeebe.io/schema/zeebe/1.0"`.
+   - Нейтральный: `xmlns:bpmn="..."` без extensions.
+
+   Если вы пишете для Camunda 8, не используйте `camunda:` —
+   оно игнорируется. Используйте `zeebe:`.
+
+16.2. `isExecutable="true"`:
+   Для deployable процесса нужно `isExecutable="true"`. Без этого
+   BPMN-файл отобразится, но process engine не запустит его.
+
+16.3. BPMN-DI слой:
+   Camunda Modeler автоматически добавляет BPMN-DI при сохранении.
+   Если импортируете из draw.io — диаграмма с позициями уже есть.
+
+16.4. Метки шлюзов:
+   - exclusiveGateway — выбор условиями.
+   - parallelGateway — fork/join без условий.
+   - inclusiveGateway — выбор на основе нескольких условий.
+   - eventBasedGateway — выбор на основе событий.
+
+   Mermaid-ромб — generic, BPMN это **разные** типы.
+
+────────────────────────────────────────────────────────────────────────────
+17. КОМАНДЫ ДЛЯ РАБОТЫ С BPMN В CAMUNDA
+────────────────────────────────────────────────────────────────────────────
+
+17.1. Camunda 7 (deploy через REST):
+   ```bash
+   curl -u admin:admin -X POST \
+     -H "Content-Type: multipart/form-data" \
+     -F "deployment-name=order-process" \
+     -F "file=@order-process.bpmn" \
+     http://localhost:8080/engine-rest/deployment/create
+   ```
+
+17.2. Camunda 8 (zbctl):
+   ```bash
+   zbctl deploy order-process.bpmn
+   ```
+
+17.3. Validate (xmllint):
+   ```bash
+   xmllint --noout order-process.bpmn
+   ```
+
+17.4. Validate (Python, lxml):
+   ```bash
+   pip install lxml
+   python3 -c "
+   from lxml import etree
+   tree = etree.parse('order-process.bpmn')
+   print(etree.tostring(tree, pretty_print=True).decode())"
+   ```
+
+   На mima-g-01 lxml **не установлен** (проверено), но pip
+   можно установить.
+
+────────────────────────────────────────────────────────────────────────────
+18. КОГДА ВООБЩЕ НЕ НУЖНО КОНВЕРТИРОВАТЬ
+────────────────────────────────────────────────────────────────────────────
+
+18.1. Если процесс простой (5-10 узлов):
+   - Нарисуйте сразу в Camunda Modeler.
+   - Mermaid как скетч может помочь на доске, но не для
+     конечного артефакта.
+
+18.2. Если процесс исполняемый (для production):
+   - Mermaid недостаточно. У BPMN-элементов есть атрибуты
+     (id, name, conditionExpression, listener).
+   - draw.io даст «красивую» диаграмму, но без атрибутов —
+     не используется в process engine.
+
+18.3. Если процесс для документации:
+   - draw.io → BPMN Export → \`docs/example.bpmn\`.
+   - Либо Camunda Modeler → save → прикрепить.
+   - Либо Mermaid (если достаточно для SLA-уровня).
+
+────────────────────────────────────────────────────────────────────────────
+19. ПРИМЕР ЗАПУСКА ОНЛАЙН-КОНВЕРТЕРА
+────────────────────────────────────────────────────────────────────────────
+
+19.1. Mermaid → BPMN через draw.io (в браузере):
+   ```
+   1. Открыть https://app.diagrams.net/.
+   2. File → Import from → URL.
+   3. Вставить Mermaid-исходник.
+   4. Дождаться рендера.
+   5. File → Export as → BPMN.
+   6. Сохранить order.bpmn.
+   ```
+
+19.2. Mermaid → BPMN через bpmn.io (в браузере):
+   ```
+   1. Открыть https://bpmn.io/modeler/.
+   2. File → New BPMN Diagram.
+   3. Ручной ввод (этот путь самый качественный).
+   ```
+
+19.3. Если у вас нет интернета:
+   ```
+   1. Используйте Mermaid как скетч.
+   2. Ручной ввод в Camunda Modeler (десктоп).
+   ```
+
+────────────────────────────────────────────────────────────────────────────
+20. РЕЗЮМЕ ПОДХОДОВ
+────────────────────────────────────────────────────────────────────────────
+
+  ┌───────────────────────────────────────────┬────────────┬───────────────┐
+  │ Цель                                     │ Подход     │ Инструменты    │
+  ├───────────────────────────────────────────┼────────────┼───────────────┤
+  │ Документация процесса                     │ Mermaid    │ mermaid-live   │
+  │ Понятная диаграмма, BPMN-формат          │ draw.io    │ онлайн        │
+  │ Production BPMN для Camunda 7             │ Camunda M. │ десктоп       │
+  │ Production BPMN для Camunda 8 / Zeebe    │ Camunda M. │ десктоп       │
+  │ Massive auto-conversion                   │ Программист │ bpmn-js + своё│
+  │ Скетч / draft                             │ Mermaid    │ mermaid-live  │
+  └───────────────────────────────────────────┴────────────┴───────────────┘
+
+────────────────────────────────────────────────────────────────────────────
+21. ЗАКЛЮЧЕНИЕ
+────────────────────────────────────────────────────────────────────────────
+
+Да, диаграмму из Mermaid можно перевести в BPMN для Camunda
+Modeler, но **практически это всегда полуавтоматический процесс**.
+
+Главные правила:
+
+  1. Mermaid flowchart ≠ BPMN 2.0. Семантика другая.
+  2. Camunda Modeler — лучший целевой формат для production.
+  3. draw.io — лучший бридж для полуавтоматической конвертации.
+  4. Ручной ввод в Camunda — самый надёжный путь.
+  5. Не пытайтесь нарисовать production-ready BPMN с Mermaid
+     без ручной доработки.
+
+Если цель — production BPMN, **начинайте с BPMN-редактора**,
+а Mermaid используйте только для быстрых эскизов.

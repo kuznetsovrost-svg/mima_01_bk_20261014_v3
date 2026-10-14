@@ -1,0 +1,65 @@
+================================================================================
+Сущность MetaModel — список полей
+================================================================================
+
+Дата запроса: 2026-07-24 15:13:42
+Сервер:       PMForesight MCP v3.2.4
+Endpoint:     https://ppreplica.hera.pmpractice.ru/mcp
+Entity:       MetaModel
+Title (RU):   Настройки системы
+
+  classid:     2a90755c-480f-4ab5-8d17-8a5f1135f833
+  classname:   MetaModel
+  entityname:  MetaModel
+  IdFieldName: Name
+  Всего полей: 2
+
+1. ТАБЛИЦА ПОЛЕЙ
+--------------------------------------------------------------------------------
+
+|  #  | Name (system) | Title (RU)    | Type  | DataTypeName | Kind             | Req | Vis | Length
+|-----|---------------|---------------|-------|--------------|------------------|-----|-----|-------
+|   1 | Name          | Ключ          | text  | text         | StringInputField | ✓   |     | 0
+|   2 | Value         | Наименование  | text  | text         | StringInputField | ✓   |     | 0
+
+
+2. ПОДРОБНОЕ ОПИСАНИЕ КАЖДОГО ПОЛЯ
+--------------------------------------------------------------------------------
+
+2.1. Name
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  Title (RU):     Ключ
+  Type:           text
+  DataTypeName:   text
+  Kind:           StringInputField
+  IsRequired:     True
+  IsVisible:      False
+  IsPrimaryKey:   True
+  IsNullable:     False
+  IsReadonly:     True
+  IsEditable:     False
+  DataLength:     0
+  Position:       0
+  FieldKind:      1
+  DataTypeKind:   0
+
+2.2. Value
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  Title (RU):     Наименование
+  Type:           text
+  DataTypeName:   text
+  Kind:           StringInputField
+  IsRequired:     True
+  IsVisible:      False
+  IsPrimaryKey:   False
+  IsNullable:     False
+  IsReadonly:     True
+  IsEditable:     False
+  DataLength:     0
+  Position:       1
+  FieldKind:      0
+  DataTypeKind:   0
+
+================================================================================
+Конец отчёта
+================================================================================

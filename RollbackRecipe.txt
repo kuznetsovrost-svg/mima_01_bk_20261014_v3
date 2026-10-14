@@ -1,0 +1,130 @@
+КАРТОЧКА БЫСТРОГО ОТКАТА ИМПОРТА АГЕНТА ИЗ GITHAB
+================================================
+Версия: 1.0 · Hermes · Linux · однострочники для копипаста
+Полная инструкция: см. GitHub02.txt, §11.
+
+Когда применять
+--------------
+Импортированный из GitHab агентский пакет сломал поведение
+живого Hermes. Времени мало, нужна быстрая реакция.
+
+0. ЧТО У ТЕБЯ ДОЛЖНО БЫТЬ ПЕРЕД ИМПОРТОМ
+---------------------------------------
+/var/tmp/hermes-pre-import-<TS>.tar.gz     снимок $HOME/.hermes
+/var/tmp/hermes-pre-import-<TS>.ver        версия hermes + список skills
+
+Если их нет — значит, импорт делали без подготовки.
+Тогда переходи сразу к §4 (escape-valve).
+
+----------------------------------------------------------------
+1. ПОЛНЫЙ ОТКАТ (сломалось всё, "как было раньше")
+----------------------------------------------------------------
+sudo systemctl --user stop hermes-gateway
+BAD_TS=$(date -u +%Y%m%dT%H%M%SZ)
+tar -czf /var/tmp/hermes-broken-$BAD_TS.tar.gz -C $HOME .hermes
+rm -rf $HOME/.hermes
+tar -C $HOME -xzf /var/tmp/hermes-pre-import-<TS>.tar.gz
+sudo systemctl --user start hermes-gateway
+hermes doctor && hermes skills list | wc -l   # вернулось к "до"
+cat /var/tmp/hermes-pre-import-<TS>.ver        # сверить версии
+
+----------------------------------------------------------------
+2. ОТКАТ ОДНОГО SKILL (три варианта по наличию артефактов)
+----------------------------------------------------------------
+2a. Если при импорте был конфликт и сделали .local.*.bak:
+    for d in $HOME/.hermes/skills/<имя>.local.*.bak; do
+        [ -d "$d" ] || continue
+        rm -rf "$HOME/.hermes/skills/<имя>"
+        mv "$d" "$HOME/.hermes/skills/<имя>"
+    done
+
+2b. Если при импорте сделали .from-repo-* копию:
+    for d in $HOME/.hermes/skills/<имя>.from-repo-*; do
+        [ -d "$d" ] || continue
+        rm -rf "$HOME/.hermes/skills/<имя>"
+        mv "$d" "$HOME/.hermes/skills/<имя>"
+    done
+
+2c. Если ничего не сохранилось (импорт "с нуля"):
+    SKILL_TMP=/var/tmp/hermes-skill-restore
+    rm -rf "$SKILL_TMP" && mkdir -p "$SKILL_TMP"
+    tar -C "$SKILL_TMP" -xzf \
+        /var/tmp/hermes-pre-import-<TS>.tar.gz \
+        .hermes/skills/<имя>/
+    rm -rf "$HOME/.hermes/skills/<имя>"
+    cp -a "$SKILL_TMP/.hermes/skills/<имя>" \
+          "$HOME/.hermes/skills/<имя>"
+
+После любого из 2a/2b/2c:
+    sudo systemctl --user restart hermes-gateway
+    # или: /reload-skills (CLI), /restart (gateway)
+    hermes skills list | grep -w '<имя>'   # проверить
+
+----------------------------------------------------------------
+3. ОТКАТ ЧЕРЕЗ GIT В ~/.HERMES (если ведёте локальный репо)
+----------------------------------------------------------------
+cd $HOME/.hermes
+git log --oneline -n 20 -- skills/<имя>/
+# найти коммит, в котором skill появился; предыдущий = ваша версия
+PRE=$(git log --oneline -- skills/<имя>/ | sed -n '2p' | awk '{print $1}')
+git checkout "$PRE" -- skills/<имя>/
+git commit -am "revert: skill <имя>"
+sudo systemctl --user restart hermes-gateway
+hermes chat -q "/skill <имя> — что ты делаешь?" --tools skills
+
+----------------------------------------------------------------
+4. ОТКАТ CRON-ДЖОБЫ, MCP-СЕРВЕРА, .ENV
+----------------------------------------------------------------
+CRON:
+    hermes cron list
+    hermes cron remove <id>
+    hermes cron status
+    journalctl --user -u hermes-gateway -n 30 --no-pager | tail
+    # убрать побочные эффекты:
+    rm -f $HOME/.hermes/agents/<job-name>-output.json
+
+MCP:
+    hermes mcp list
+    hermes mcp remove <name>
+    sudo systemctl --user restart hermes-gateway
+    rm -rf $HOME/.hermes/mcp/<name>/
+    rm -rf $HOME/.hermes/cache/mcp/<name>/
+
+ENV:
+    # НЕ удалять весь .env, а то потеряете рабочие ключи.
+    # Открыть, удалить только строки, добавленные пакетом:
+    $EDITOR $HOME/.hermes/.env
+    # Ориентир: переменные из env-template.env импортированного пакета.
+
+----------------------------------------------------------------
+5. ESCAPE-VALVE (когда даже снимок не помогает)
+----------------------------------------------------------------
+sudo systemctl --user stop hermes-gateway
+rm -rf $HOME/.hermes
+curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash
+hermes setup
+# Разбор полётов — смотрим сломанное состояние:
+tar -tzf /var/tmp/hermes-broken-$BAD_TS.tar.gz | head -50
+# Найти источник проблемы в GitHab, починить, импортировать заново.
+
+----------------------------------------------------------------
+6. ЧЕКЛИСТ "ВЕРНУЛОСЬ ЛИ" (после любого отката)
+----------------------------------------------------------------
+[ ] hermes doctor                          → все ✓
+[ ] hermes skills list                     → как до импорта
+[ ] hermes config check                    → OK
+[ ] hermes cron list                       → без лишних job-id
+[ ] hermes mcp list                        → без лишних имён
+[ ] ls $HOME/.hermes/memories/             → без *.from-repo-*
+[ ] ls $HOME/.hermes/skills/               → без *.local.*.bak
+[ ] /skills в чате                         → ожидаемый список
+[ ] du -sb $HOME/.hermes                   → совпадает со снимком
+Если хоть один пункт мимо → вернись к §1 (полный откат).
+
+----------------------------------------------------------------
+КОНТАКТЫ
+----------------------------------------------------------------
+- Документация: https://hermes-agent.nousresearch.com/docs/
+- Скилл hermes-agent: ~/.hermes/skills/autonomous-ai-agents/hermes-agent/SKILL.md
+- Полная инструкция: GitHub02.txt в этой же Matrix-комнате
+- Эталонная структура импорта: GitHub02.txt, §9

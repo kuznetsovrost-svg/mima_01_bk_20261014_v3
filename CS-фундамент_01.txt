@@ -1,0 +1,557 @@
+# CS-фундамент для архитектора агентов (полный разбор)
+
+## 0. Зачем архитектору агентов CS-фундамент
+
+Архитектор агентов — это инженер-архитектор на стыке Computer Science, AI и продуктовой инженерии. Без глубокого CS-фундамента потолок карьеры — middle. С ним — senior/principal в течение 5–7 лет.
+
+CS-фундамент — это не "надо сдать на экзамене". Это must-have, потому что:
+- Агентные системы живут в production — нужен debugging, performance, надёжность.
+- LLM-фреймворки — это код, написанный инженерами с глубоким CS-бэкграундом.
+- Без понимания сложности, concurrency, сетей невозможно спроектировать масштабируемого агента.
+- Без понимания БД невозможно спроектировать memory layer.
+- Без понимания распределённых систем невозможно спроектировать multi-agent оркестрацию.
+
+Формула: Архитектор агентов = 70% CS-инженер + 30% AI-инженер.
+
+---
+
+## 1. Алгоритмы и структуры данных
+
+### Минимум, который нужно знать уверенно
+
+**Базовый уровень:**
+- Массивы, связные списки, стеки, очереди.
+- Хеш-таблицы (hash maps) — must-have.
+- Деревья (бинарные, BST, AVL, красно-чёрные).
+- Графы (BFS, DFS, топологическая сортировка).
+- Сортировки (quicksort, mergesort, heapsort).
+- Поиск (бинарный, линейный).
+- Big-O нотация.
+
+**Средний уровень:**
+- Деревья отрезков (segment trees), Fenwick trees.
+- Trie, suffix trees (для RAG и поиска по тексту).
+- Графовые алгоритмы (Dijkstra, Bellman-Ford, A*, минимальные остовы).
+- Динамическое программирование.
+- Жадные алгоритмы.
+- Union-Find (для graph reasoning в агентах).
+
+**Продвинутый уровень:**
+- HNSW (Hierarchical Navigable Small World) — для vector search.
+- LSH (Locality-Sensitive Hashing) — для approximate nearest neighbors.
+- Beam search — для planning в агентах.
+- A* с эвристиками — для task planning.
+- Consistent hashing — для распределённых кэшей агентов.
+- Rate limiting алгоритмы (token bucket, leaky bucket, sliding window).
+
+### 5 алгоритмов, критичных для агентов
+
+1. **Cosine similarity** — основа семантического поиска (RAG). Понимать, что это O(n) и почему при миллионах эмбеддингов нужны ANN-индексы.
+
+2. **PageRank / HNSW** — для ранжирования результатов и vector search. LangChain, Qdrant, Milvus используют HNSW под капотом. Без понимания невозможно тюнить recall/performance.
+
+3. **Beam search** — для планирования multi-step задач. Агент генерирует дерево возможных шагов и выбирает лучшую последовательность.
+
+4. **Token-bounded rate limiting** — для контроля расходов на LLM. Алгоритмы token bucket / leaky bucket с учётом контекст-окна и стоимости.
+
+5. **Hash-based caching** — для кэширования ответов LLM по семантическому ключу (семантический кэш). Понимать trade-off между hit rate и storage.
+
+---
+
+## 2. Сложность и оптимизация
+
+### Big-O на реальных примерах
+
+| Операция | Наивная сложность | Оптимизированная | Где встречается |
+|---|---|---|---|
+| Поиск ближайшего эмбеддинга | O(n) | O(log n) с HNSW | RAG, semantic search |
+| Поиск по тексту | O(n·m) | O(n+m) с KMP | Поиск в документах |
+| Генерация ответа LLM | O(n²) attention | O(n) с Flash Attention | Любой LLM inference |
+| Обход графа знаний | O(V+E) | С эвристиками A* | Multi-hop RAG |
+| Кэширование ответа | O(1) avg | O(n) в худшем случае | LLM response cache |
+| Сериализация JSON | O(n) | Бинарные форматы (msgpack, protobuf) | Tool calling |
+
+### Профилирование и бенчмаркинг
+
+- **Python:** cProfile, line_profiler, memory_profiler.
+- **Алгоритмы:** timeit, pytest-benchmark.
+- **Production:** py-spy (sampling profiler), scalene.
+- **Distributed:** OpenTelemetry tracing, Jaeger.
+
+### Когда оптимизировать
+
+- Не оптимизируй преждевременно (правило "make it work, make it right, make it fast").
+- Профилируй перед оптимизацией (горячие точки часто не там, где кажется).
+- Оптимизируй алгоритм раньше, чем микро-оптимизации (O(n²) → O(n log n) важнее, чем вынос горячего цикла).
+
+---
+
+## 3. Структуры данных
+
+### Must-have для агентов
+
+**1. Хеш-таблица (HashMap / Dict)**
+- Используется: кэш, idempotency keys, tool registry, lookup таблицы.
+- В Python: dict.
+- Агентный контекст: реестр всех tools, доступных агенту — это dict.
+- В LangChain: tool registry = dict с метаданными.
+
+**2. Граф (Graph)**
+- Используется: memory layer (граф знаний), планы задач, multi-agent коммуникация.
+- Библиотеки: NetworkX (Python), neo4j (production), memgraph.
+- Агентный контекст: knowledge graph для хранения фактов о пользователе и мире.
+
+**3. Очередь (Queue / PriorityQueue)**
+- Используется: события, retries, message broker, task queue.
+- В Python: queue.Queue, asyncio.Queue.
+- Агентный контекст: очередь tool calls, очередь сообщений между агентами.
+
+**4. Дерево (Tree)**
+- Используется: AST для парсинга, decision tree, planning tree, B-tree для БД.
+- Агентный контекст: дерево планов (plan tree), структурированный вывод LLM.
+
+**5. Связный список (Linked List)**
+- Используется: история сообщений (LLM context), undo-логика.
+- Агентный контекст: история диалога — это фактически linked list.
+
+**6. Куча (Heap)**
+- Используется: priority queue, scheduling, top-K элементов.
+- Агентный контекст: top-K релевантных документов в RAG, приоритизация задач.
+
+---
+
+## 4. Объектно-ориентированное и функциональное программирование
+
+### ООП-паттерны, которые нужны
+
+- **Builder** — конструирование сложных LLM-промптов пошагово.
+- **Strategy** — выбор между разными моделями (GPT-4 vs Claude vs локальная).
+- **Observer / Pub-Sub** — события в multi-agent системе.
+- **State** — state machine для агента (idle → thinking → tool_call → done).
+- **Chain of Responsibility** — последовательность обработчиков в pipeline.
+- **Adapter** — обёртки над разными LLM API.
+- **Factory** — создание разных типов агентов.
+- **Singleton** — connection pool, конфигурация.
+
+### Функциональное программирование
+
+- **Иммутабельность** — переход состояния агента через immutable snapshot.
+- **Чистые функции** — node в LangGraph — это pure function от state к state.
+- **Map/Reduce/Filter** — обработка списков tool calls, фильтрация релевантных chunks.
+- **Composition** — building blocks для агента: prompt + model + parser + tool.
+- **Monads / Functors** — async/await как монада, Either для error handling.
+
+### Когда что использовать
+
+- ООП — для долгоживущих систем с состоянием (multi-agent runtime).
+- ФП — для трансформации данных (RAG pipeline, structured output).
+- Гибрид — LangGraph: nodes = pure functions, graph = stateful OOP.
+
+---
+
+## 5. Операционные системы
+
+### Что нужно знать
+
+**Процессы и потоки:**
+- Разница между process и thread.
+- GIL в Python и как его обходить (multiprocessing, asyncio, C extensions).
+- Fork vs spawn.
+- Process pool для параллельных tool calls.
+
+**Память:**
+- Stack vs heap.
+- Garbage collection (Python: reference counting + cycle detector).
+- Memory leaks и как их искать (tracemalloc, objgraph).
+- Memory-mapped files для больших эмбеддингов.
+
+**I/O и файловые системы:**
+- Blocking vs non-blocking I/O.
+- Async I/O в Python (asyncio, aiohttp).
+- File descriptors и лимиты (ulimit).
+- Disk I/O для логов и state.
+
+**Concurrency primitives:**
+- Mutex / Lock — для shared state в агенте.
+- Semaphore — для ограничения параллельных LLM calls.
+- Condition variable — для координации между агентами.
+- Atomic operations.
+
+### Примеры в контексте агентов
+
+```python
+# asyncio.Semaphore для ограничения параллельных LLM calls
+sem = asyncio.Semaphore(10)
+
+async def bounded_llm_call(prompt):
+    async with sem:
+        return await openai_client.chat.completions.create(...)
+
+# multiprocessing для CPU-bound задач (parsing, embeddings)
+from multiprocessing import Pool
+with Pool(8) as p:
+    embeddings = p.map(embed_batch, documents)
+```
+
+---
+
+## 6. Компьютерные сети
+
+### Что нужно знать
+
+**Модель OSI/TCP-IP:**
+- 7 уровней, кто за что отвечает.
+- Где работает HTTP, где TCP, где IP.
+- DNS, routing, NAT.
+
+**HTTP/REST:**
+- Методы (GET, POST, PUT, DELETE, PATCH).
+- Status codes (2xx, 3xx, 4xx, 5xx).
+- Headers (Authorization, Content-Type, Retry-After).
+- Idempotency keys для POST.
+- Rate limiting headers (X-RateLimit-*).
+- Long polling vs WebSocket vs SSE.
+
+**gRPC:**
+- Protocol Buffers (бинарная сериализация).
+- Streaming (unary, server, client, bidirectional).
+- Когда использовать вместо REST (микросервисы, low-latency).
+
+**WebSocket:**
+- Для real-time агентов (chat interface).
+- Reconnect logic, ping/pong, heartbeat.
+- Backpressure.
+
+**Безопасность:**
+- TLS/SSL, сертификаты, mTLS.
+- OAuth 2.0, OIDC, JWT.
+- CORS для браузерных агентов.
+
+### Примеры в контексте агентов
+
+- Агент → LLM API: HTTPS с TLS, bearer token auth.
+- Агент ↔ Tool: gRPC для low-latency, REST для простоты.
+- Multi-agent: WebSocket для streaming, gRPC для RPC.
+- Browser agent: WebSocket + CORS + OAuth.
+
+---
+
+## 7. Базы данных
+
+### Реляционные (PostgreSQL)
+
+- ACID, транзакции, isolation levels.
+- Индексы (B-tree, hash, GiST, GIN, BRIN).
+- JOIN-ы (inner, outer, cross, self).
+- Query planning и EXPLAIN ANALYZE.
+- Connection pooling (pgbouncer, PgPool).
+- Migrations (alembic, sqitch).
+- Когда использовать: structured data с relationships, transactions.
+
+### NoSQL
+
+**Key-value (Redis, Memcached):**
+- Кэш для LLM responses, sessions.
+- Pub-sub для событий.
+- TTL для auto-expiry.
+
+**Document (MongoDB, CouchDB):**
+- Гибкая схема для tool results.
+- Когда данные полу-структурированы.
+
+**Wide-column (Cassandra, HBase):**
+- Для time-series событий агента.
+
+**Graph (Neo4j, Memgraph, Amazon Neptune):**
+- Для knowledge graph в memory layer агента.
+- Cypher query language.
+
+### Векторные (Qdrant, Milvus, pgvector, Chroma)
+
+- Эмбеддинги как vectors.
+- Cosine similarity, Euclidean distance, dot product.
+- ANN-индексы (HNSW, IVF, PQ).
+- Trade-off: recall vs latency vs memory.
+- Гибридный поиск (vector + keyword).
+
+### Когда какую БД использовать в агенте
+
+| Данные | БД |
+|---|---|
+| Структурированные факты о пользователе | PostgreSQL |
+| Эмбеддинги документов | Qdrant / Milvus |
+| Кэш LLM responses | Redis |
+| Граф знаний | Neo4j |
+| Логи и события | ClickHouse / Cassandra |
+| Сессии | Redis / PostgreSQL |
+| Tool registry | PostgreSQL / SQLite |
+
+---
+
+## 8. Распределённые системы
+
+### CAP-теорема
+
+- **Consistency** — все узлы видят одни и те же данные.
+- **Availability** — каждый запрос получает ответ.
+- **Partition tolerance** — система работает при разрыве сети.
+
+В распределённых агентных системах выбираем **AP** (Availability + Partition tolerance), потому что LLM API может быть недоступен, но мы хотим graceful degradation.
+
+### 4 паттерна, которые нужно знать
+
+**1. Message Queue (Kafka, RabbitMQ, NATS):**
+- Pub-sub для событий между агентами.
+- Гарантия доставки (at-most-once, at-least-once, exactly-once).
+- Dead letter queue для failed messages.
+
+**2. Idempotency:**
+- Каждый tool call имеет idempotency key.
+- Повторный вызов не приводит к двойному эффекту.
+- Хранится в Redis или PostgreSQL.
+
+**3. Rate Limiting:**
+- Token bucket / Leaky bucket / Sliding window.
+- Distributed rate limiting через Redis.
+- Per-user, per-API-key, global.
+
+**4. Observability (3 pillars):**
+- **Logs** — что произошло (структурированные, JSON).
+- **Metrics** — агрегаты (Prometheus: rate, error, duration).
+- **Traces** — путь запроса через систему (OpenTelemetry, Jaeger).
+
+### Согласованность данных
+
+- **Eventual consistency** — норма для агентных систем.
+- **Saga pattern** — для распределённых транзакций.
+- **CRDT** — для collaborative editing без конфликтов.
+
+### Failure modes
+
+- **Cascading failures** — один сервис падает, тянет за собой другие (circuit breaker нужен).
+- **Retry storms** — все клиенты ретраят одновременно (exponential backoff + jitter).
+- **Split brain** — два узла думают, что они мастер (нужен consensus: Raft, Paxos).
+
+---
+
+## 9. Архитектура ПО
+
+### Архитектурные стили
+
+| Стиль | Когда использовать для агентов |
+|---|---|
+| Монолит | Прототипы, MVP, single-agent |
+| Микросервисы | Multi-agent в production, разные команды |
+| Event-driven | Асинхронная обработка, real-time |
+| Serverless | Спайки, low-traffic агенты |
+| Actor model | Много независимых агентов (Akka, Erlang) |
+
+### Принципы
+
+- **SOLID** — single responsibility, open-closed, Liskov substitution, interface segregation, dependency inversion.
+- **DRY** — don't repeat yourself, но не абсолютизировать.
+- **KISS** — keep it simple, stupid.
+- **YAGNI** — you aren't gonna need it.
+- **12-factor app** — для cloud-native агентов.
+
+### Шаблоны проектирования
+
+- **Circuit Breaker** — защита от cascading failures.
+- **Bulkhead** — изоляция ресурсов между агентами.
+- **Sidecar** — вспомогательный сервис рядом с агентом (logging, metrics).
+- **Service Mesh** — Istio/Linkerd для управления коммуникацией.
+
+---
+
+## 10. Безопасность
+
+### Аутентификация и авторизация
+
+- OAuth 2.0 flows (authorization code, client credentials).
+- OIDC для identity.
+- JWT vs session tokens.
+- RBAC (role-based) vs ABAC (attribute-based).
+- API keys для service-to-service.
+
+### Безопасность данных
+
+- Encryption at rest (AES-256).
+- Encryption in transit (TLS 1.3).
+- Encryption in use (rare, для секретов).
+- Key management (Vault, AWS KMS).
+- PII handling — GDPR, 152-ФЗ в РФ.
+
+### Prompt injection
+
+Это SQL-инъекция 2020-х. OWASP Top 10 для LLM-приложений (LLM01–LLM10):
+
+- **LLM01 — Prompt Injection:** инъекция вредоносных инструкций через user input.
+- **LLM02 — Insecure Output Handling:** невалидация выхода LLM (XSS, SQL injection).
+- **LLM03 — Training Data Poisoning:** отравление данных для fine-tuning.
+- **LLM04 — Model DoS:** перегрузка модели дорогими запросами.
+- **LLM05 — Supply Chain:** уязвимости в зависимостях.
+- **LLM06 — Sensitive Information Disclosure:** утечка данных через LLM.
+- **LLM07 — Insecure Plugin Design:** небезопасные tool definitions.
+- **LLM08 — Excessive Agency:** слишком широкие права у агента.
+- **LLM09 — Overreliance:** чрезмерное доверие к LLM.
+- **LLM10 — Model Theft:** кража модели через API abuse.
+
+### Защита
+
+- Валидация и санитизация user input.
+- Ограничение прав агента (least privilege).
+- Content filtering для output.
+- Rate limiting и cost limits.
+- Audit log всех действий агента.
+
+---
+
+## 11. Производительность
+
+### Профилирование
+
+- CPU-bound: cProfile, py-spy.
+- Memory: memory_profiler, tracemalloc.
+- I/O: strace, lsof.
+- Distributed: OpenTelemetry, Jaeger.
+
+### Оптимизации
+
+**Кэширование:**
+- L1: in-process dict (Python @lru_cache).
+- L2: Redis (distributed cache).
+- L3: CDN / edge cache.
+
+**Batch processing:**
+- Группировка LLM calls (один запрос = несколько промптов).
+- Bulk insert в БД.
+- Batch embeddings.
+
+**Async I/O:**
+- asyncio для I/O-bound операций (LLM API, БД).
+- aiohttp, asyncpg, motor (MongoDB async).
+
+**Connection pooling:**
+- HTTP keep-alive.
+- Database connection pool.
+- gRPC channels.
+
+---
+
+## 12. Инженерные практики
+
+### Git
+
+- Trunk-based development (или GitFlow для крупных команд).
+- Conventional commits.
+- PR reviews обязательны.
+- Pre-commit hooks (black, ruff, mypy).
+
+### CI/CD
+
+- GitHub Actions / GitLab CI.
+- Tests на каждый PR.
+- Автоматический deploy в staging.
+- Blue-green или canary deploy в production.
+- Rollback strategy.
+
+### Тестирование (пирамида)
+
+- **Unit tests** (70%) — отдельные функции, классы.
+- **Integration tests** (20%) — компоненты вместе.
+- **E2E tests** (10%) — полный сценарий.
+
+Для агентов добавляется:
+- **Eval tests** — golden sets, LLM-as-judge.
+- **Regression tests** — зафиксировать поведение агента.
+- **Property-based tests** — hypothesis для edge cases.
+
+### Code review
+
+- Минимум 1 reviewer.
+- Автоматические проверки (lint, type, tests).
+- Чеклист: безопасность, производительность, читаемость.
+
+### Документация
+
+- README с quickstart.
+- ADR (Architecture Decision Records) для ключевых решений.
+- API docs (OpenAPI/Swagger).
+- Runbooks для инцидентов.
+
+---
+
+## 13. Дорожная карта по курсам
+
+| Курс | Алгоритмы | ОС | Сети | БД | Распред. | Архитектура |
+|---|---|---|---|---|---|---|
+| 1 | Базовые | Основы | HTTP/REST | SQL | — | Слоистая |
+| 2 | Продвинутые | Потоки, I/O | gRPC | NoSQL | CAP | Микросервисы |
+| 3 | Специализированные | Виртуализация | WebSocket | Векторные | Очереди | Event-driven |
+| 4 | Графы, ML | Контейнеры | mTLS | Графовые | Saga, Raft | Serverless + K8s |
+
+### Где учить
+
+- LeetCode (ежедневно по 1 задаче, 6+ месяцев).
+- MIT 6.006 (алгоритмы), MIT 6.824 (распределённые системы) — бесплатно.
+- "Operating Systems: Three Easy Pieces" — бесплатная книга.
+- "Designing Data-Intensive Applications" — Кляйн, must-read.
+- "Clean Architecture" — Мартин.
+- "System Design Interview" — Алекс Сюй.
+- Coursera: "Cloud Computing", "Distributed Systems".
+
+---
+
+## 14. Источники для самообучения
+
+### Книги (must-read)
+
+- "Grokking Algorithms" — Адитья Бхаргава (введение).
+- "Introduction to Algorithms" (CLRS) — справочник.
+- "Designing Data-Intensive Applications" — Мартин Кляйн.
+- "Operating Systems: Three Easy Pieces" — Ремзи Арпачи-Дюссо.
+- "Computer Networks" — Таненбаум.
+- "Clean Architecture" — Роберт Мартин.
+- "System Design Interview" — Алекс Сюй (том 1 и 2).
+
+### Курсы
+
+- LeetCode (алгоритмы).
+- MIT OpenCourseWare (OCW): 6.006, 6.824, 6.858.
+- Coursera: Cloud Computing, Distributed Systems, Algorithms.
+- Stepik: алгоритмы на русском.
+
+### YouTube
+
+- Hussein Nasser (backend, системы).
+- Sebastian Lague (алгоритмы с визуализацией).
+- CodeAesthetic (чистый код).
+- CodingTech (конференции).
+- "ШАД Яндекс" — лекции на русском.
+
+### Сайты
+
+- use-the-index-luke.com (SQL индексы).
+- auth0.com (security).
+- martinfowler.com (архитектура).
+- highscalability.com (кейсы).
+
+### Сообщества
+
+- Hacker News (новости индустрии).
+- r/compsci (Reddit).
+- ODS.ai (русскоязычное DS/ML).
+- Telegram: @distributed_systems, @backend_room.
+
+---
+
+## 15. Связь с другими треками
+
+- **AI&агенты:** использует структуры данных (графы для memory, очереди для событий), сеть (API calls), БД (vector stores).
+- **Платформа:** строится на ОС + сетях + БД + DevOps.
+- **Продукт:** требует понимания архитектурных компромиссов.
+- **SE:** опирается на все разделы CS.
+
+---
+
+## Конец файла

@@ -1,0 +1,462 @@
+================================================================================
+REACT_HERMES_C_02.txt
+Настройка взаимодействия React (web) ↔ Hermes Agent
+Версия: 2026-06 / Hermes Agent (Nous Research)
+================================================================================
+
+0. ЧТО ИМЕННО ЗДЕСЬ ОПИСАНО
+--------------------------------------------------------------------------------
+Подразумевается классический сценарий:
+    React-приложение (браузер, фронтенд)
+        ↔  HTTP / WebSocket
+Hermes Agent (бэкенд-сервис на хосте)
+        ↔  tool-use, MCP, код, shell, браузер, файлы
+
+Hermes здесь — это сам агент, доступный по сети как сервис. React-приложение
+выступает кастомным UI / web-оболочкой вокруг агента. Это не про движок
+"Hermes" в React Native (это другой Hermes от Meta) и не про ReAct-pattern
+prompting. Если нужно именно второе/третье — скажите, пересоберу файл.
+
+--------------------------------------------------------------------------------
+1. КАК HERMES МОЖЕТ ВЫСТУПАТЬ СЕРВЕРОМ
+--------------------------------------------------------------------------------
+У Hermes Agent есть два интеграционных «входа», через которые React-клиент
+может с ним общаться:
+
+A. Gateway (универсальный HTTP-шлюз) — основной способ поднять Hermes
+   как сетевой сервис. Через него работают встроенные мессенджеры
+   (Telegram, Matrix, Discord, Slack и т.д.), но этот же интерфейс можно
+   использовать из своего фронтенда. Управляется секцией `gateway:` в
+   ~/.hermes/config.yaml и параметром `gateway_timeout` в `agent:`.
+
+   ВАЖНО: в вашей текущей инсталляции gateway выключен по умолчанию.
+   Включается в `~/.hermes/config.yaml`:
+       agent:
+         use_gateway: true
+         gateway_timeout: 1800         # макс. время обработки одного запроса (сек)
+         gateway_timeout_warning: 900
+         gateway_notify_interval: 180
+         gateway_auto_continue_freshness: 3600
+       streaming:
+         enabled: true
+         transport: auto              # 'auto' | 'sse' | 'ws' — для web обычно SSE
+
+B. Dashboard (встроенный web-UI) — секция `dashboard:` в config.yaml.
+   Даёт basic-auth / OAuth-защищённый web-интерфейс с auth:
+       dashboard:
+         basic_auth:
+           username: "..."
+           password: "..."
+         public_url: "https://your.domain"
+   Под капотом — тот же gateway, плюс сессионный cookie. Удобно «пощупать»
+   API перед написанием своего React-клиента, но для продакшн-интеграции
+   чаще поднимают свой gateway и пишут кастомный React-фронт.
+
+C. Sub-model API (OpenAI-совместимый) — секция `delegation:` и параметр
+   `api_mode`. Это «обратное» направление: не React-в-Hermes, а Hermes-
+   как-LLM-провайдер. Используется, когда внешний React-бэкенд хочет
+   вызывать модель, на которой работает Hermes. Здесь не основной путь.
+
+Для React↔Hermes используйте (A) или (B). Дальше — про (A).
+
+--------------------------------------------------------------------------------
+2. ПОДГОТОВКА СЕРВЕРНОЙ СТОРОНЫ (HERMES)
+--------------------------------------------------------------------------------
+Шаг 1. Откройте конфигурацию:
+    $ vim ~/.hermes/config.yaml
+
+Шаг 2. Включите gateway и стриминг:
+       agent:
+         use_gateway: true
+         gateway_timeout: 1800
+       streaming:
+         enabled: true
+         transport: auto
+
+Шаг 3. Задайте публичный адрес, если React работает в браузере на другом
+   хосте (НЕ localhost). Hermes по умолчанию слушает 127.0.0.1 — для
+   доступа из браузера нужен reverse proxy. Самый простой вариант —
+   Caddy (один бинарь, авто-TLS):
+       # /etc/caddy/Caddyfile
+       hermes.example.com {
+           reverse_proxy 127.0.0.1:<hermes_port>
+       }
+   Замените <hermes_port> на порт, который вывела команда запуска Hermes
+   (см. шаг 5). Поднимите Caddy:
+       $ sudo systemctl enable --now caddy
+
+   Если React и Hermes живут на одной машине и ходят через localhost,
+   прокси не нужен — клиент бьёт на http://127.0.0.1:<port> напрямую.
+
+Шаг 4. Авторизация. Gateway принимает запросы с bearer-токеном. Задайте
+   токен в env (НЕ в config.yaml, чтобы не светить его в гите):
+       $ export HERMES_API_TOKEN="$(openssl rand -hex 32)"
+       $ echo "export HERMES_API_TOKEN=$HERMES_API_TOKEN" \
+           >> ~/.bashrc
+
+   В config.yaml в секции dashboard.basic_auth или отдельным механизмом
+   аутентификации gateway (см. `hermes config show agent` — там выводятся
+   текущие параметры безопасности). Если используется dashboard, токен
+   будет хэшироваться в password_hash.
+
+Шаг 5. Запустите Hermes в режиме сервиса:
+    $ hermes serve                # foreground
+    # или через systemd-юнит (рекомендуется для прода):
+    $ sudo systemctl enable --now hermes.service
+
+   В логах увидите:
+       [gateway] listening on 127.0.0.1:8765
+       [streaming] transport=auto sse
+   Запомните порт — он пойдёт в React.
+
+Шаг 6. Проверьте, что gateway отвечает:
+    $ curl -sS http://127.0.0.1:8765/healthz
+    {"status":"ok"}
+    $ curl -sS -H "Authorization: Bearer $HERMES_API_TOKEN" \
+        http://127.0.0.1:8765/v1/models
+    {"models":[ ... ]}
+
+   Если ответ не пришёл — чек лист:
+     • процесс запущен (systemctl status hermes)
+     • порт слушается (ss -tlnp | grep 8765)
+     • токен совпадает с тем, что задавали в env
+     • firewall не блокирует (ufw status / iptables -L)
+
+--------------------------------------------------------------------------------
+3. ПРОТОКОЛ ВЗАИМОДЕЙСТВИЯ (HTTP + SSE)
+--------------------------------------------------------------------------------
+Hermes gateway в большинстве инсталляций отдаёт OpenAI-совместимый
+chat-completions интерфейс. Это значит, что React-клиент может
+использовать либо:
+
+  • «сырой» fetch + ReadableStream для SSE-стриминга, либо
+  • готовый SDK openai-js, просто поменяв baseURL и apiKey.
+
+3.1. Базовая отправка сообщения (REST, без стриминга)
+   POST /v1/chat/completions
+   Headers:
+       Authorization: Bearer <HERMES_API_TOKEN>
+       Content-Type: application/json
+   Body:
+       {
+         "model": "hermes-agent",
+         "messages": [
+           {"role":"user","content":"Привет, выполни X"}
+         ],
+         "stream": false
+       }
+   Ответ — обычный chat-completions JSON с полем choices[0].message.content.
+
+3.2. Стриминг (SSE) — рекомендуемый путь для UX
+   Тело то же, плюс "stream": true. Сервер держит соединение и шлёт
+   «дельты» в формате:
+       data: {"choices":[{"delta":{"content":"Привет"}}]}
+       data: {"choices":[{"delta":{"content":"!"}}]}
+       ...
+       data: [DONE]
+   Браузер читает это через fetch + getReader() / TextDecoder, либо
+   через EventSource (если CORS настроен для text/event-stream).
+
+3.3. Tool calls
+   Если у агента зарегистрированы tool'ы (terminal, file, web, browser
+   и т.д.), Hermes сам решит, когда их вызвать. В ответе вы получите
+   стандартные tool_calls в message, а последующий assistant-turn уже
+   содержит финальный текст после выполнения tools. React-уи просто
+   отображает либо финальный текст, либо ленту шагов reasoning'а
+   (если включён `agent.show_reasoning`).
+
+3.4. Session / context
+   Поддерживаются стандартные session_id / previous_response_id. Чат
+   с Hermes-агентом можно вести длинный: каждый новый запрос несёт
+   ID предыдущего ответа, и Hermes склеивает контекст. Альтернатива —
+   передавать всю переписку в messages (проще, но тяжелее).
+
+--------------------------------------------------------------------------------
+4. REACT-КЛИЕНТ: МИНИМАЛЬНЫЙ ПРИМЕР
+--------------------------------------------------------------------------------
+Требования:
+   • Node 18+ (для глобального fetch и EventSource)
+   • React 18+
+   • Vite / Next / CRA — на ваш вкус
+
+Структура:
+   my-react-app/
+     ├─ src/
+     │   ├─ App.jsx
+     │   ├─ hermes.js          # клиент к gateway
+     │   └─ Chat.jsx           # UI чата
+     ├─ .env
+     └─ package.json
+
+4.1. .env (НЕ коммитить, добавить в .gitignore):
+       VITE_HERMES_URL=http://127.0.0.1:8765
+       VITE_HERMES_TOKEN=<HERMES_API_TOKEN>
+
+4.2. src/hermes.js — минимальный клиент:
+       const URL_   = import.meta.env.VITE_HERMES_URL;
+       const TOKEN  = import.meta.env.VITE_HERMES_TOKEN;
+
+       export async function askHermes(messages, { onDelta } = {}) {
+         const res = await fetch(`${URL_}/v1/chat/completions`, {
+           method: 'POST',
+           headers: {
+             'Content-Type': 'application/json',
+             'Authorization': `Bearer ${TOKEN}`,
+           },
+           body: JSON.stringify({
+             model: 'hermes-agent',
+             messages,
+             stream: !!onDelta,
+           }),
+         });
+         if (!res.ok) {
+           throw new Error(`Hermes ${res.status}: ${await res.text()}`);
+         }
+         if (!onDelta) {
+           const j = await res.json();
+           return j.choices[0].message.content;
+         }
+         // SSE-стрим
+         const reader  = res.body.getReader();
+         const decoder = new TextDecoder();
+         let buffer = '', full = '';
+         while (true) {
+           const { value, done } = await reader.read();
+           if (done) break;
+           buffer += decoder.decode(value, { stream: true });
+           const parts = buffer.split('\n\n');
+           buffer = parts.pop();
+           for (const p of parts) {
+             const line = p.trim();
+             if (!line.startsWith('data:')) continue;
+             const data = line.slice(5).trim();
+             if (data === '[DONE]') return full;
+             try {
+               const j   = JSON.parse(data);
+               const d   = j.choices?.[0]?.delta?.content || '';
+               full += d;
+               onDelta(d);
+             } catch (_) { /* keep-alive */ }
+           }
+         }
+         return full;
+       }
+
+4.3. src/Chat.jsx — UI:
+       import { useState } from 'react';
+       import { askHermes } from './hermes';
+
+       export function Chat() {
+         const [msgs, setMsgs]   = useState([]);
+         const [input, setInput] = useState('');
+         const [busy,  setBusy]  = useState(false);
+
+         async function send() {
+           if (!input.trim() || busy) return;
+           const userMsg = { role: 'user', content: input };
+           const history = [...msgs, userMsg];
+           setMsgs([...history, { role: 'assistant', content: '' }]);
+           setInput('');
+           setBusy(true);
+           try {
+             await askHermes(history, {
+               onDelta: (chunk) => {
+                 setMsgs((m) => {
+                   const copy = [...m];
+                   copy[copy.length - 1] = {
+                     role: 'assistant',
+                     content: copy[copy.length - 1].content + chunk,
+                   };
+                   return copy;
+                 });
+               },
+             });
+           } catch (e) {
+             setMsgs((m) => [...m, { role: 'assistant', content: '⚠️ ' + e.message }]);
+           } finally {
+             setBusy(false);
+           }
+         }
+
+         return (
+           <div style={{ maxWidth: 720, margin: '2rem auto', fontFamily: 'sans-serif' }}>
+             <h2>Hermes Agent Chat</h2>
+             <div style={{ minHeight: 360, padding: 12, border: '1px solid #ddd' }}>
+               {msgs.map((m, i) => (
+                 <div key={i} style={{ margin: '8px 0', textAlign: m.role === 'user' ? 'right' : 'left' }}>
+                   <b>{m.role === 'user' ? 'You' : 'Hermes'}:</b> {m.content}
+                 </div>
+               ))}
+             </div>
+             <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+               <input
+                 style={{ flex: 1, padding: 8 }}
+                 value={input}
+                 onChange={(e) => setInput(e.target.value)}
+                 onKeyDown={(e) => e.key === 'Enter' && send()}
+                 placeholder="Спросить Hermes…"
+                 disabled={busy}
+               />
+               <button onClick={send} disabled={busy}>{busy ? '…' : 'Send'}</button>
+             </div>
+           </div>
+         );
+       }
+
+4.4. src/App.jsx:
+       import { Chat } from './Chat';
+       export default function App() { return <Chat />; }
+
+4.5. Vite-конфиг (vite.config.js) для прокси при разработке (если React
+   на :5173, а Hermes на :8765 — проксируйте, чтобы не ловить CORS):
+       export default {
+         server: {
+           proxy: {
+             '/hermes': {
+               target: 'http://127.0.0.1:8765',
+               changeOrigin: true,
+               rewrite: (p) => p.replace(/^\/hermes/, ''),
+             },
+           },
+         },
+       };
+   Тогда VITE_HERMES_URL=/hermes, а все запросы идут через origin
+   фронта — CORS не нужен.
+
+--------------------------------------------------------------------------------
+5. PRODUCTION-РАЗВЁРТЫВАНИЕ
+--------------------------------------------------------------------------------
+5.1. Сборка:
+       $ npm run build              # → dist/
+5.2. Раздача через тот же Caddy (или Nginx). В Caddyfile добавьте:
+       app.example.com {
+           root * /var/www/my-react-app/dist
+           file_server
+           encode zstd gzip
+           # если нужен и API:
+           @hermes path /v1/* /healthz
+           reverse_proxy @hermes 127.0.0.1:8765
+       }
+   Здесь /v1/* идёт в Hermes, всё остальное — статика React. Один домен
+   — нет CORS-проблем, токен передаётся в Authorization как обычно.
+
+5.3. HTTPS обязателен для production: EventSource / SSE в браузере
+   работают только через https (или localhost). Caddy выпустит
+   Let's Encrypt сертификат автоматически.
+
+5.4. Не светите токен в браузере. Схема «VITE_HERMES_TOKEN в .env»
+   подразумевает, что токен вкомпилирован в JS-бандл и виден любому
+   пользователю. Это приемлемо ТОЛЬКО если:
+     • на gateway включён allow-list по origin / IP, ИЛИ
+     • gateway стоит за reverse proxy с mTLS / IP-фильтром, ИЛИ
+     • вы не против, чтобы любой посетитель сайта мог слать запросы
+       от вашего имени (плохая идея в общем случае).
+   Для публичных сайтов правильный путь — проксировать запросы через
+   ваш собственный бэкенд (Node/Python), который:
+     1) аутентифицирует пользователя сайта (логин/пароль, OAuth, JWT),
+     2) решает, какие tools ему доступны,
+     3) уже от себя ходит в Hermes с HERMES_API_TOKEN.
+   React в этом случае общается с /api/chat, а не напрямую с /v1.
+
+--------------------------------------------------------------------------------
+6. CORS И БЕЗОПАСНОСТЬ
+--------------------------------------------------------------------------------
+6.1. Если React и Hermes на разных origin'ах без прокси:
+   В конфиге gateway укажите разрешённые origin'ы (зависит от версии
+   Hermes — ищите `cors.allowed_origins` или `cors.origins`):
+       gateway:
+         allowed_origins:
+           - https://app.example.com
+   Без этого браузер зарежет preflight OPTIONS, и fetch упадёт на CORS.
+
+6.2. SSE и EventSource
+   EventSource не умеет кастомные заголовки → нельзя передать
+   Authorization. Если используете EventSource, токен придётся
+   передавать в query (?token=...), а это снова-таки плохо для
+   продакшна. Используйте fetch + getReader() (см. п. 4.2) — это
+   работает с любыми заголовками.
+
+6.3. Rate limit
+   Gateway поддерживает ограничение по IP/токену (см. config.yaml →
+   `gateway.rate_limit.*`). Без него один вредоносный клиент
+   зафлудит агента длинными сессиями и съест весь token-бюджет
+   провайдера.
+
+6.4. Tool policy
+   По умолчанию агент имеет доступ к терминалу, файлам и браузеру.
+   Это **опасно**, если gateway торчит в интернет. Включите профили
+   и роли (skills → guard_agent_created, delegation.inherit_mcp_toolsets)
+   и убедитесь, что публичный клиент не может дотянуться до
+   произвольного skill'а. См. секцию `curator` и `skills.guard_agent_created`
+   в config.yaml.
+
+--------------------------------------------------------------------------------
+7. АЛЬТЕРНАТИВНЫЕ ПОДХОДЫ
+--------------------------------------------------------------------------------
+7.1. Использовать dashboard из коробки
+   Поднимите Hermes с включённым `dashboard`, защитите basic_auth,
+   и не пишите свой React — UI уже есть. Подходит для внутренних
+   команд, не подходит для кастомного брендинга/UX.
+
+7.2. MCP-мост
+   Hermes поддерживает MCP (Model Context Protocol). Можно
+   поднять отдельный MCP-сервер (например, mcp-server-fetch для
+   web-доступа, mcp-server-filesystem для файлов) и общаться с
+   Hermes уже через MCP-aware клиент. Имеет смысл, если у вас
+   зоопарк агентов и вы хотите единый протокол.
+
+7.3. Long-polling / WebSocket
+   Если SSE запрещён корпоративным прокси, переключите
+   `streaming.transport: ws`. Hermes начнёт принимать WebSocket-
+   апгрейды и слать сообщения в JSON-фреймах. Клиент в React:
+   `new WebSocket('wss://hermes.example.com/v1/chat')` — формат
+   фреймов см. в `hermes gateway --help` (зависит от версии).
+
+7.4. Cron вместо live-чата
+   Если React-приложение не интерактивное (например, дашборд для
+   отчётов), удобнее запускать Hermes по расписанию через
+   `hermes cron` и тянуть готовые результаты из
+   `~/.hermes/cron/output/`. React в этом случае — чистый
+   статический ридер файлов, никакого live-протокола не нужно.
+
+--------------------------------------------------------------------------------
+8. ЧЕКЛИСТ ЗАПУСКА
+--------------------------------------------------------------------------------
+☐  Hermes установлен (`hermes --version`)
+☐  В ~/.hermes/config.yaml:
+     • use_gateway: true
+     • streaming.enabled: true
+     • transport: auto (или ws)
+     • gateway.allowed_origins содержит ваш домен (если без прокси)
+☐  HERMES_API_TOKEN задан в env, права на ~/.hermes — 700
+☐  `hermes serve` запущен (или hermes.service в systemd)
+☐  `curl /healthz` → 200, `curl /v1/models` → 200 с токеном
+☐  React-проект собран (`npm run build` → dist/)
+☐  Caddy/Nginx проксирует статику + /v1/* на Hermes, TLS активен
+☐  Токен не светится в публичном бандле (для публичного сайта —
+   проксируйте через свой бэкенд)
+☐  Tool-policy ужесточена (минимум tools для публичного клиента)
+☐  Rate limit включён в gateway
+☐  Логи Hermes пишутся в journald / log-файл, алерты настроены
+
+--------------------------------------------------------------------------------
+9. ПОЛЕЗНЫЕ КОМАНДЫ
+--------------------------------------------------------------------------------
+    hermes --version
+    hermes serve                     # foreground
+    hermes config show agent         # текущие настройки agent-секции
+    hermes config show gateway
+    hermes config set agent.use_gateway true
+    hermes config set streaming.enabled true
+    hermes docs api                  # справка по REST-эндпоинтам
+    hermes skills list               # какие tool'ы у агента
+    hermes cron list                 # фоновые задачи
+    journalctl -u hermes -f          # логи в реальном времени (systemd)
+
+Документация:
+    https://hermes-agent.nousresearch.com/docs
+    https://hermes-agent.nousresearch.com/docs/api
+
+================================================================================
+Конец файла REACT_HERMES_C_02.txt
+================================================================================

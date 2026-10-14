@@ -1,0 +1,1187 @@
+# Удобное заполнение .tex шаблона данными + экспорт в PDF / DOCX / XLSX / PPTX
+Версия 05, 2026-07-08. Завершающая часть серии:
+LaTex_02.txt (теория), LaTex_03.txt (готовый отчёт), LaTex_04.txt (UI-оболочки).
+Здесь — практические способы заполнения шаблона данными и экспорт в 4 формата сразу.
+
+## 0. Главное правило
+
+> **Самый надёжный способ отделить данные от оформления — НЕ редактировать .tex руками.** Данные лежат в CSV / JSON / БД, шаблон (.tex) занимается только структурой и типографикой, а Python-конвейер или Pandoc/Jinja2 собирает финальный .tex и компилирует его.
+
+Есть три уровня автоматизации, от простого к сложному:
+
+| Уровень | Кто делает | Когда хватает |
+|---|---|---|
+| 1. Переменные в .tex | человек вручную правит `\newcommand` | одноразовые отчёты, прототипы |
+| 2. Jinja2 / Pandoc-шаблоны | Python-скрипт подставляет данные | регулярные отчёты с одной структурой |
+| 3. Quarto / Typst | документ-ориентированный pipeline | data-driven документы с графиками |
+
+---
+
+## 1. Уровень 1: переменные в самом .tex
+
+Самый простой путь — вынести все данные в шапку файла как `\newcommand`. Человек открывает шаблон, меняет 5–10 строк, запускает `xelatex report.tex && xelatex report.tex`. PDF готов.
+
+### 1.1. Минимальный пример
+```latex
+% === ШАПКА ШАБЛОНА: ПРАВИШЬ ТОЛЬКО ЭТО ===
+\newcommand{\reportTitle}{Анализ продаж Q2 2026}
+\newcommand{\reportAuthor}{Иванов И.И.}
+\newcommand{\reportDate}{8 июля 2026}
+\newcommand{\clientName}{ООО «Пример»}
+
+% Табличные данные прямо в файле
+\newcommand{\regionsData}{%
+  {Центральный ФО}{14.1}{18.2}{872}{16.2}{35.0}&
+  {Северо-Западный ФО}{6.8}{11.5}{421}{16.2}{33.4}&
+  {Приволжский ФО}{5.2}{8.3}{338}{15.4}{31.7}&
+  {Уральский ФО}{4.1}{6.0}{267}{15.4}{30.2}&
+  {Дальневосточный ФО}{1.4}{2.1}{91}{15.4}{28.9}}
+
+% === ДАЛЕЕ ШАБЛОН НЕ ПРАВИТСЯ ===
+\begin{document}
+\maketitle
+
+\begin{tabular}{lrrrrr}
+\toprule
+Регион & Выручка & Прирост \% & Заказы & Средний чек & Маржа \\
+\midrule
+\regionsData
+\bottomrule
+\end{tabular}
+\end{document}
+```
+
+### 1.2. Преимущества
+- Никаких внешних инструментов — только `xelatex`.
+- Все правки видны в diff.
+- Минимальный порог входа.
+
+### 1.3. Недостатки
+- Нужно знать синтаксис LaTeX (хотя бы минимальный).
+- Фигурные скобки в данных ломают `\newcommand{}` — надо экранировать.
+- Таблица из 1000 строк превращает файл в нечитаемое полотно.
+- Любая правка структуры требует перекомпиляции и проверки.
+
+**Когда хватает:** одноразовые отчёты, шаблоны для редкого использования, прототипы.
+
+---
+
+## 2. Уровень 2: Jinja2 — Python подставляет данные в шаблон
+
+Jinja2 — стандарт де-факто для шаблонизации в Python. Он же используется внутри Ansible, Django, Flask, Sphinx, Quarto. Мощный, безопасный, предсказуемый.
+
+### 2.1. Идея
+
+```
+data.json  +  template.tex.j2  →  report.tex  →  xelatex  →  report.pdf
+   ↑ Python-скрипт собирает всё вместе и компилирует
+```
+
+### 2.2. Структура каталога
+
+```
+project/
+├── data/
+│   └── sales.json          # данные: регионы, месяцы, метрики
+├── templates/
+│   └── report.tex.j2       # шаблон LaTeX + Jinja2-разметка
+├── build.py                # конвейер: данные + шаблон → PDF
+├── Makefile                # обёртка над build.py
+└── build/                  # выходные артефакты
+    ├── report.tex
+    ├── report.aux
+    └── report.pdf
+```
+
+### 2.3. Данные в JSON
+
+`data/sales.json`:
+```json
+{
+  "report": {
+    "title": "Анализ продаж по регионам за II квартал 2026",
+    "subtitle": "Отчёт для совета директоров",
+    "author": "Иванов И.И.",
+    "date": "8 июля 2026",
+    "company": "ООО «Пример»",
+    "confidential": true
+  },
+  "regions": [
+    {"name": "Центральный ФО",     "revenue": 14.1, "growth": 18.2, "orders":  872, "avg_check": 16.2, "margin": 35.0},
+    {"name": "Северо-Западный ФО", "revenue":  6.8, "growth": 11.5, "orders":  421, "avg_check": 16.2, "margin": 33.4},
+    {"name": "Приволжский ФО",     "revenue":  5.2, "growth":  8.3, "orders":  338, "avg_check": 15.4, "margin": 31.7},
+    {"name": "Уральский ФО",       "revenue":  4.1, "growth":  6.0, "orders":  267, "avg_check": 15.4, "margin": 30.2},
+    {"name": "Дальневосточный ФО", "revenue":  1.4, "growth":  2.1, "orders":   91, "avg_check": 15.4, "margin": 28.9}
+  ],
+  "months": ["Апрель", "Май", "Июнь"],
+  "monthly": {
+    "Центральный ФО":     [4.3, 4.6, 5.2],
+    "Северо-Западный ФО": [2.1, 2.3, 2.4],
+    "Приволжский ФО":     [1.6, 1.7, 1.9],
+    "Уральский ФО":       [1.3, 1.4, 1.4],
+    "Дальневосточный ФО": [0.4, 0.5, 0.5]
+  }
+}
+```
+
+### 2.4. Шаблон с Jinja2-разметкой
+
+`templates/report.tex.j2`:
+```latex
+\documentclass[12pt,a4paper]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[english,russian]{babel}
+\usepackage{booktabs}
+\usepackage{siunitx}
+\usepackage{multirow}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{caption}
+\usepackage[a4paper,margin=2.5cm]{geometry}
+\usepackage{graphicx}
+
+\sisetup{output-decimal-marker={,},group-separator={\,},group-minimum-digits=3}
+\captionsetup[table]{labelsep=period,justification=centering,font=small}
+
+\title{ {{ report.title }} }
+\author{ {{ report.author }} }
+\date{ {{ report.date }} }
+
+\begin{document}
+\maketitle
+
+{% if report.confidential -%}
+\noindent\textbf{\large Конфиденциально}
+\medskip
+{% endif -%}
+
+\section{Сводка по регионам}
+
+\begin{table}[h]
+\centering
+\small
+\caption{Показатели по регионам за II квартал 2026 г.}
+\label{tab:regions}
+\begin{tabular}{l S[table-format=2.1] S[table-format=2.1] S[table-format=3.0]
+                S[table-format=2.1] S[table-format=2.1]}
+\toprule
+\multirow{2}{*}{Регион}
+ & {\multirow{2}{*}{Выручка, млн\,₽}}
+ & {\multirow{2}{*}{Прирост, \%}}
+ & {\multirow{2}{*}{Заказы}}
+ & {\multirow{2}{*}{Чек, тыс.\,₽}}
+ & {\multirow{2}{*}{Маржа, \%}} \\
+\cmidrule(lr){2-6}
+\midrule
+{% for r in regions %}
+{{ r.name }} & {{ "%0.1f"|format(r.revenue) }} & +{{ "%0.1f"|format(r.growth) }}
+  & {{ r.orders }} & {{ "%0.1f"|format(r.avg_check) }} & {{ "%0.1f"|format(r.margin) }} \\
+{% endfor %}
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Помесячная динамика}
+
+\begin{table}[h]
+\centering
+\small
+\caption{Выручка по месяцам, млн\,₽}
+\label{tab:monthly}
+\begin{tabular}{l S[table-format=2.1] S[table-format=2.1] S[table-format=2.1] S[table-format=2.1]}
+\toprule
+\textbf{Регион}
+{% for m in months %}
+ & \textbf{ {{ m }} }
+{% endfor %}
+ & \textbf{Итого} \\
+\midrule
+{% for r in regions %}
+{{ r.name }}
+{% for v in monthly[r.name] %}
+ & {{ "%0.1f"|format(v) }}
+{% endfor %}
+ & {{ "%0.1f"|format(r.revenue) }} \\
+{% endfor %}
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Выводы}
+По результатам анализа:
+
+\begin{enumerate}[leftmargin=*]
+{% for r in regions %}
+{% if r.growth >= 10 %}
+  \item \textbf{ {{ r.name }} } — значительный рост (+{{ "%0.1f"|format(r.growth) }}\,\%), рекомендуется расширение.
+{% elif r.growth >= 5 %}
+  \item \textbf{ {{ r.name }} } — умеренный рост (+{{ "%0.1f"|format(r.growth) }}\,\%), стабильная динамика.
+{% else %}
+  \item \textbf{ {{ r.name }} } — низкий рост (+{{ "%0.1f"|format(r.growth) }}\,\%), требует внимания.
+{% endif %}
+{% endfor %}
+\end{enumerate}
+
+\end{document}
+```
+
+### 2.5. Python-конвейер с эскейпингом LaTeX-символов
+
+`build.py`:
+```python
+#!/usr/bin/env python3
+"""Jinja2 + LaTeX → PDF / DOCX / XLSX / PPTX."""
+import json
+import subprocess
+import sys
+from pathlib import Path
+from jinja2 import Environment, FileSystemLoader
+
+LATEX_SPECIAL = {
+    '\\': r'\textbackslash{}',
+    '&':  r'\&',
+    '%':  r'\%',
+    '$':  r'\$',
+    '#':  r'\#',
+    '_':  r'\_',
+    '{':  r'\{',
+    '}':  r'\}',
+    '~':  r'\textasciitilde{}',
+    '^':  r'\textasciicircum{}',
+}
+
+def latex_escape(value):
+    """Экранирует спецсимволы LaTeX в строке."""
+    if value is None:
+        return ''
+    if isinstance(value, (int, float)):
+        return str(value)
+    return str(value).translate(str.maketrans(LATEX_SPECIAL))
+
+def latex_keep(value):
+    """Для значений, которые уже валидный LaTeX (формулы, siunitx-форматы)."""
+    return str(value) if value is not None else ''
+
+def render_tex(template_path: str, json_path: str) -> str:
+    data = json.loads(Path(json_path).read_text(encoding='utf-8'))
+    env = Environment(
+        loader=FileSystemLoader(template_path.parent),
+        autoescape=False,
+        trim_blocks=True,
+        lstrip_blocks=True
+    )
+    env.filters['latex_escape'] = latex_escape
+    env.filters['latex_keep']   = latex_keep
+    template = env.get_template(template_path.name)
+    return template.render(**data)
+
+def compile_pdf(tex_path: Path, engine: str = 'xelatex', passes: int = 2) -> Path:
+    """Двухпроходная компиляция для оглавления и ссылок."""
+    for i in range(1, passes + 1):
+        print(f'>>> Pass {i}/{passes}: {engine} {tex_path.name}')
+        res = subprocess.run(
+            [engine, '-interaction=nonstopmode', '-halt-on-error',
+             '-output-directory', str(tex_path.parent), tex_path.name],
+            capture_output=True, text=True
+        )
+        if res.returncode != 0:
+            print('STDOUT:', res.stdout[-2000:])
+            print('STDERR:', res.stderr[-2000:])
+            sys.exit(f'LaTeX failed (exit {res.returncode})')
+    return tex_path.with_suffix('.pdf')
+
+def compile_docx(tex_path: Path) -> Path:
+    """LaTeX → DOCX через Pandoc."""
+    docx = tex_path.with_suffix('.docx')
+    print(f'>>> Pandoc: {tex_path} → {docx}')
+    res = subprocess.run(
+        ['pandoc', str(tex_path), '-o', str(docx),
+         '--from=latex', '--to=docx',
+         '--standalone', '--toc',
+         '--reference-doc=template.docx'],   # опционально — корпоративный стиль
+        capture_output=True, text=True
+    )
+    if res.returncode != 0:
+        print('STDERR:', res.stderr[-2000:])
+        sys.exit(f'Pandoc failed (exit {res.returncode})')
+    return docx
+
+def main():
+    here = Path('.')
+    data = json.loads((here / 'data/sales.json').read_text(encoding='utf-8'))
+    out  = here / 'build'
+    out.mkdir(exist_ok=True)
+    tex = render_tex(here / 'templates/report.tex.j2', here / 'data/sales.json')
+    tex_path = out / 'report.tex'
+    tex_path.write_text(tex, encoding='utf-8')
+
+    pdf = compile_pdf(tex_path, engine='xelatex', passes=2)
+    print(f'✓ PDF: {pdf} ({pdf.stat().st_size:,} байт)')
+
+    try:
+        docx = compile_docx(tex_path)
+        print(f'✓ DOCX: {docx} ({docx.stat().st_size:,} байт)')
+    except FileNotFoundError:
+        print('• DOCX: пропущено (pandoc не установлен)')
+
+if __name__ == '__main__':
+    main()
+```
+
+```bash
+python3 build.py
+# → build/report.pdf
+# → build/report.docx
+```
+
+### 2.6. Преимущества Jinja2
+- **Полная логика в шаблоне:** `if/elif/else`, `for`, `{% include %}`, `{% extends %}`.
+- **Фильтры:** можно делать форматирование чисел, дат, экранирование.
+- **Множество форматов данных:** JSON, YAML, CSV (через `csv` + `jinja2`), БД (через SQLAlchemy).
+- **Расширения:** `jinja2-async`, `Jinja2-Template-Engine-for-Excel` для XLSX.
+- **Тестируемость:** шаблон и данные можно юнит-тестировать отдельно.
+
+### 2.7. Когда переходить на следующий уровень
+- Когда нужны графики (matplotlib/plotly) → Quarto или Python + LaTeX.
+- Когда десятки типов отчётов с общей шапкой → Quarto / Typst.
+- Когда хочется Markdown вместо LaTeX-разметки → Quarto.
+
+---
+
+## 3. Уровень 3: Quarto — современный data-driven pipeline
+
+Quarto (от Posit, ex-RStudio) — это «Markdown + код + LaTeX + Pandoc + Jinja2 в одном флаконе». Шаблон пишется в `qmd`, чанки кода выполняются на лету, на выходе — PDF/DOCX/HTML/Beamer/книга.
+
+### 3.1. `report.qmd`
+```yaml
+---
+title: "Анализ продаж по регионам за II квартал 2026"
+author: "Иванов И.И."
+date: "2026-07-08"
+format:
+  pdf:
+    pdf-engine: xelatex
+    template: mycompany
+    keep-tex: true
+    include-in-header:
+      - styles.tex
+  docx:
+    reference-doc: mycompany.docx
+    toc: true
+params:
+  quarter: "II"
+  year: 2026
+---
+
+## Сводка по регионам
+
+```{python}
+import pandas as pd
+df = pd.read_csv("data/sales.csv")
+df = df.round(1)
+df
+```
+
+## Помесячная динамика
+
+```{python}
+import matplotlib.pyplot as plt
+piv = df.pivot(index="region", columns="month", values="revenue")
+piv.T.plot(kind="line", marker="o")
+plt.title("Динамика выручки")
+plt.ylabel("млн ₽")
+plt.grid(True)
+plt.tight_layout()
+plt.savefig("build/trend.pdf")
+plt.close()
+```
+
+![Динамика выручки](build/trend.pdf){#fig:trend}
+
+## Заключение
+
+```{python}
+top = df.nlargest(3, "growth")[["region", "growth"]]
+print(f"Топ-3 региона по росту:")
+for _, row in top.iterrows():
+    print(f"- {row['region']}: +{row['growth']:.1f}%")
+```
+
+## {.appendix}
+
+### Данные
+
+Источник: CRM, II квартал 2026 г.
+```
+
+### 3.2. Сборка в 4 формата одной командой
+```bash
+quarto render report.qmd --to pdf
+quarto render report.qmd --to docx
+quarto render report.qmd --to html
+
+# Или сразу во все форматы из YAML
+quarto render report.qmd --to all
+```
+
+### 3.3. YAML-параметры
+```yaml
+params:
+  quarter: "II"
+  year: 2026
+```
+Передаются из командной строки:
+```bash
+quarto render report.qmd -P quarter:III -P year:2026 --to pdf
+```
+
+---
+
+## 4. Альтернативы Jinja2 / Quarto
+
+### 4.1. `datatool` — LaTeX-пакет для CSV
+
+Читает CSV прямо из `.tex`. Не нужен Python на этапе компиляции.
+
+```latex
+\usepackage{datatool}
+\DTLloaddb{regions}{data/sales.csv}
+
+\begin{tabular}{lrrrrr}
+\toprule
+\bfseries Регион & \bfseries Выручка & \bfseries Прирост & \bfseries Заказы \\
+\midrule
+\DTLforeach{regions}%
+  {\name=name, \rev=revenue, \gr=growth, \ord=orders}%
+  {\name & \rev & \gr\% & \ord \\}
+\bottomrule
+\end{tabular}
+```
+
+**Плюсы:** никакого внешнего кода, чистый LaTeX.
+**Минусы:** нет условий, нет циклов сложной структуры, загромождает .tex.
+
+### 4.2. `pgfplotstable` — для научных таблиц с осями
+```latex
+\pgfplotstabletypeset[
+  col sep=comma, header=true,
+  every head row/.style={before row=\toprule, after row=\midrule},
+  every last row/.style={after row=\bottomrule}
+]{data/sales.csv}
+```
+
+### 4.3. `csvsimple` — минималистичный CSV-пакет
+```latex
+\usepackage{csvsimple}
+\csvautotabular{data/sales.csv}
+```
+Одна строка — и таблица в документе. Минимум контроля, но для прототипа идеально.
+
+### 4.4. LuaLaTeX + Lua-скрипты
+
+LuaLaTeX позволяет писать скрипты прямо в `.tex`:
+```latex
+\directlua{
+  local f = io.open("data/sales.json", "r")
+  local data = f:read("*all")
+  f:close()
+  -- парсинг JSON, подстановка в TeX
+}
+```
+**Не рекомендую** — смешивать TeX и Lua трудно поддерживать.
+
+### 4.5. `pythontex` — Python внутри LaTeX
+
+```latex
+\usepackage{pythontex}
+\begin{pythontex}
+import pandas as pd
+df = pd.read_csv("data/sales.csv")
+total = df["revenue"].sum()
+print(r"Общая выручка: \textbf{%.1f} млн ₽" % total)
+\end{pythontex}
+```
+**Плюсы:** один файл `.tex`, всё в нём.
+**Минусы:** нужен Python в момент компиляции, медленнее, теряется разделение ответственности.
+
+---
+
+## 5. Самый «простой» способ для непрограммистов: Google Sheets + Apps Script
+
+Если шаблон должен набивать человек, который не знает ни LaTeX, ни Python — есть совсем бытовой путь.
+
+### 5.1. Workflow
+1. Данные лежат в **Google Sheets**.
+2. **Apps Script** (JavaScript-движок Google) собирает из ячеек строки LaTeX.
+3. Скрипт собирает `report.tex`, сохраняет в Google Drive.
+4. Дальше — либо руками через Overleaf (импорт с Google Drive), либо через Cloud LaTeX API.
+5. PDF приходит в Telegram / на email через Apps Script Webhook.
+
+### 5.2. Минимальный Apps Script
+```javascript
+function generateLatex() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName("Sales");
+  const data = sheet.getDataRange().getValues();
+
+  let tex = `\\documentclass[12pt]{article}
+\\usepackage[T1]{fontenc}
+\\usepackage[utf8]{inputenc}
+\\usepackage[english,russian]{babel}
+\\usepackage{booktabs}
+\\begin{document}
+\\begin{tabular}{lrrr}
+\\toprule
+Регион & Выручка & Прирост & Маржа \\\\
+\\midrule
+`;
+
+  for (let i = 1; i < data.length; i++) {
+    const [name, rev, growth, margin] = data[i];
+    tex += `${name} & ${rev} & +${growth}\\% & ${margin}\\% \\\\\n`;
+  }
+
+  tex += `\\bottomrule
+\\end{tabular}
+\\end{document}`;
+
+  DriveApp.createFile("report.tex", tex, MimeType.PLAIN_TEXT);
+
+  // Отправляем в Overleaf через API или Telegram-боту
+  // UrlFetchApp.fetch("https://api.telegram.org/bot.../sendDocument", ...);
+}
+```
+
+---
+
+## 6. Сложные таблицы — частые случаи
+
+### 6.1. Таблица с объединением ячеек из данных
+
+Jinja2 + `multirow`:
+```latex
+\begin{tabular}{lrr}
+\toprule
+\bfseries Регион & \bfseries I кв. & \bfseries II кв. \\
+\midrule
+{% for region, quarters in regions_by_quarter.items() %}
+\multirow{2}{*}{ {{ region }} } & {{ quarters[0] }} & {{ quarters[1] }} \\
+{% endfor %}
+\bottomrule
+\end{tabular}
+```
+
+### 6.2. Цветные строки по пороговому значению
+
+```latex
+{% for r in regions %}
+\rowcolor{ {% if r.growth >= 10 %}green!10{% elif r.growth >= 5 %}yellow!10{% else %}red!10{% endif %} }
+{{ r.name }} & {{ r.revenue }} & +{{ r.growth }}\% \\
+{% endfor %}
+```
+
+### 6.3. Таблица с итоговой строкой, вычисляемой в шаблоне
+
+Jinja2:
+```latex
+{% set total_revenue = regions | sum(attribute='revenue') %}
+{% set total_orders  = regions | sum(attribute='orders') %}
+...
+\midrule
+\textbf{Итого} & \textbf{ {{ "%0.1f"|format(total_revenue) }} }
+               & \textbf{+ {{ "%0.1f"|format((total_revenue - prev_total) / prev_total * 100) }} \%}
+               & \textbf{ {{ total_orders }} } \\
+\bottomrule
+```
+
+Quarto:
+```python
+total = df["revenue"].sum()
+```
+Вставляется в Markdown-таблицу, LaTeX-PDF собирается через Pandoc.
+
+### 6.4. Длинная таблица (десятки страниц)
+
+`longtable` в .tex + `pandas.to_latex(longtable=True)` в Python:
+```python
+df.to_latex(
+    longtable=True,
+    index=False,
+    column_format='lrrrr',
+    caption='Длинная таблица',
+    label='tab:long',
+    position='htbp'
+)
+```
+
+### 6.5. Таблица с графиком рядом
+
+`minipage` + `tabular` + `includegraphics`:
+```latex
+\begin{minipage}[t]{0.55\textwidth}
+\vspace{0pt}
+\captionof{table}{Сводка}
+\begin{tabular}{lrr}
+\toprule
+...
+\bottomrule
+\end{tabular}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.4\textwidth}
+\vspace{0pt}
+\includegraphics[width=\linewidth]{chart.pdf}
+\captionof{figure}{Динамика}
+\end{minipage}
+```
+
+---
+
+## 7. Теперь — экспорт из .tex в DOCX / XLSX / PPTX
+
+### 7.1. DOCX (Word) — Pandoc
+
+```bash
+sudo apt install pandoc        # ~100 МБ
+pandoc report.tex -o report.docx --standalone --toc
+```
+
+**Что сохраняется** (точность 70–90%):
+- Текст, абзацы, заголовки (\section → Heading 1).
+- Таблицы (\begin{tabular} → таблица Word).
+- Списки (itemize/enumerate → List Bullet/Number).
+- Изображения.
+- Оглавление.
+- Метаданные (title, author) → свойства документа.
+- Сноски.
+
+**Что теряется** (точность 30–50%):
+- Шрифты и микротипографика (fontspec, microtype).
+- Тонкая настройка siunitx.
+- Условные конструкции (если использовали `ifnum`).
+- TikZ-рисунки (конвертируются как картинки — ок, но without editability).
+- Перекрёстные ссылки cleveref (становятся текстовыми «см. табл. 1»).
+
+**Стилизация под корпоративный шаблон:**
+```bash
+pandoc report.tex -o report.docx --reference-doc=corp_template.docx
+```
+`corp_template.docx` — корпоративный шаблон со стилями Heading 1/2/3, Body, Caption. Готовится один раз, потом переиспользуется.
+
+**Из Python:**
+```python
+import pypandoc
+pypandoc.convert_file('report.tex', 'docx',
+                      outputfile='report.docx',
+                      extra_args=['--standalone', '--toc',
+                                  '--reference-doc=corp_template.docx'])
+```
+
+**Из Makefile:**
+```makefile
+report.docx: report.tex
+	pandoc $< -o $@ --standalone --toc --reference-doc=corp.docx
+```
+
+### 7.2. XLSX (Excel) — НЕ поддерживается напрямую из .tex
+
+LaTeX не имеет нативной цели «XLSX» — это не его модель. Но есть обходные пути:
+
+**Путь A: Извлечь таблицы из .tex → pandas → XLSX**
+
+```python
+import re
+import pandas as pd
+
+def extract_first_table(tex: str) -> pd.DataFrame:
+    """Достаём первую tabular-окружение из .tex как DataFrame."""
+    m = re.search(r'\\begin\{tabular\}(\{[^}]+\})([\s\S]*?)\\end\{tabular\}', tex)
+    if not m: raise ValueError('tabular not found')
+    cols_spec, body = m.group(1), m.group(2)
+    col_count = cols_spec.count('l') + cols_spec.count('r') + cols_spec.count('c')
+    rows = []
+    for line in body.split('\\hline')[1].split('\\\\'):
+        cells = [c.strip() for c in line.split('&')]
+        if len(cells) == col_count:
+            rows.append(cells)
+    return pd.DataFrame(rows[1:], columns=rows[0])
+
+df = extract_first_table(Path('build/report.tex').read_text(encoding='utf-8'))
+df.to_excel('build/tables.xlsx', index=False, sheet_name='Регионы')
+```
+
+**Путь B: Использовать Quarto — он умеет выгружать таблицы в XLSX**
+
+```yaml
+format:
+  html:
+    code-fold: true
+    fig-width: 10
+  xlsx: default
+```
+
+Quarto не имеет нативного `--to xlsx`, но можно сделать так:
+```r
+# report.qmd, чанк R:
+library(writexl)
+write_xlsx(list("Регионы" = df, "Месяцы" = df_monthly),
+           path = "build/tables.xlsx")
+```
+```python
+# Чанк Python:
+import pandas as pd
+with pd.ExcelWriter('build/tables.xlsx') as writer:
+    df_regions.to_excel(writer, sheet_name='Регионы', index=False)
+    df_monthly.to_excel(writer, sheet_name='Месяцы', index=False)
+```
+
+**Путь C: openpyxl — прямая запись XLSX из Python**
+```python
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment
+
+wb = Workbook()
+ws = wb.active
+ws.title = 'Регионы'
+
+headers = ['Регион', 'Выручка', 'Прирост %', 'Заказы', 'Маржа %']
+ws.append(headers)
+for cell in ws[1]:
+    cell.font = Font(bold=True)
+    cell.fill = PatternFill('solid', fgColor='D9E1F2')
+
+for r in regions:
+    ws.append([r['name'], r['revenue'], r['growth'], r['orders'], r['margin']])
+
+ws.column_dimensions['A'].width = 25
+for col in 'BCDEF':
+    ws.column_dimensions[col].width = 14
+
+wb.save('build/tables.xlsx')
+```
+
+Лучший путь — комбинировать: **.tex с Jinja2 для PDF, openpyxl для XLSX, pandoc для DOCX**.
+
+### 7.3. PPTX (PowerPoint) — Pandoc (через beamer → pptx)
+
+**Путь A: Beamer → Pandoc → PPTX (минимальная точность ~40%)**
+
+```bash
+pandoc slides.tex -o slides.pptx --reference-doc=corp_slides.pptx
+```
+Beamer-класс специально создан для презентаций; каждый `\frame` становится слайдом.
+
+**Путь B: Прямой PPTX из Python (полный контроль, рекомендую)**
+
+```bash
+pip install python-pptx
+```
+
+```python
+from pptx import Presentation
+from pptx.util import Inches, Pt
+from pptx.dml.color import RGBColor
+
+prs = Presentation()
+prs.slide_width = Inches(13.333)   # 16:9
+prs.slide_height = Inches(7.5)
+
+# Слайд 1 — титульный
+blank = prs.slide_layouts[6]
+slide = prs.slides.add_slide(blank)
+title = slide.shapes.add_textbox(Inches(0.5), Inches(2.5), Inches(12), Inches(2))
+tf = title.text_frame
+tf.text = data['report']['title']
+p = tf.paragraphs[0]
+p.font.size = Pt(40)
+p.font.bold = True
+
+# Слайд 2 — таблица
+slide = prs.slides.add_slide(prs.slide_layouts[6])
+shape = slide.shapes.add_table(
+    rows=len(regions) + 1,
+    cols=6,
+    left=Inches(0.5),
+    top=Inches(1.5),
+    width=Inches(12),
+    height=Inches(4)
+)
+table = shape.table
+headers = ['Регион', 'Выручка', 'Прирост', 'Заказы', 'Чек', 'Маржа']
+for i, h in enumerate(headers):
+    table.cell(0, i).text = h
+for i, r in enumerate(regions, start=1):
+    table.cell(i, 0).text = r['name']
+    table.cell(i, 1).text = f"{r['revenue']:.1f}"
+    table.cell(i, 2).text = f"+{r['growth']:.1f}%"
+    table.cell(i, 3).text = str(r['orders'])
+    table.cell(i, 4).text = f"{r['avg_check']:.1f}"
+    table.cell(i, 5).text = f"{r['margin']:.1f}"
+
+# Слайд 3 — график
+import matplotlib.pyplot as plt
+df.plot(x='name', y='revenue', kind='bar')
+plt.tight_layout()
+plt.savefig('build/chart.png', dpi=150)
+plt.close()
+slide = prs.slides.add_slide(prs.slide_layouts[6])
+slide.shapes.add_picture('build/chart.png', Inches(1), Inches(1.5),
+                         width=Inches(11), height=Inches(5))
+
+prs.save('build/report.pptx')
+```
+
+**Путь C: Pandoc → Beamer → PPTX (если уже есть Beamer-шаблон)**
+```bash
+pandoc slides.md \
+  -t beamer \
+  -o slides.tex \
+  --slide-level=2
+pandoc slides.tex -o slides.pptx --reference-doc=corp_slides.pptx
+```
+
+**Путь D: Reveal.js → HTML → PDF/PNG (современный путь для web-презентаций)**
+```markdown
+# slides.md (Quarto RevealJS)
+---
+title: "Анализ продаж"
+format:
+  revealjs:
+    theme: simple
+    transition: slide
+---
+## Первый слайд
+Содержимое...
+```
+```bash
+quarto render slides.qmd --to revealjs
+# → build/slides.html, можно открыть в браузере, экспортировать в PDF
+```
+
+---
+
+## 8. Сводная таблица: что в какой формат переводится
+
+| Формат | Инструмент | Качество | Сложность |
+|---|---|---|---|
+| PDF (XeLaTeX) | xelatex / tectonic | 100% | низкая |
+| PDF (LuaLaTeX) | lualatex | 100% | низкая |
+| PDF (Typst) | typst | 100% | низкая |
+| **DOCX** | Pandoc | 70–90% | низкая |
+| **DOCX** (с шаблоном) | Pandoc + reference.docx | 85–95% | средняя |
+| DOCX (точная копия) | LibreOffice headless | 60–80% | средняя |
+| **XLSX** | openpyxl / pandas → to_excel | 100% (своя таблица) | средняя |
+| XLSX (из таблиц .tex) | регэксп + pandas | 80% | средняя |
+| **PPTX** | python-pptx | 100% (своя структура) | средняя |
+| PPTX (из Beamer) | Pandoc | 40–60% | средняя |
+| PPTX (через Quarto) | Quarto RevealJS → export | 70% | средняя |
+| HTML | Pandoc / Quarto / Sphinx | 90–100% | низкая |
+| ePub | Pandoc | 70% | низкая |
+
+---
+
+## 9. Полный конвейер: данные → 4 формата
+
+```python
+#!/usr/bin/env python3
+"""Полный конвейер: data → PDF + DOCX + XLSX + PPTX."""
+import json
+import subprocess
+import sys
+from pathlib import Path
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill
+from pptx import Presentation
+from pptx.util import Inches, Pt
+import matplotlib.pyplot as plt
+from jinja2 import Environment, FileSystemLoader
+
+LATEX_SPECIAL = {
+    '\\': r'\textbackslash{}', '&': r'\&', '%': r'\%', '$': r'\$',
+    '#': r'\#', '_': r'\_', '{': r'\{', '}': r'\}',
+    '~': r'\textasciitilde{}', '^': r'\textasciicircum{}',
+}
+
+def latex_escape(value):
+    if value is None: return ''
+    if isinstance(value, (int, float)): return str(value)
+    return str(value).translate(str.maketrans(LATEX_SPECIAL))
+
+def render_tex(template_dir: Path, template_name: str, **data) -> str:
+    env = Environment(
+        loader=FileSystemLoader(str(template_dir)),
+        autoescape=False, trim_blocks=True, lstrip_blocks=True
+    )
+    env.filters['latex_escape'] = latex_escape
+    return env.get_template(template_name).render(**data)
+
+def compile_pdf(tex_path: Path, passes: int = 2):
+    for i in range(1, passes + 1):
+        print(f'>>> PDF pass {i}/{passes}')
+        subprocess.run(
+            ['xelatex', '-interaction=nonstopmode', '-halt-on-error',
+             '-output-directory', str(tex_path.parent), tex_path.name],
+            check=True, capture_output=True
+        )
+
+def to_docx(tex_path: Path, docx_path: Path, ref_doc: Path = None):
+    args = ['pandoc', str(tex_path), '-o', str(docx_path),
+            '--from=latex', '--to=docx', '--standalone', '--toc']
+    if ref_doc and ref_doc.exists():
+        args += ['--reference-doc=' + str(ref_doc)]
+    subprocess.run(args, check=True, capture_output=True)
+
+def to_xlsx(regions: list, xlsx_path: Path):
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'Регионы'
+    headers = ['Регион', 'Выручка млн ₽', 'Прирост %', 'Заказы', 'Средний чек тыс ₽', 'Маржа %']
+    ws.append(headers)
+    for cell in ws[1]:
+        cell.font = Font(bold=True)
+        cell.fill = PatternFill('solid', fgColor='D9E1F2')
+    for r in regions:
+        ws.append([r['name'], r['revenue'], r['growth'], r['orders'],
+                   r['avg_check'], r['margin']])
+    for col_letter in 'ABCDEF':
+        ws.column_dimensions[col_letter].width = 20
+    wb.save(str(xlsx_path))
+
+def to_pptx(regions: list, title: str, pptx_path: Path,
+            chart_png: Path = None):
+    prs = Presentation()
+    prs.slide_width = Inches(13.333)
+    prs.slide_height = Inches(7.5)
+    blank = prs.slide_layouts[6]
+
+    # Слайд 1: титул
+    s = prs.slides.add_slide(blank)
+    t = s.shapes.add_textbox(Inches(0.5), Inches(2.8), Inches(12), Inches(2))
+    t.text_frame.text = title
+    t.text_frame.paragraphs[0].font.size = Pt(44)
+    t.text_frame.paragraphs[0].font.bold = True
+
+    # Слайд 2: таблица
+    s = prs.slides.add_slide(blank)
+    rows = len(regions) + 1
+    cols = 6
+    shape = s.shapes.add_table(rows, cols, Inches(0.5), Inches(1.5),
+                                Inches(12), Inches(4.5))
+    table = shape.table
+    for i, h in enumerate(['Регион', 'Выручка', 'Прирост', 'Заказы', 'Чек', 'Маржа']):
+        table.cell(0, i).text = h
+    for i, r in enumerate(regions, 1):
+        table.cell(i, 0).text = r['name']
+        table.cell(i, 1).text = f"{r['revenue']:.1f}"
+        table.cell(i, 2).text = f"+{r['growth']:.1f}%"
+        table.cell(i, 3).text = str(r['orders'])
+        table.cell(i, 4).text = f"{r['avg_check']:.1f}"
+        table.cell(i, 5).text = f"{r['margin']:.1f}"
+
+    # Слайд 3: график
+    if chart_png and chart_png.exists():
+        s = prs.slides.add_slide(blank)
+        s.shapes.add_picture(str(chart_png), Inches(2), Inches(1.5),
+                              width=Inches(9), height=Inches(5))
+
+    prs.save(str(pptx_path))
+
+def to_chart(regions: list, chart_png: Path):
+    names = [r['name'] for r in regions]
+    revs = [r['revenue'] for r in regions]
+    plt.figure(figsize=(8, 5))
+    bars = plt.bar(names, revs, color='steelblue')
+    plt.title('Выручка по регионам, млн ₽')
+    plt.ylabel('млн ₽')
+    plt.xticks(rotation=20, ha='right')
+    for bar, v in zip(bars, revs):
+        plt.text(bar.get_x() + bar.get_width()/2, v + 0.2,
+                 f'{v:.1f}', ha='center')
+    plt.tight_layout()
+    plt.savefig(str(chart_png), dpi=150)
+    plt.close()
+
+def main():
+    here = Path('.')
+    data = json.loads((here / 'data/sales.json').read_text(encoding='utf-8'))
+    out = here / 'build'
+    out.mkdir(exist_ok=True)
+
+    # 1. PDF
+    tex = render_tex(here / 'templates', 'report.tex.j2', **data)
+    tex_path = out / 'report.tex'
+    tex_path.write_text(tex, encoding='utf-8')
+    compile_pdf(tex_path)
+    print(f'✓ PDF:    {tex_path.with_suffix(".pdf")}')
+
+    # 2. DOCX
+    try:
+        to_docx(tex_path, out / 'report.docx',
+                ref_doc=here / 'templates/corp_template.docx')
+        print(f'✓ DOCX:   {out / "report.docx"}')
+    except Exception as e:
+        print(f'• DOCX:   пропущено ({e})')
+
+    # 3. XLSX
+    to_xlsx(data['regions'], out / 'tables.xlsx')
+    print(f'✓ XLSX:   {out / "tables.xlsx"}')
+
+    # 4. PPTX
+    chart_png = out / 'chart.png'
+    to_chart(data['regions'], chart_png)
+    to_pptx(data['regions'], data['report']['title'],
+            out / 'report.pptx', chart_png)
+    print(f'✓ PPTX:   {out / "report.pptx"}')
+
+    print('\nГотово: PDF + DOCX + XLSX + PPTX в', out)
+
+if __name__ == '__main__':
+    main()
+```
+
+```bash
+pip install jinja2 openpyxl python-pptx matplotlib
+python3 build_all.py
+# → build/report.pdf
+# → build/report.docx
+# → build/tables.xlsx
+# → build/report.pptx
+```
+
+---
+
+## 10. Makefile-обёртка
+
+```makefile
+.PHONY: all pdf docx xlsx pptx clean
+
+DATA    := data/sales.json
+TEMPLATE:= templates/report.tex.j2
+BUILD   := build
+ENGINE  := xelatex
+PY      := python3
+
+all: pdf docx xlsx pptx
+
+$(BUILD):
+	@mkdir -p $@
+
+pdf: $(BUILD)
+	@$(PY) -c "\
+import json,subprocess; \
+from pathlib import Path; \
+from jinja2 import Environment, FileSystemLoader; \
+data=json.loads(Path('$(DATA)').read_text(encoding='utf-8')); \
+env=Environment(loader=FileSystemLoader('templates'),autoescape=False,trim_blocks=True,lstrip_blocks=True); \
+t=env.get_template('report.tex.j2').render(**data); \
+Path('$(BUILD)/report.tex').write_text(t,encoding='utf-8')"
+	@cd $(BUILD) && $(ENGINE) -interaction=nonstopmode report.tex
+	@cd $(BUILD) && $(ENGINE) -interaction=nonstopmode report.tex
+	@echo '✓ PDF готов'
+
+docx: $(BUILD)
+	@pandoc $(BUILD)/report.tex -o $(BUILD)/report.docx \
+		--standalone --toc
+	@echo '✓ DOCX готов'
+
+xlsx: $(BUILD)
+	@$(PY) build_xlsx.py
+	@echo '✓ XLSX готов'
+
+pptx: $(BUILD)
+	@$(PY) build_pptx.py
+	@echo '✓ PPTX готов'
+
+clean:
+	rm -rf $(BUILD)
+```
+
+```bash
+make           # все 4 формата
+make pdf       # только PDF
+make docx xlsx # без PDF
+make clean
+```
+
+---
+
+## 11. Возможные проблемы и решения
+
+| Проблема | Причина | Решение |
+|---|---|---|
+| `pandoc: command not found` | Pandoc не установлен | `sudo apt install pandoc` |
+| `python-pptx` не импортируется | Не установлен | `pip install python-pptx` |
+| `xelatex: fontspec error` | Шрифт не установлен | `apt install fonts-paratype` или сменить `\setmainfont` |
+| DOCX потерял таблицы | Pandoc не понимает `tabularx` | Сконвертировать в `\begin{tabular}` или использовать `csvsimple` |
+| XLSX пустой | Ошибка парсинга `\\begin{tabular}` | Использовать `pandas.to_latex()` или прямой openpyxl |
+| PPTX содержит «пустые слайды» | Beamer `\frame` без контента | Проверить, что у каждого \frame есть тело |
+| Формулы в DOCX стали «LaTeX-исходником» | Pandoc оставил raw | `--mathml` или вручную заменить `$x_i$` на OMML |
+| Кириллица в PDF — квадраты | Шрифт не поддерживает | Использовать шрифт с кириллицей (PT Serif, Liberation Serif, PT Sans) |
+| DOCX открывается в Word с ошибкой структуры | Конфликт `\maketitle` | Заменить на `\title{}\author{}\date{}` без `\maketitle` |
+
+---
+
+## 12. Что НЕ работает
+
+1. **TikZ → PPTX** — векторная графика конвертируется только в изображение, не редактируется в PowerPoint.
+2. **BibLaTeX/Biber → DOCX** — библиография превращается в список, но ссылки в тексте становятся числами без синей подсветки.
+3. **`microtype` → DOCX** — микротипографика не переносится, кёрнинг не сохраняется.
+4. **`hyperref` → DOCX** — кликабельные ссылки работают только если Pandoc был вызван с `--reference-doc`.
+5. **Сложные `tikzexternalize`-композиции** — конвертируются, но только как растровые вставки.
+
+---
+
+## 13. Итоговые рекомендации
+
+### 13.1. Что выбрать для регулярных отчётов в компании
+
+**Рекомендую стек:**
+```
+data/             ← JSON, YAML, CSV — единый источник правды
+templates/*.j2    ← Jinja2-шаблоны для LaTeX
+build/            ← артефакты сборки
+build.py          ← конвейер (4 формата)
+Makefile          ← обёртка для CI/CD
+```
+
+**Workflow:**
+1. Аналитик обновляет `data/sales.json` (или экспортирует из Google Sheets).
+2. CI запускает `make`.
+3. Получаем `report.pdf`, `report.docx`, `tables.xlsx`, `report.pptx`.
+4. PDF — для отправки клиенту, DOCX — для правок, XLSX — для дальнейшего анализа, PPTX — для презентации.
+
+### 13.2. Что выбрать для научной статьи
+- **Один раз:** пишешь в Overleaf, шаблон журнала уже там.
+- **Многократно:** шаблон `.tex` в Git, Quarto для генерации supplementary materials.
+
+### 13.3. Что выбрать для разовой задачи
+- **Руками в .tex** — самое быстрое.
+- **Overleaf** — если хочется сразу видеть PDF.
+
+### 13.4. Когда НЕ надо автоматизировать
+- Документ создаётся один раз, изменения не предвидятся.
+- Структура меняется каждый раз (новый формат каждый квартал).
+
+### 13.5. Когда автоматизация обязательна
+- >5 отчётов одного типа в год.
+- Один и тот же шаблон используют несколько человек.
+- Данные приходят из БД/Google Sheets/API.
+- Нужно несколько форматов одновременно.
+
+---
+
+## 14. Сводка серии
+
+| Файл | Тема | Размер |
+|---|---|---|
+| `LaTex_DOCX.txt` | LaTeX → DOCX (Pandoc) | 19 КБ |
+| `LaTex_DOCX_02.txt` | DOCX → LaTeX + шаблонизация | 23 КБ |
+| `LaTex_02.txt` | Теория (движки, пакеты, конвейер) | 27 КБ |
+| `LaTex_03.txt` | Готовый отчёт с таблицами | 29 КБ |
+| `LaTex_04.txt` | UI-оболочки | 32 КБ |
+| `LATEX_05.txt` | Заполнение + экспорт в 4 формата | 44 КБ |
+
+Все 6 файлов покрывают полный цикл: от «что такое LaTeX» до «как собрать PDF + DOCX + XLSX + PPTX из одних данных автоматически».
+
+---
+Конец файла LATEX_05.txt.

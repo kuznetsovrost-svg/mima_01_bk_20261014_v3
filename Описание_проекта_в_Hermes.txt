@@ -1,0 +1,616 @@
+# Project в Hermes Agent — что это, зачем, структура, пример
+## Полный гайд на основе исходного кода Hermes
+
+────────────────────────────────────────────────────────────────────────────
+0. КОРОТКО
+────────────────────────────────────────────────────────────────────────────
+
+**Project** в Hermes — это first-class **workspace**, объединяющий
+**несколько папок / репозиториев** в один логический «проект».
+Per-profile (у каждого профиля свой список проектов в SQLite).
+
+Ключевое отличие от папки: **Project даёт стабильный контекст
+агента** при работе с разными репозиториями одного проекта.
+
+Из кода (`projects_cmd.py`):
+
+> Projects are human-named workspaces that can span multiple folders
+> / repos. They anchor desktop session grouping and, when bound to a
+> kanban board, give tasks a deterministic worktree + branch
+> convention. State is per-profile.
+
+Что это значит:
+  • Один проект Hermes = одна **логическая единица работы**,
+    которая может включать несколько репо / папок.
+  • Проект **видим в desktop UI** — там сессии группируются
+    по проектам.
+  • Когда проект привязан к **kanban-board**, задачи получают
+    **детерминированную ветку** `<project-slug>/<task-id>`.
+  • Project **state изолирован по профилю** — у `mi_mg_01` свои
+    проекты, у `default` свои.
+
+────────────────────────────────────────────────────────────────────────────
+1. ЗАЧЕМ НУЖЕН PROJECT (А НЕ ПРОСТО ПАПКА)
+────────────────────────────────────────────────────────────────────────────
+
+1.1. **Группировка нескольких репо**.
+   У вас один проект включает:
+     - `~/code/api` (backend)
+     - `~/code/web` (frontend)
+     - `~/code/infra` (terraform)
+   Один Project связывает их через единое имя «MyService».
+
+1.2. **Детерминированные worktree**.
+   Когда Project привязан к kanban-board, задача получает ветку
+   `<project-slug>/<task-id>` — без хаоса случайных имён.
+
+1.3. **Удобное переключение контекста**.
+   `hermes project use myservice` — активный проект. Все следующие
+   сессии работают в его primary folder. Без `cd` каждый раз.
+
+1.4. **Desktop UI grouping**.
+   В desktop-приложении Hermes сессии группируются по проекту:
+   `MyService / TASK-2026-07-04-fix-auth / 12:34`. Это удобно
+   для визуального обзора.
+
+1.5. **Cross-repo операции**.
+   Project знает про все свои папки. Агент может делать операции
+   «по всему проекту» (например, «обнови версию везде»), не указывая
+   каждый репо.
+
+1.6. **Архивация без потери**.
+   `hermes project archive myservice` — проект становится невидим
+   в обычном `project list`, но **всё сохраняется**. Это не удаление,
+   это мягкое скрытие.
+
+────────────────────────────────────────────────────────────────────────────
+2. СТРУКТУРА PROJECT (В КОДЕ HERMES)
+────────────────────────────────────────────────────────────────────────────
+
+Из `projects_db.py` (поля класса Project):
+
+```python
+@dataclass
+class Project:
+    id: str                          # уникальный id
+    slug: str                        # kebab-case-имя для CLI
+    name: str                        # отображаемое имя
+    created_at: int                  # unix timestamp
+    description: Optional[str]       # описание
+    icon: Optional[str]              # emoji для UI
+    color: Optional[str]             # цвет в UI
+    board_slug: Optional[str]        # привязанный kanban-board
+    primary_path: Optional[str]      # основная папка
+    archived: bool = False           # архивирован ли
+    folders: List[ProjectFolder]     # список связанных папок
+```
+
+ProjectFolder:
+
+```python
+class ProjectFolder:
+    path: str                        # абсолютный путь
+    label: Optional[str] = None      # метка (например, "api", "web")
+    is_primary: bool = False         # основная ли папка
+    added_at: int = 0                # когда добавлена
+```
+
+2.1. Где хранится.
+   SQLite БД: `~/.hermes/profiles/<profile>/projects.db`.
+   Таблицы:
+   - `projects` (id, slug, name, ...)
+   - `project_folders` (project_id, path, label, is_primary, added_at)
+
+2.2. Active project.
+   Hermes помнит, какой проект **активный** (через
+   `set_active()` и `get_active_id()`). Используется для
+   автоматического применения context (AGENTS.md из primary folder).
+
+────────────────────────────────────────────────────────────────────────────
+3. КОМАНДЫ HERMES PROJECT
+────────────────────────────────────────────────────────────────────────────
+
+Из `hermes project --help`:
+
+```
+hermes project create <name> [--slug] [--description] [--icon] [--color]
+                          [--folders ...] [--primary] [--board] [--use]
+hermes project list [--all]                  # list (без archived, + all = все)
+hermes project ls   [--all]                  # синоним list
+hermes project show <id-or-slug>              # детали
+hermes project add-folder <id-or-slug> <path> [--label] [--primary]
+hermes project remove-folder <id-or-slug> <path>
+hermes project rename <id-or-slug> <new-name>
+hermes project set-primary <id-or-slug> <path>
+hermes project use <id-or-slug>               # активный проект
+hermes project archive <id-or-slug>
+hermes project restore <id-or-slug>           # un-archive
+hermes project bind-board <id-or-slug> [board-slug]   # без slug = unbind
+```
+
+────────────────────────────────────────────────────────────────────────────
+4. РЕКОМЕНДОВАННАЯ СТРУКТУРА ПРОЕКТА
+────────────────────────────────────────────────────────────────────────────
+
+4.1. Когда создавать Project.
+
+   • У вас **несколько репо / папок**, объединённых одной целью.
+   • Вы хотите **группы сессий** в desktop UI.
+   • Задачи регулярно пересекают репо (frontend + backend + infra).
+   • Нужны **детерминированные ветки** для kanban-задач.
+
+4.2. Когда НЕ создавать.
+
+   • У вас один репо — просто работайте в нём, Project избыточен.
+   • Временная задача — хватит Kanban без Project.
+   • Single-file скрипт — Project слишком тяжёл.
+
+4.3. Сколько папок в проекте.
+   - 1 папка (primary) — минимум.
+   - 2-5 папок — норма (mono-repo через ~overlay).
+   - 5-10 папок — большие проекты (enterprise).
+   - > 10 — лучше разделить на несколько Project'ов.
+
+4.4. Primary folder.
+   Это «главный» каталог проекта. Из него обычно читается AGENTS.md,
+   из него создаётся worktree для задач. Должен быть **первый
+   добавленный** или явно указан в `--primary`.
+
+4.5. Именование.
+
+   • **slug** — kebab-case, короткий. Примеры: `myapp`, `kuz-photo-tools`,
+     `ops-infrastructure`.
+   • **name** — отображаемое имя, может содержать пробелы, emoji.
+     Пример: `MyApp`, `Photo Tools`, `🚧 Infra`.
+   • **icon** — эмодзи для визуального распознавания (1 символ).
+   • **color** — название цвета в UI (blue, green, red, ...).
+
+────────────────────────────────────────────────────────────────────────────
+5. ЖИЗНЕННЫЙ ЦИКЛ ПРОЕКТА
+────────────────────────────────────────────────────────────────────────────
+
+   create ──► use ──► add-folder ──► bind-board ──► archive
+                  ▲                                          │
+                  └──────────── restore ─────────────────────┘
+                                                       delete (нет команды!)
+
+5.1. Создание (`create`).
+   - Задаёте name, slug (или автогенерация).
+   - Сразу можно передать `--folders` (один или несколько путей).
+   - `--use` — сразу сделать активным.
+   - `--board` — сразу привязать к kanban-board.
+
+5.2. Использование (`use`).
+   - Делает проект активным.
+   - Применяется к текущему профилю.
+   - Сохраняется между сессиями.
+
+5.3. Расширение (`add-folder`).
+   - Добавление новой папки.
+   - Можно сразу сделать primary (`--primary`).
+   - Можно с label (`--label=api`).
+
+5.4. Привязка kanban (`bind-board`).
+   - Без параметра — unbind.
+   - С slug — привязать board.
+   - После этого задачи kanban получат ветки `<slug>/<task-id>`.
+
+5.5. Архивация (`archive`) и восстановление (`restore`).
+   - Archive — мягкое скрытие из `list`.
+   - Restore — возвращает в активный список.
+   - Удаления **нет**: проекты не удаляются, только архивируются.
+   - Это by design (см. отсутствие `delete_project` в `projects_db.py`).
+
+────────────────────────────────────────────────────────────────────────────
+6. СВЯЗЬ С KANBAN
+────────────────────────────────────────────────────────────────────────────
+
+Когда `board_slug` указан в Project:
+
+6.1. Задачи board получают детерминированные ветки.
+   Из кода (`projects_db.py:714`):
+
+```python
+def branch_name_for(project: Project, task_id: str, *, title: str = "") -> str:
+    """Shape: ``<project-slug>/<task-id>`` (optionally ``-<title-slug>``)."""
+    slug = project.slug or _slugify(project.name)
+    base = f"{slug}/{task_id}"
+    if title:
+        tslug = _BRANCH_SAFE_RE.sub("-", str(title).strip().lower()).strip("-")
+        tslug = tslug[:40].strip("-")
+        if tslug:
+            base = f"{base}-{tslug}"
+    return base
+```
+
+   Пример: project `myapp`, task `TASK-2026-07-04-fix-auth`, title
+   `Fix auth` → ветка `myapp/TASK-2026-07-04-fix-auth-fix-auth`.
+
+6.2. Рабочий процесс.
+   1. Kanban-board `myapp-board` привязан к project `myapp`.
+   2. Создаётся задача `TASK-2026-07-04-fix-auth`.
+   3. Автоматически создаётся worktree в `~/.cache/worktrees/myapp/TASK-.../`.
+   4. Ветка `myapp/TASK-...` — стабильная.
+   5. После завершения — merge в primary branch.
+
+6.3. Без project — стабильные ветки, но менее человеко-читаемые.
+
+────────────────────────────────────────────────────────────────────────────
+7. ПРИМЕР СТРУКТУРЫ ПРОЕКТА
+────────────────────────────────────────────────────────────────────────────
+
+Пример готового Project `kuz-photo-tools`:
+
+7.1. **Создание**:
+```bash
+hermes project create "Photo Tools" \
+  --slug=kuz-photo-tools \
+  --description="Python tools for photo EXIF and transforms. uv-managed." \
+  --icon=📷 \
+  --color=blue \
+  --folders=~/code/kuz-photo-tools \
+  --primary=~/code/kuz-photo-tools \
+  --board=photo-tools-board \
+  --use
+```
+
+7.2. **Что получается** (по `hermes project show kuz-photo-tools`):
+```
+kuz-photo-tools  [<uuid>]
+  name:    Photo Tools
+  about:   Python tools for photo EXIF and transforms. uv-managed.
+  board:   photo-tools-board
+  primary: /home/user/code/kuz-photo-tools
+  folders:
+    *  /home/user/code/kuz-photo-tools
+```
+
+7.3. **Структура файлов и каталогов проекта** (рекомендуемая):
+```
+~/code/kuz-photo-tools/                     ← primary folder
+├── AGENTS.md                              ← проектный контекст
+├── README.md                              ← пользовательская документация
+├── CHANGELOG.md
+├── pyproject.toml                         ← single source of truth
+├── uv.lock
+├── src/
+│   └── photo_tools/
+│       ├── __init__.py
+│       ├── cli.py
+│       ├── exif/
+│       └── transforms/
+├── tests/
+│   ├── conftest.py
+│   ├── test_exif.py
+│   └── test_transforms.py
+├── docs/
+│   ├── api.md
+│   └── usage.md
+├── .github/
+│   └── workflows/
+│       ├── ci.yml
+│       └── release.yml
+├── .gitignore
+└── LICENSE
+
+~/<.hermes>/profiles/<profile>/projects.db  ← Hermes state (НЕ в репо!)
+```
+
+7.4. **Внутренние каталоги Hermes** (не показываются в `project show`,
+   но автоматически создаются по мере работы):
+```
+~/.hermes/profiles/<profile>/
+├── projects.db                            ← БД проектов
+├── kanban/<board-slug>.db                 ← kanban-board
+├── workspace/
+│   ├── inbox/<task-id>/                   ← входящие задачи
+│   └── results/<task-id>/                 ← результаты
+├── plans/<task-id>.md                     ← журнал
+└── sessions/                              ← журнал чат-сессий
+```
+
+────────────────────────────────────────────────────────────────────────────
+8. СВЯЗЬ PROJECT С ДРУГИМИ СУЩНОСТЯМИ
+────────────────────────────────────────────────────────────────────────────
+
+8.1. **Profile** vs **Project**.
+   - Profile = **кто** агент (SOUL, MEMORY, USER, SKILLS).
+   - Project = **с чем** работает агент (папки, kanban, worktrees).
+   - Один profile может иметь несколько Projects.
+   - Один Project существует **только в одном profile** (per-profile state).
+
+8.2. **Skill** vs **Project**.
+   - Skill = процедурные инструкции.
+   - Project = рабочее пространство.
+   - Skill может быть подключён к проекту через `--skills` (per-session).
+
+8.3. **AGENTS.md** vs **Project**.
+   - AGENTS.md = файл в **корне primary folder**.
+   - Project = сущность в Hermes state.
+   - Project не заменяет AGENTS.md, но ссылается на primary folder,
+     из которого AGENTS.md читается.
+
+8.4. **Cron** vs **Project**.
+   - Cron может работать внутри project (через `--workdir`).
+   - Project не зависит от cron, но cron может использовать project
+     для своего контекста.
+
+────────────────────────────────────────────────────────────────────────────
+9. ПРИМЕРЫ СОЗДАНИЯ PROJECT (3 СЦЕНАРИЯ)
+────────────────────────────────────────────────────────────────────────────
+
+═══════════════════════════════════════════════════════════════════════════
+9.1. ОДИН РЕПО — ПРОСТОЙ ПРОЕКТ
+═══════════════════════════════════════════════════════════════════════════
+
+`kuz-photo-tools` — единый Python-репо.
+
+```bash
+hermes project create "Photo Tools" \
+  --slug=kuz-photo-tools \
+  --description="Python EXIF and transforms. uv-managed." \
+  --icon=📷 \
+  --color=blue \
+  --folders=~/code/kuz-photo-tools \
+  --primary=~/code/kuz-photo-tools \
+  --use
+```
+
+После:
+- Активный project установлен.
+- `hermes chat` запустится в `~/code/kuz-photo-tools`.
+- AGENTS.md из этой папки подгрузится.
+
+═══════════════════════════════════════════════════════════════════════════
+9.2. MONOREPO ИЛИ НЕСКОЛЬКО РЕПО
+═══════════════════════════════════════════════════════════════════════════
+
+`myapp` — backend + frontend + infra.
+
+```bash
+hermes project create "MyApp" \
+  --slug=myapp \
+  --description="Full-stack app: api + web + infra." \
+  --icon=🚀 \
+  --color=green \
+  --folders=~/code/myapp/api \
+            ~/code/myapp/web \
+            ~/code/myapp/infra \
+  --primary=~/code/myapp/api \
+  --board=myapp-board \
+  --use
+```
+
+После:
+- Primary = `~/code/myapp/api` (там AGENTS.md, там CI, там README).
+- Папки web и infra — для cross-repo операций.
+- Kanban-board привязан.
+
+═══════════════════════════════════════════════════════════════════════════
+9.3. INFRASTRUCTURE / OPS PROJECT
+═══════════════════════════════════════════════════════════════════════════
+
+`ops-infra` — набор ops-репо.
+
+```bash
+hermes project create "Ops Infrastructure" \
+  --slug=ops-infra \
+  --description="Ansible, terraform, monitoring." \
+  --icon=🛠 \
+  --color=red \
+  --folders=~/infra/ansible \
+            ~/infra/terraform \
+            ~/infra/monitoring \
+  --primary=~/infra/ansible \
+  --use
+```
+
+────────────────────────────────────────────────────────────────────────────
+10. ЛУЧШИЕ ПРАКТИКИ
+────────────────────────────────────────────────────────────────────────────
+
+10.1. **Используйте `hermes project use` после создания**.
+   Без активного project Hermes не знает, в каком каталоге работать.
+
+10.2. **Используйте `--board` сразу** при создании, если планируете
+   kanban-задачи. Это связывает project с доской с самого начала.
+
+10.3. **Primary folder — это «лицо» проекта**.
+   Положите туда README.md, AGENTS.md, основной код. Не делайте
+   primary «случайной» папкой.
+
+10.4. **Используйте `icon` и `color`**.
+   В desktop UI это даёт мгновенную визуальную группировку.
+   `📷 photo-tools` и `🚀 myapp` — различимы с первого взгляда.
+
+10.5. **Не создавайте Project для всего**.
+   Для разовых скриптов — избыточно. Для регулярной работы — обязательно.
+
+10.6. **Архивируйте, не удаляйте**.
+   Проекты удалять нельзя (by design). Используйте `archive` —
+   мягкое скрытие с возможностью `restore`.
+
+10.7. **Per-profile проекты**.
+   Если у вас два профиля (например, `default` и `mi_mg_01`),
+   у каждого — свои проекты. Это нормально и даже полезно для
+   изоляции.
+
+10.8. **Используйте label для папок** в multi-repo проекте.
+   ```bash
+   hermes project add-folder myapp ~/code/myapp/web --label=web
+   hermes project add-folder myapp ~/code/myapp/api --label=api
+   ```
+   В выводе `project show` будет видно:
+   ```
+     *  /home/user/code/myapp/api (api)
+        /home/user/code/myapp/web (web)
+   ```
+
+────────────────────────────────────────────────────────────────────────────
+11. ЧАСТЫЕ ОШИБКИ
+────────────────────────────────────────────────────────────────────────────
+
+11.1. **Project без primary**.
+   Без primary_path project работает, но менее предсказуемо.
+   Всегда задавайте.
+
+11.2. **Primary не существует**.
+   `hermes project create ... --primary=~/does/not/exist`
+   не упадёт (путь валидируется лениво), но потом AGENTS.md
+   не подгрузится. Проверяйте путь.
+
+11.3. **Слишком много projects**.
+   20+ projects у одного профиля — хаос. Объединяйте по смыслу.
+
+11.4. **Project используется как «task»**.
+   Project — это **workspace**. Task — это Kanban-задача внутри
+   project (если board привязан). Не путайте.
+
+11.5. **Забыли `--use` после создания**.
+   Без активного project новая сессия стартует «нигде» (в $HOME).
+   Всегда используйте `--use` или отдельно `hermes project use`.
+
+11.6. **Primary path содержит `~` без expanduser**.
+   В Python-коде Hermes использует `_normalize_path` который
+   раскрывает `~`. Но если вы вручную смотрите БД — хранится
+   абсолютный путь.
+
+11.7. **bind-board без существующего board**.
+   Project может быть привязан к **любому** slug, даже если
+   такого kanban-board ещё нет. Это не ошибка, но kanban не
+   будет работать. Сначала создайте board через `hermes kanban`,
+   потом bind.
+
+11.8. **archive вместо restore** забытой команды.
+   Нет `delete`, но если случайно archive — `restore` всё вернёт.
+
+────────────────────────────────────────────────────────────────────────────
+12. ИНТЕГРАЦИЯ С DESKTOP UI
+────────────────────────────────────────────────────────────────────────────
+
+12.1. Project в desktop.
+   В desktop-приложении Hermes Project = визуальная «коробка»,
+   в которую группируются сессии. Видно:
+   - имя и icon проекта;
+   - список активных сессий;
+   - связанный kanban-board;
+   - папки (primary + secondary).
+
+12.2. Switch между projects.
+   В desktop UI можно переключать active project без CLI.
+   Это удобнее, чем `hermes project use` каждый раз.
+
+12.3. Projects и сессии.
+   Каждая сессия привязана к project (или «no project»).
+   Это позволяет группировать сессии:
+   - «Photo Tools» / TASK-2026-07-04-rag / 13:00
+   - «Photo Tools» / TASK-2026-07-04-fix-bug / 13:30
+   - «MyApp» / TASK-2026-07-04-deploy / 14:00
+
+────────────────────────────────────────────────────────────────────────────
+13. ПРОДВИНУТЫЕ СЦЕНАРИИ
+────────────────────────────────────────────────────────────────────────────
+
+13.1. **Project + multiple profiles**.
+   У `default` и `mi_mg_01` — разные проекты.
+   `default` используется для общего чата.
+   `mi_mg_01` используется для операций на сервере mima_g_01.
+
+13.2. **Project migration**.
+   Если хотите переместить папку на другой диск:
+   ```bash
+   mv ~/code/myapp /mnt/code/myapp
+   hermes project add-folder myapp /mnt/code/myapp --primary
+   hermes project remove-folder myapp ~/code/myapp
+   ```
+
+13.3. **Project + backup**.
+   `~/.hermes/profiles/<profile>/projects.db` — это **только метаданные**.
+   Сами папки репо — отдельно. Для backup:
+   - БД: `cp projects.db projects.db.bak`.
+   - Папки: стандартный rsync/git.
+
+13.4. **Project + delegation**.
+   Subagent может быть запущен внутри project (через
+   `delegate_task` с `workdir=<primary>`). Это даёт subagent
+   тот же контекст.
+
+13.5. **Project через API**.
+   Если вы пишете код, используйте `pdb.create_project()`,
+   `pdb.set_active()`, и т.д. из `hermes_cli.projects_db`.
+
+────────────────────────────────────────────────────────────────────────────
+14. ПРИМЕР AGENTS.MD ДЛЯ ПРОЕКТА
+────────────────────────────────────────────────────────────────────────────
+
+Когда у вас Project, в его primary folder положите AGENTS.md:
+
+```markdown
+# Photo Tools — Agent Guide
+
+## Stack
+- Python 3.11+
+- uv for dependency management (NOT pip, NOT poetry)
+- pytest for tests
+- ruff for lint + format
+- mypy --strict for types
+
+## Commands
+- `uv sync`
+- `uv run pytest`
+- `uv run ruff check .`
+- `uv run mypy src/photo_tools`
+
+## Don'ts
+- **Never** commit `.env`.
+- **Never** push to `main`.
+- **Never** add a dep without updating `pyproject.toml`.
+- **Never** widen exception types.
+
+## Layout
+- `src/photo_tools/` — package source.
+- `tests/` — pytest tests.
+- `docs/` — user-facing docs.
+
+## Project context (Hermes)
+This project is registered in Hermes as `kuz-photo-tools` (Photo Tools).
+Kanban-board: `photo-tools-board`. Tasks get branch `kuz-photo-tools/<task-id>`.
+```
+
+────────────────────────────────────────────────────────────────────────────
+15. КОГДА СОЗДАВАТЬ PROJECT (СВОДКА)
+────────────────────────────────────────────────────────────────────────────
+
+  ┌─────────────────────────────────┬──────────────────────────────┐
+  │ Ситуация                        │ Создавать Project?            │
+  ├─────────────────────────────────┼──────────────────────────────┤
+  │ Один репо, регулярная работа    │ Да, поможет с worktree+board │
+  │ Несколько связанных репо        │ Да, must have                │
+  │ Один скрипт, разовая задача     │ Нет, overkill                │
+  │ 5+ репо одной команды           │ Да, обязательно              │
+  │ Монорепо с сервисами            │ Да (per-service folders)     │
+  │ Эксперимент в playground/       │ Нет (можно через Kanban)     │
+  │ Публичный docs-проект          │ Нет (это не code)            │
+  │ Перенос с другого инструмента   │ Да (импортировать структуру) │
+  └─────────────────────────────────┴──────────────────────────────┘
+
+────────────────────────────────────────────────────────────────────────────
+16. ЗАКЛЮЧЕНИЕ
+────────────────────────────────────────────────────────────────────────────
+
+**Project в Hermes** — это **workspace с человеческим именем**,
+объединяющий несколько папок, привязываемый к kanban-board
+для детерминированных worktree+веток, группирующий сессии
+в desktop UI.
+
+Главное:
+  1. Project = стабильный контекст для агента.
+  2. Multi-folder (1+ папок) и primary_path.
+  3. State per-profile (SQLite projects.db).
+  4. Привязка к kanban даёт ветки `<slug>/<task-id>`.
+  5. Archive вместо delete (нет команды удаления).
+  6. Создавайте при multi-repo или регулярной работе.
+
+Когда вы работаете над чем-то, что занимает больше одного
+репозитория, — это повод создать Project. Когда вы работаете
+над чем-то разово — это повод обойтись Kanban.

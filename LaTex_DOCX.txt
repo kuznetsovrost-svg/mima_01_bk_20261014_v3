@@ -1,0 +1,556 @@
+# Конвертация LaTeX (.tex) в Word (.docx) — практический гайд
+
+## 0. Главное
+
+Да, конвертация LaTeX → DOCX **возможна, проста и бесплатна** через несколько надёжных инструментов. Самый популярный и рекомендуемый — **Pandoc**. Он установлен у 95% исследователей и умеет конвертировать в обе стороны.
+
+**Лучшие варианты по убыванию рекомендации:**
+
+1. **Pandoc** (бесплатно, CLI, лучшее качество для академических текстов).
+2. **Pandoc + reference.docx** (шаблон для точного соответствия стилю).
+3. **latex2docx** (Python, для специфических случаев).
+4. **Texmaker / TeXstudio с плагинами** (GUI).
+5. **Overleaf → Download as DOCX** (онлайн, без установки).
+6. **Pandoc Online** (онлайн-версия pandoc, если нельзя ставить локально).
+
+---
+
+## 1. Pandoc — главный инструмент
+
+### Установка
+
+**Linux (Ubuntu/Debian):**
+```bash
+sudo apt update
+sudo apt install pandoc
+pandoc --version   # проверить
+```
+
+**Linux (Fedora/RHEL):**
+```bash
+sudo dnf install pandoc
+```
+
+**macOS:**
+```bash
+brew install pandoc
+```
+
+**Windows:**
+- Скачать установщик с https://pandoc.org/installing.html
+- Или через Chocolatey: `choco install pandoc`
+- Или через Scoop: `scoop install pandoc`
+
+**Проверка установки:**
+```bash
+pandoc --version
+# Должно показать что-то вроде pandoc 3.1.x
+```
+
+### Базовая конвертация (одна команда)
+
+```bash
+pandoc input.tex -o output.docx
+```
+
+Это создаст файл `output.docx` со стандартным стилем Pandoc.
+
+### Конвертация с сохранением формул
+
+Pandoc по умолчанию сохраняет LaTeX-формулы как **OMML** (Office Math Markup Language) — Word их видит и рендерит нативно, как встроенные формулы.
+
+```bash
+pandoc input.tex -o output.docx
+# Формулы в DOCX будут видны в Word как редактируемые формулы, не картинки
+```
+
+### Конвертация с шаблоном (точный стиль)
+
+Если нужен свой стиль (шрифты, отступы, заголовки), создаётся шаблон `reference.docx`:
+
+```bash
+# Создать шаблон из дефолтного
+pandoc -o reference.docx --print-default-data-file reference.docx
+
+# Открыть reference.docx в Word, настроить стили:
+# - Heading 1, 2, 3 (заголовки)
+# - Body Text (основной текст)
+# - First Paragraph (первый абзац раздела)
+# - Caption (подписи к рисункам и таблицам)
+# Сохранить как reference.docx
+
+# Использовать шаблон
+pandoc input.tex -o output.docx --reference-doc=reference.docx
+```
+
+### Пакетная конвертация (несколько файлов)
+
+```bash
+# Один файл
+pandoc chapter1.tex -o chapter1.docx
+
+# Скрипт для всех .tex в папке
+for f in *.tex; do
+    pandoc "$f" -o "${f%.tex}.docx"
+done
+```
+
+### Конвертация с библиографией
+
+```bash
+# BibTeX
+pandoc input.tex -o output.docx --bibliography=refs.bib --citeproc
+
+# BibLaTeX
+pandoc input.tex -o output.docx --bibliography=refs.bib --biblatex
+```
+
+### Конвертация с CSD (Cross-reference)
+
+```bash
+# С include-файлами и cross-references
+pandoc input.tex -o output.docx --standalone --include-in-header=preamble.tex
+```
+
+### Полезные опции
+
+```bash
+pandoc input.tex -o output.docx \
+    --reference-doc=reference.docx \    # шаблон стиля
+    --bibliography=refs.bib \            # библиография
+    --citeproc \                          # обработка цитат
+    --toc \                               # оглавление
+    --number-sections \                   # нумерация секций
+    --metadata title="Заголовок" \        # метаданные
+    --metadata author="Автор" \
+    -M lang=ru                            # язык для переносов
+```
+
+---
+
+## 2. Pandoc — специфика LaTeX → DOCX
+
+### Что конвертируется ХОРОШО
+
+✅ **Текст, абзацы, заголовки** — точно.
+✅ **Формулы** — LaTeX → OMML (нативные формулы Word).
+✅ **Списки** (itemize, enumerate, description).
+✅ **Таблицы** (tabular, longtable, booktabs).
+✅ **Цитаты и библиография** (с --citeproc).
+✅ **Изображения** (includegraphics) — встроенные.
+✅ **Cross-references** (label, ref).
+✅ **Footnotes** (\footnote).
+✅ **Язык и переносы** (babel, polyglossia).
+
+### Что конвертируется ПОСРЕДСТВЕННО
+
+⚠️ **Сложные tikz-рисунки** — конвертируются как PNG/PDF (растровые).
+⚠️ **pgfplots графики** — то же.
+✅ **Простые tikz** (стрелки, блоки) — конвертируется, но стили могут отличаться.
+
+### Что конвертируется ПЛОХО
+
+❌ **Сложные пользовательские макросы** (\newcommand с нетривиальной логикой).
+❌ **pgf/TikZ с продвинутыми стилями** (теряются).
+❌ **Специфические пакеты** (chemistychem, glossaries с нестандартным оформлением).
+❌ **Двухколоночная верстка** (multicol) — станет одноколоночной.
+❌ **Float-объекты с тонкой настройкой позиционирования** ([H], [t!]).
+❌ **Некоторые шрифты** (XeLaTeX с системными шрифтами) — могут стать стандартными.
+
+### Workarounds для проблемных мест
+
+**TikZ-рисунки:**
+```bash
+# Скомпилировать LaTeX → PDF
+pdflatex input.tex
+
+# Извлечь рисунки (или рендерить отдельно)
+# Вставить как PNG в DOCX через includegraphics
+```
+
+**Пользовательские макросы:**
+```bash
+# Перед конвертацией — раскрыть макросы через latexpand
+latexpand input.tex > expanded.tex
+pandoc expanded.tex -o output.docx
+```
+
+**Сложные таблицы:**
+```bash
+# Конвертировать через HTML как промежуточный формат
+pandoc input.tex -o intermediate.html
+pandoc intermediate.html -o output.docx
+```
+
+---
+
+## 3. latex2docx (Python библиотека)
+
+### Установка
+
+```bash
+pip install latex2docx
+```
+
+Или из исходников: https://github.com/aliyevorkhan/latex2docx
+
+### Использование
+
+```python
+from latex2docx import latex2docx
+
+latex2docx(
+    'input.tex',
+    'output.docx',
+    extract_images=True,    # извлекать изображения
+    keep_temp_files=False    # сохранять временные файлы
+)
+```
+
+### Когда использовать
+
+- Когда нужна автоматизация в Python-скрипте.
+- Когда Pandoc не справляется с конкретным LaTeX-пакетом.
+- Когда нужна тонкая настройка извлечения изображений.
+
+### Ограничения
+
+- Менее зрелый, чем Pandoc.
+- Меньше community.
+- Поддерживает меньше LaTeX-конструкций.
+
+---
+
+## 4. Texmaker / TeXstudio с плагинами
+
+### Texmaker (GUI, кроссплатформенный)
+
+- Встроенная поддержка pdflatex, xelatex, lualatex.
+- Прямой экспорт в PDF.
+- Для DOCX — нужно вызывать Pandoc вручную или через Quick Build.
+
+**Кастомная команда в Texmaker:**
+```
+Options → Configure Texmaker → Commands → User
+pdflatex -interaction=nonstopmode %.tex | pandoc %.tex -o %.docx
+```
+
+### TeXstudio (более продвинутый GUI)
+
+- Аналогично Texmaker.
+- Встроенная поддержка Bibliography Manager.
+- Плагины для конвертации.
+
+### Когда использовать
+
+- Когда нужна IDE для редактирования LaTeX.
+- Когда хочется GUI, а не CLI.
+- Когда работаешь с большими LaTeX-проектами.
+
+---
+
+## 5. Overleaf (онлайн) — без установки
+
+### Для пользователей Overleaf
+
+В Overleaf есть кнопка **Download as → DOCX**:
+1. Открыть проект в Overleaf.
+2. В меню выбрать "Download as" → "DOCX".
+3. Файл скачается через Pandoc на серверах Overleaf.
+
+### Когда использовать
+
+- Не хочется ничего устанавливать локально.
+- Проект уже в Overleaf.
+- Нужна разовая конвертация.
+
+### Ограничения
+
+- Требует интернет.
+- Лимиты бесплатного аккаунта.
+- Конвертация идёт через Overleaf-версию Pandoc — может быть не последняя.
+
+---
+
+## 6. Pandoc Online (онлайн-версия)
+
+### Где найти
+
+- https://pandoc.org/try/
+- https://pandoc.herokuapp.com/
+
+### Когда использовать
+
+- Единичная конвертация.
+- Не хочется ставить локально.
+- Тестирование перед локальной установкой.
+
+### Ограничения
+
+- Лимиты по размеру файла.
+- Нет гарантий приватности (для конфиденциальных текстов не подходит).
+- Зависимость от доступности сервиса.
+
+---
+
+## 7. Полный практический pipeline (для сложных LaTeX-документов)
+
+### Шаг 1: Подготовка
+
+```bash
+# Очистить временные файлы LaTeX
+rm -f *.aux *.log *.toc *.out *.bbl *.blg *.synctex.gz
+
+# Проверить, что документ компилируется
+pdflatex -interaction=nonstopmode input.tex
+```
+
+### Шаг 2: Раскрытие макросов (если есть)
+
+```bash
+# Установить latexpand (Perl)
+sudo apt install texlive-extra-utils   # содержит latexpand
+# или
+cpan latexpand
+
+# Раскрыть
+latexpand input.tex > expanded.tex
+```
+
+### Шаг 3: Конвертация
+
+```bash
+# Базовая
+pandoc expanded.tex -o output.docx
+
+# С шаблоном
+pandoc expanded.tex -o output.docx --reference-doc=reference.docx
+
+# С библиографией
+pandoc expanded.tex -o output.docx \
+    --bibliography=refs.bib \
+    --citeproc \
+    --reference-doc=reference.docx \
+    --toc \
+    --number-sections
+```
+
+### Шаг 4: Пост-обработка
+
+Открыть в Word и проверить:
+- Формулы (нативные, не картинки).
+- Рисунки (встроены, не потеряны).
+- Стили заголовков.
+- Списки литературы.
+
+---
+
+## 8. Сравнительная таблица инструментов
+
+| Инструмент | Качество | Удобство | Стоимость | Установка | Лучший для |
+|---|---|---|---|---|---|
+| **Pandoc** | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | Бесплатно | Простая | 95% случаев |
+| **Pandoc + reference.docx** | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ | Бесплатно | Простая | Точное соответствие стилю |
+| **latex2docx** | ⭐⭐⭐ | ⭐⭐⭐ | Бесплатно | pip install | Python-автоматизация |
+| **Texmaker** | ⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | Бесплатно | GUI-установка | Редактирование + конвертация |
+| **TeXstudio** | ⭐⭐⭐⭐ | ⭐⭐⭐⭐ | Бесплатно | GUI-установка | Продвинутое редактирование |
+| **Overleaf → DOCX** | ⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | Freemium | Без установки | Уже в Overleaf |
+| **Pandoc Online** | ⭐⭐⭐⭐ | ⭐⭐⭐⭐ | Бесплатно | Без установки | Разовая конвертация |
+
+---
+
+## 9. Альтернативы (если Pandoc не подходит)
+
+### Конвертация через PDF
+
+Если исходник — только PDF (нет .tex):
+
+```bash
+# Лучшее качество
+pdftotext -layout input.pdf intermediate.txt
+pandoc intermediate.txt -o output.docx
+
+# С распознаванием формул (через Mathpix)
+# mathpix.com — конвертирует PDF/скан → LaTeX → DOCX
+```
+
+### Конвертация через HTML (промежуточный формат)
+
+```bash
+# LaTeX → HTML
+pandoc input.tex -o intermediate.html
+
+# HTML → DOCX
+pandoc intermediate.html -o output.docx
+```
+
+Полезно, когда:
+- DOCX получается кривой из LaTeX.
+- HTML рендерится браузером, и можно подправить стили.
+- Нужны CSS-стили, которые Pandoc не поддерживает напрямую.
+
+---
+
+## 10. Конвертация DOCX → LaTeX (обратное направление)
+
+Иногда нужна и обратная конвертация:
+
+```bash
+pandoc input.docx -o output.tex
+```
+
+### Когда нужно
+
+- Получить LaTeX-исходник из Word-документа.
+- Редактировать существующий Word-документ как LaTeX.
+
+### Ограничения
+
+- Стили Word теряются.
+- Сложное форматирование упрощается.
+- Формулы Word (OMML) → LaTeX — через Mathpix или вручную.
+
+---
+
+## 11. Конкретные рецепты
+
+### Рецепт 1: Научная статья с библиографией
+
+```bash
+# Подготовка
+pdflatex paper.tex
+bibtex paper
+pdflatex paper.tex
+pdflatex paper.tex
+
+# Конвертация
+pandoc paper.tex -o paper.docx \
+    --bibliography=references.bib \
+    --citeproc \
+    --reference-doc=template.docx \
+    --toc
+```
+
+### Рецепт 2: Книга/диссертация с главами
+
+```bash
+# Главы в отдельных файлах: ch1.tex, ch2.tex, ch3.tex
+# Главный файл: book.tex (с \include{ch1})
+
+# Раскрыть include
+latexpand book.tex > book_expanded.tex
+
+# Конвертировать
+pandoc book_expanded.tex -o book.docx \
+    --reference-doc=template.docx \
+    --toc \
+    --number-sections
+```
+
+### Рецепт 3: Презентация Beamer → DOCX
+
+```bash
+# Прямая конвертация работает плохо
+# Лучше: конвертировать в PDF, затем в DOCX через pdftotext + pandoc
+
+pdftotext -layout slides.pdf slides.txt
+pandoc slides.txt -o slides.docx
+```
+
+### Рецепт 4: Резюме/CV
+
+```bash
+# LaTeX CV → DOCX
+pandoc cv.tex -o cv.docx --reference-doc=template.docx
+# Убедиться, что современный шаблон CV использует стандартные пакеты
+```
+
+### Рецепт 5: Сложный документ с TikZ
+
+```bash
+# Скомпилировать LaTeX
+pdflatex document.tex
+
+# Извлечь страницы как изображения для TikZ-частей
+pdftoppm document.pdf page -png -r 300
+
+# Конвертировать основной текст
+pandoc document.tex -o document.docx \
+    --reference-doc=template.docx
+
+# Вставить PNG в Word вручную для TikZ-частей
+```
+
+---
+
+## 12. Советы по качеству DOCX из LaTeX
+
+### Делать:
+
+✅ Использовать стандартные пакеты LaTeX (`amsmath`, `graphicx`, `booktabs`, `hyperref`).
+✅ Применять стандартные команды секционирования (`\section`, `\subsection`).
+✅ Использовать BibTeX/BibLaTeX для библиографии.
+✅ Применять `\label` + `\ref` для cross-references.
+✅ Проверять компиляцию LaTeX ДО конвертации.
+
+### НЕ делать:
+
+❌ Глубоко кастомные макросы без возможности раскрытия.
+❌ Сложные TikZ-рисунки как неотъемлемая часть (лучше вынести в отдельные файлы).
+❌ Специфические шрифты через `\setmainfont` (XeLaTeX) — не переносятся.
+❌ Двухколоночная верстка без понимания последствий.
+❌ Пакеты, которые Pandoc не знает (предупреждения в логе).
+
+---
+
+## 13. Установка Pandoc на этом сервере (mima_g_01)
+
+Проверка показала, что на этом хосте **Pandoc не установлен**. Установка:
+
+```bash
+sudo apt update
+sudo apt install -y pandoc
+pandoc --version
+```
+
+После установки можно конвертировать одной командой:
+```bash
+pandoc /path/to/file.tex -o /path/to/output.docx
+```
+
+---
+
+## 14. Итоговая рекомендация
+
+**В 95% случаев используйте Pandoc.**
+
+```bash
+# Установить (если нет)
+sudo apt install pandoc
+
+# Сконвертировать
+pandoc input.tex -o output.docx
+```
+
+Если нужно точное соответствие стилю — создайте `reference.docx` в Word и используйте `--reference-doc`.
+
+Если есть сложные TikZ/макросы — раскройте через `latexpand` перед конвертацией.
+
+Если ничего не помогает — перегоните через HTML как промежуточный формат.
+
+---
+
+## 15. Источники
+
+- **Pandoc:** https://pandoc.org/ (официальный сайт, документация).
+- **Pandoc Manual:** https://pandoc.org/MANUAL.html (полное руководство).
+- **latex2docx:** https://github.com/aliyevorkhan/latex2docx.
+- **latexpand:** https://ctan.org/pkg/latexpand.
+- **Texmaker:** https://www.xm1math.net/texmaker/.
+- **TeXstudio:** https://www.texstudio.org/.
+- **Overleaf:** https://www.overleaf.com/.
+- **Mathpix:** https://mathpix.com/ (для PDF/скан → LaTeX).
+
+---
+
+## Конец файла

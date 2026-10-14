@@ -1,0 +1,214 @@
+СБОРКА АГЕНТА — ВЫПУСК 01
+==========================
+Тема: Как поместить SKILL.md в нужную папку HERMES-профиля
+
+──────────────────────────────────────────────
+0. КЛЮЧЕВЫЕ ПУТИ (проверены на этой машине)
+──────────────────────────────────────────────
+
+HERMES_HOME по умолчанию:        /root/.hermes
+                                 (это и есть «default»-профиль)
+
+Профили живут здесь:             /root/.hermes/profiles/<name>/
+                                 у тебя папки profiles/ ещё нет —
+                                 она создаётся при первом `hermes profile create`
+
+Скиллы профиля <name>:           /root/.hermes/profiles/<name>/skills/<skill-name>/SKILL.md
+                                 (для default: /root/.hermes/skills/<skill-name>/SKILL.md)
+
+Активный профиль:                /root/.hermes/active_profile
+                                 (пусто ⇒ default, т.е. /root/.hermes)
+
+Подсказка по HERMES_HOME в текущей сессии: посмотри переменную
+                                     echo "$HERMES_HOME"
+                                     или запусти `hermes doctor` (там напечатают DHH —
+                                     Display Hermes Home, с учётом активного профиля).
+
+──────────────────────────────────────────────
+1. КАК УСТРОЕН ПРОФИЛЬ (источник — hermes_cli/profiles.py)
+──────────────────────────────────────────────
+
+Каждый профиль — это полностью изолированный HERMES_HOME со своим:
+  • config.yaml
+  • .env
+  • memories/  (включая MEMORY.md, USER.md)
+  • sessions/
+  • skills/        ← сюда кладём SKILL.md
+  • skins/, logs/, plans/, workspace/, cron/, home/
+
+«default»-профиль — это сам ~/.hermes (обратная совместимость, миграция не нужна).
+Именованные профили — вложены: ~/.hermes/profiles/<name>/.
+
+──────────────────────────────────────────────
+2. ТРИ СПОСОБА ПОЛОЖИТЬ SKILL.md В ПРОФИЛЬ
+──────────────────────────────────────────────
+
+СПОСОБ A — РУКАМИ (самый прозрачный, рекомендую для разовых правок)
+─────────────────────────────────────────────
+Пример: положить скилл «my-skill» в активный default-профиль.
+
+  mkdir -p ~/.hermes/skills/my-skill
+  nano  ~/.hermes/skills/my-skill/SKILL.md
+  # — пишем frontmatter + тело, формат ниже в разделе 3
+
+  # Проверка:
+  hermes skills list
+  hermes skills inspect my-skill
+
+  # Если хочется в ИМЕНОВАННЫЙ профиль coder:
+  mkdir -p ~/.hermes/profiles/coder/skills/my-skill
+  nano  ~/.hermes/profiles/coder/skills/my-skill/SKILL.md
+  # Проверка:
+  hermes -p coder skills list
+
+
+СПОСОБ B — ИЗ РЕЕСТРА SKILLS.SH / GITHUB (hermes skills install)
+─────────────────────────────────────────────────────────────────
+  hermes skills search "matrix"            # найти
+  hermes skills inspect <owner/repo>       # посмотреть
+  hermes skills install <owner/repo>       # установит в ТЕКУЩИЙ профиль
+  hermes -p coder skills install <owner/repo>   # в конкретный профиль
+
+  Установка идёт в <HERMES_HOME>/skills/<skill-name>/SKILL.md
+  и попутно тянет references/, templates/, scripts/ из репо.
+
+
+СПОСОБ C — ЧЕРЕЗ PYTHON API (skill_manage, программно)
+───────────────────────────────────────────────────────
+  Внутри ассистента (этой же сессии) можно:
+    skill_manage(action="create",  name="my-skill",   content=<SKILL.md текст>)
+    skill_manage(action="patch",   name="my-skill",   old_string=..., new_string=...)
+    skill_manage(action="write_file", name="my-skill",
+                 file_path="references/api.md", file_content=<...>)
+
+  По умолчанию пишет в активный профиль (т.е. default = ~/.hermes/skills).
+  Если нужен именованный профиль — переключи его ДО вызова:
+    hermes profile use coder
+    # затем skill_manage(...)
+  Переключение «липкое», см. шаги ниже.
+
+──────────────────────────────────────────────
+3. МИНИМАЛЬНЫЙ ФОРМАТ SKILL.md
+──────────────────────────────────────────────
+
+Файл: <profile>/skills/<skill-name>/SKILL.md
+
+--- обязательный YAML-frontmatter ---
+---
+name: my-skill                 # ≤ 64 символа, [a-z0-9_-]
+description: "Краткое описание на 1-2 строки."
+version: 1.0.0
+author: <кто угодно>
+license: MIT
+platforms: [linux, macos, windows]
+metadata:
+  hermes:
+    tags: [tag1, tag2]
+    related_skills: [other-skill]
+---
+
+# Заголовок скилла
+
+Markdown-тело: когда загружать, какие команды, pitfalls, примеры.
+
+Сразу под frontmatter полезно иметь:
+  • «When to use this skill» — триггер загрузки (ассистент читает это)
+  • Нумерованные шаги с КОНКРЕТНЫМИ командами
+  • Раздел Pitfalls / Подводные камни
+  • Verification / Проверка
+
+Валидатор: при `skill_manage(action="create")` Hermes сам прогоняет
+frontmatter и подсвечивает ошибки — смотри вывод.
+
+──────────────────────────────────────────────
+4. КАК ПОНЯТЬ, В КАКОЙ ПРОФИЛЬ ПИСАТЬ ПРЯМО СЕЙЧАС
+──────────────────────────────────────────────
+
+  1) Посмотреть, что выводит `hermes profile list`:
+        Profile   Model       Gateway  Alias  Distribution
+        ◆ default MiniMax-M3 running  —      —
+
+  2) Посмотреть HERMES_HOME:
+        env | grep -i hermes_home
+        # или
+        hermes doctor | head -20
+
+  3) Посмотреть .skills_prompt_snapshot.json:
+        head -5 ~/.hermes/.skills_prompt_snapshot.json
+
+  4) Если активен default (он же ~/.hermes) — путь для скилла:
+        ~/.hermes/skills/<name>/SKILL.md
+     Если активен именованный, например coder — путь:
+        ~/.hermes/profiles/coder/skills/<name>/SKILL.md
+
+──────────────────────────────────────────────
+5. ПЕРЕКЛЮЧЕНИЕ МЕЖДУ ПРОФИЛЯМИ
+──────────────────────────────────────────────
+
+  hermes profile create coder             # создать «чистый» + bundled skills
+  hermes profile create coder --clone     # + скопировать config, .env, SOUL.md, skills
+  hermes profile create coder --clone-all # полная копия default (без runtime-файлов)
+
+  hermes profile list                      # все профили
+  hermes profile show coder                # подробности + путь
+
+  hermes profile use coder                 # сделать coder «липким» по умолчанию
+  coder                                    # быстрый вход (создаст wrapper в ~/.local/bin)
+  hermes -p coder chat                     # одноразово запустить сессию в coder
+
+  hermes profile delete coder              # снести профиль + alias + service
+
+ВНИМАНИЕ: `hermes update` синхронизирует bundled-скиллы во ВСЕ профили
+автоматически — то, что ты поправил руками в одном профиле, не перезатрётся,
+потому что файл помечается user-modified.
+
+──────────────────────────────────────────────
+6. ОПТ-ОУТ BUNDLED SKILLS
+──────────────────────────────────────────────
+
+Если в профиле создать пустой файл .no-bundled-skills —
+`hermes update` и `seed_profile_skills()` ПЕРЕСТАНУТ заливать туда
+bundled-скиллы из репозитория. Полезно, когда хочется полностью ручное управление.
+
+  touch ~/.hermes/profiles/coder/.no-bundled-skills
+  # отменить:
+  rm   ~/.hermes/profiles/coder/.no-bundled-skills
+
+──────────────────────────────────────────────
+7. БЫСТРЫЙ ЧЕК-ЛИСТ «Я ВЕРНО ПОЛОЖИЛ СКИЛЛ»
+──────────────────────────────────────────────
+
+  □ Файл лежит тут:
+       <HERMES_HOME>/skills/<skill-name>/SKILL.md
+  □ Имя папки == поле `name:` во frontmatter
+  □ Frontmatter начинается с `---` и закрывается `---`
+  □ `hermes skills list` показывает новый скилл
+  □ `hermes skills inspect <name>` открывает его без ошибок валидации
+  □ В активном профиле: `hermes -p <profile> skills list` (если профилей несколько)
+
+Если `skills list` не видит — чаще всего:
+  1) путь не тот профиль (смотри HERMES_HOME / active_profile);
+  2) имя папки не совпадает с `name:` во frontmatter;
+  3) frontmatter невалиден (YAML-кавычки, дефисы) — `hermes skills inspect <name>` покажет.
+
+──────────────────────────────────────────────
+8. ПРИМЕР КОМАНД (copy-paste)
+──────────────────────────────────────────────
+
+# Положить скилл «matrix-direct» в default-профиль:
+mkdir -p ~/.hermes/skills/matrix-direct
+$EDITOR ~/.hermes/skills/matrix-direct/SKILL.md
+
+# Создать отдельный профиль и положить скилл туда:
+hermes profile create experimenter
+mkdir -p ~/.hermes/profiles/experimenter/skills/matrix-direct
+$EDITOR ~/.hermes/profiles/experimenter/skills/matrix-direct/SKILL.md
+hermes -p experimenter skills list
+
+# Залить скилл из публичного GitHub-репо в текущий профиль:
+hermes skills install owner/matrix-direct
+
+──────────────────────────────────────────────
+КОНЕЦ ВЫПУСКА 01
+Источник: /usr/local/lib/hermes-agent/hermes_cli/profiles.py,
+          справка `hermes skills --help`, `hermes profile list` на этой машине.

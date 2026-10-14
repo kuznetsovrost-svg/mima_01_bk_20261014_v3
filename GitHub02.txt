@@ -1,0 +1,569 @@
+ИМПОРТ АГЕНТА ИЗ GITHAB В HERMES — ЧЁТКАЯ ПОСЛЕДОВАТЕЛЬНОСТЬ ДЕЙСТВИЙ
+================================================================
+Версия: 1.0
+Назначение: безопасно перенести в локальный Hermes
+"агентский пакет" (skills + memories + config-фрагменты +
+cronjobs + per-profile надстройки), опубликованный в
+удалённом Git-репозитории (GitHub / Gitea / GitLab) как
+готовый к использованию артефакт.
+
+Под "агентом" здесь понимается: набор skills, файл(ы) памяти,
+конфигурационные сниппеты, опционально cron-джобы и
+mcp-сервера, плюс инструкции, как это всё запустить.
+Hermes-профиль `default` живёт в `~/.hermes/`. Именно туда
+и кладём импортируемое.
+
+----------------------------------------------------------------
+0. ИСХОДНЫЕ ДАННЫЕ И ТЕРМИНОЛОГИЯ
+----------------------------------------------------------------
+0.1. На GitHab у вас есть репозиторий, например
+     https://github.com/<owner>/agents-backup
+     Внутри ожидаемая раскладка (должна соблюдаться автором
+     пакета; см. также §9 "Эталонная структура экспорта"):
+
+     agents-backup/
+     ├── README.md                  # что это за агент, как запускать
+     ├── skills/                    # *.skill, SKILL.md, scripts/...
+     │   └── <skill-name>/
+     │       ├── SKILL.md
+     │       ├── references/...
+     │       ├── templates/...
+     │       └── scripts/...
+     ├── memories/                  # user.md, memory.md, *.json
+     │   ├── user.md
+     │   └── memory.md
+     ├── config-snippets/           # готовые куски config.yaml
+     │   ├── agent.yaml
+     │   ├── terminal.yaml
+     │   └── ...
+     ├── cron/                      # определения cron-джоб
+     │   └── <job-name>.yaml
+     ├── mcp/                       # конфиги mcp-серверов
+     │   └── servers.yaml
+     ├── env-template.env           # шаблон для .env (без секретов)
+     ├── .gitignore
+     └── VERSION                    # semver-тег пакета
+
+0.2. На целевой машине уже установлен `hermes` (см.
+     https://hermes-agent.nousresearch.com/docs/).
+     Проверяем:
+     hermes --version
+     hermes doctor
+
+0.3. Секреты (API-ключи, токены) НИКОГДА не хранятся в GitHab —
+     только шаблон `env-template.env`. Реальные значения
+     импортирующий оператор подставляет сам после клонирования.
+
+----------------------------------------------------------------
+1. ПОДГОТОВКА ЦЕЛЕВОЙ МАШИНЫ
+----------------------------------------------------------------
+1.1. Бэкап текущего состояния `~/.hermes/`. Никогда не
+     импортируйте поверх существующих данных без снимка:
+
+     BACKUP_TS=$(date -u +%Y%m%dT%H%M%SZ)
+     sudo systemctl --user stop hermes-gateway     # если стоит
+     tar -czf /var/tmp/hermes-pre-import-$BACKUP_TS.tar.gz \
+         -C $HOME .hermes
+     sudo systemctl --user start hermes-gateway
+
+1.2. Зафиксировать версии:
+     hermes --version > /var/tmp/hermes-pre-import-$BACKUP_TS.ver
+     # Записать, какие skills уже установлены:
+     hermes skills list > /var/tmp/hermes-pre-import-$BACKUP_TS.skills
+
+1.3. Проверить, что `git` и доступ к GitHab есть:
+     git --version
+     ssh -T git@github.com              # для SSH-доступа
+     # или
+     curl -fsSL -m 8 https://github.com/<owner>/agents-backup | head -1
+
+----------------------------------------------------------------
+2. КЛОНИРОВАНИЕ РЕПОЗИТОРИЯ
+----------------------------------------------------------------
+2.1. Клонируем во временный каталог (не напрямую в `~/.hermes`):
+     WORK=/var/tmp/hermes-import
+     rm -rf "$WORK" && mkdir -p "$WORK"
+     git clone https://github.com/<owner>/agents-backup.git "$WORK/repo"
+     cd "$WORK/repo"
+     git log --oneline -n 5
+     cat VERSION            # например: 1.2.3
+     cat README.md          # смотрим разделы "Install" / "Setup"
+
+2.2. Проверяем подпись/хеш коммита (если автор пакета публикует
+     release с подписью):
+     git verify-tag v1.2.3   # если релиз оформлен тегом
+     # или
+     sha256sum -c agents-backup-1.2.3.sha256    # если прилагали
+
+2.3. Выбираем нужную версию (по умолчанию main):
+     git checkout v1.2.3    # или main, если версионирования нет
+     git status              # должен быть "clean"
+
+----------------------------------------------------------------
+3. СУХОЙ ПРОГОН — ЧТО ИМЕННО БУДЕТ ПОМЕЩЕНО В HERMES
+----------------------------------------------------------------
+3.1. Смотрим, какие skills предлагает пакет:
+     ls -la "$WORK/repo/skills/"
+     # каждая подпапка — отдельный skill
+     for d in "$WORK/repo/skills/"*/; do
+         name=$(basename "$d")
+         head -n 5 "$d/SKILL.md" 2>/dev/null | sed "s/^/  [$name] /"
+     done
+
+3.2. Смотрим память:
+     ls -la "$WORK/repo/memories/"
+     head -n 30 "$WORK/repo/memories/user.md" 2>/dev/null
+     head -n 30 "$WORK/repo/memories/memory.md" 2>/dev/null
+
+3.3. Смотрим конфиг-сниппеты:
+     ls -la "$WORK/repo/config-snippets/"
+     # эти файлы НЕ копируются как есть — их нужно смерджить
+     # с вашим текущим config.yaml, см. §5
+
+3.4. Смотрим cron/mcp/прочее:
+     ls -la "$WORK/repo/cron/"      2>/dev/null
+     ls -la "$WORK/repo/mcp/"       2>/dev/null
+     ls -la "$WORK/repo/env-template.env"
+
+3.5. Контрольное "что НЕ должно там быть":
+     # секреты, токены, .env с заполненными ключами:
+     grep -rE '(API_KEY|SECRET|TOKEN|PASSWORD|BEGIN.*PRIVATE KEY)' \
+          "$WORK/repo/" \
+          | grep -v 'env-template.env' \
+          | grep -v 'README' || \
+       echo "  OK: явных секретов в репо не найдено"
+
+     Если grep что-то нашёл — STOP, не импортируем, откатываемся.
+
+----------------------------------------------------------------
+4. ИМПОРТ SKILLS
+----------------------------------------------------------------
+4.1. Определяем целевой профиль Hermes. По умолчанию — default,
+     его папка `~/.hermes/skills/`. Для именованных профилей —
+     `~/.hermes/profiles/<name>/skills/`.
+
+     PROFILE=${HERMES_PROFILE:-default}
+     case "$PROFILE" in
+       default) DEST="$HOME/.hermes/skills" ;;
+       *)       DEST="$HOME/.hermes/profiles/$PROFILE/skills" ;;
+     esac
+     mkdir -p "$DEST"
+
+4.2. Копируем skills. По одному, чтобы не затереть уже
+     установленные одноимённые (если конфликт — п. 4.3):
+     for src in "$WORK/repo/skills/"*/; do
+         name=$(basename "$src")
+         if [ -e "$DEST/$name" ]; then
+             echo "  CONFLICT: $name уже установлен"
+             CONFLICTS+=" $name"
+         else
+             cp -a "$src" "$DEST/$name"
+             echo "  installed: $name"
+         fi
+     done
+
+4.3. Разрешение конфликтов (если список CONFLICTS не пуст):
+     — ВАРИАНТ A: оставить локальную версию, пропустить.
+       for c in $CONFLICTS; do
+           cp -a "$WORK/repo/skills/$c/SKILL.md" \
+                 /tmp/diff-$c-SKILL.md
+           diff -u "$DEST/$c/SKILL.md" "/tmp/diff-$c-SKILL.md" || true
+           echo "  [A] оставляем локальный $c"
+       done
+     — ВАРИАНТ B: заменить версию из репо (с бэкапом старой).
+       for c in $CONFLICTS; do
+           mv "$DEST/$c" "$DEST/$c.local.$BACKUP_TS.bak"
+           cp -a "$WORK/repo/skills/$c" "$DEST/$c"
+           echo "  [B] $c заменён, старая версия → .local.$BACKUP_TS.bak"
+       done
+     — ВАРИАНТ C: импортировать рядом с суффиксом и слить руками.
+       for c in $CONFLICTS; do
+           cp -a "$WORK/repo/skills/$c" "$DEST/${c}.from-repo"
+           echo "  [C] $c → $DEST/${c}.from-repo, слей вручную"
+       done
+
+4.4. Проверка, что skills подхвачены Hermes-ом:
+     hermes skills list | grep -E "$(basename $DEST)/" || true
+     # Если hermes показывает старый список — нужно /reload-skills
+     # в активной chat-сессии, либо перезапустить gateway:
+     sudo systemctl --user restart hermes-gateway
+
+----------------------------------------------------------------
+5. СЛИЯНИЕ КОНФИГ-СНИППЕТОВ С CONFIG.YAML
+----------------------------------------------------------------
+> ⚠️ `~/.hermes/config.yaml` защищён от редактирования
+> агентскими инструментами (write_file / patch) — это
+> сделано намеренно. Редактируем только из shell.
+
+5.1. Снимаем текущий конфиг:
+     cp -a "$HOME/.hermes/config.yaml" \
+           "$HOME/.hermes/config.yaml.pre-import-$BACKUP_TS.bak"
+
+5.2. Смотрим, какие секции предлагает пакет:
+     for f in "$WORK/repo/config-snippets/"*.yaml; do
+         echo "=== $(basename $f) ==="
+         head -n 40 "$f"
+         echo
+     done
+
+5.3. Для каждого сниппета — мерджим вручную.
+     Если сниппет простой (например, добавить секцию
+     `model.auxiliary` со своей подсекцией) — можно через
+     `yq`:
+
+       yq eval-all '. as $item ireduce ({}; . *+ $item)' \
+         "$HOME/.hermes/config.yaml" \
+         "$WORK/repo/config-snippets/agent.yaml" \
+         > /tmp/config.merged.yaml
+       yq eval '.' /tmp/config.merged.yaml > /dev/null   # валидация
+       cp /tmp/config.merged.yaml "$HOME/.hermes/config.yaml"
+
+     Если сниппет сложный и пересекается с вашими секциями —
+     откройте оба файла в редакторе:
+       hermes config edit        # откроет в $EDITOR
+       $EDITOR "$WORK/repo/config-snippets/agent.yaml"
+     И аккуратно скопируйте нужные ключи.
+
+5.4. Применяем:
+     hermes config check          # проверка синтаксиса и наличия полей
+     # если check ругается — откатываем:
+     #   cp "$HOME/.hermes/config.yaml.pre-import-$BACKUP_TS.bak" \
+     #      "$HOME/.hermes/config.yaml"
+
+5.5. Если меняли секции, читаемые при старте (model, agent,
+     terminal, memory, security, display) — перезапустите
+     gateway / CLI:
+     sudo systemctl --user restart hermes-gateway
+     # или завершите активный `hermes chat` и начните заново.
+
+----------------------------------------------------------------
+6. ИМПОРТ ПАМЯТИ
+----------------------------------------------------------------
+6.1. Куда:
+     MEM_DEST="$HOME/.hermes/memories"     # для default
+     # или $HOME/.hermes/profiles/$PROFILE/memories
+     mkdir -p "$MEM_DEST"
+
+6.2. Копируем, не затирая существующие записи с тем же именем:
+     for f in "$WORK/repo/memories/"*.md \
+              "$WORK/repo/memories/"*.json; do
+         [ -e "$f" ] || continue
+         name=$(basename "$f")
+         if [ -e "$MEM_DEST/$name" ]; then
+             cp -a "$f" "$MEM_DEST/$name.from-repo-$BACKUP_TS"
+             echo "  [merge-candidate] $MEM_DEST/$name.from-repo-$BACKUP_TS"
+         else
+             cp -a "$f" "$MEM_DEST/$name"
+             echo "  installed: $name"
+         fi
+     done
+
+6.3. Если получили .from-repo-* копии — это сигнал, что память
+     пересекается с вашей. Решайте:
+     — Полностью заменить:  mv -f .from-repo-* <имя>
+     — Слить вручную:       $EDITOR $MEM_DEST/<имя> .from-repo-*
+     — Оставить локальную:  rm -f .from-repo-*
+     Память — это SQLite-таблицы и/или markdown; произвольно
+     мерджить LLM-блоки опасно, поэтому по умолчанию НЕ
+     перезаписываем.
+
+----------------------------------------------------------------
+7. .ENV, MCP-СЕРВЕРА, CRON-ДЖОБЫ
+----------------------------------------------------------------
+7.1. .env:
+     cat "$WORK/repo/env-template.env"            # что должно быть
+     # Дописываем недостающие ключи в свой .env, НЕ перезаписывая
+     # уже заполненные:
+     ENV="$HOME/.hermes/.env"
+     [ -f "$ENV" ] || cp -a "$WORK/repo/env-template.env" "$ENV"
+     while IFS='=' read -r key defval; do
+         case "$key" in ''|\#*) continue ;; esac
+         if ! grep -q "^$key=" "$ENV" 2>/dev/null; then
+             printf '\n%s=%s\n' "$key" "$defval" >> "$ENV"
+             echo "  added: $key"
+         fi
+     done < "$WORK/repo/env-template.env"
+     chmod 600 "$ENV"
+
+7.2. MCP-сервера:
+     cat "$WORK/repo/mcp/servers.yaml"     # что предлагается
+     # Если вы хотите их подключить:
+     while IFS=: read -r name url; do
+         hermes mcp add "$name" --url "$url"   # либо --command
+     done < <(yq eval '.servers | to_entries | .[] | .key + ":" + .value.url' \
+              "$WORK/repo/mcp/servers.yaml" 2>/dev/null)
+     hermes mcp list                # проверяем
+
+7.3. Cron-джобы (если пакет прилагает готовые определения):
+     for f in "$WORK/repo/cron/"*.yaml; do
+         [ -e "$f" ] || continue
+         # Hermes cron CLI принимает schedule и prompt; конвертация
+         # YAML → CLI зависит от схемы. Проще всего — ручной импорт
+         # через `hermes cron create`, подставив schedule/prompt.
+         cat "$f"
+         echo "  ↑ переведите в: hermes cron create <schedule> \"<prompt>\""
+     done
+     # После ручного создания:
+     hermes cron list
+
+----------------------------------------------------------------
+8. ФИНАЛЬНАЯ ВАЛИДАЦИЯ
+----------------------------------------------------------------
+8.1. Проверить, что все подсистемы стартуют:
+     hermes doctor
+     # Если видим "✗ <subsystem>" — открываем
+     #   tail -n 100 ~/.hermes/logs/gateway.log
+     # и ищем подсказки. Типичные проблемы:
+     #  - "missing environment variable" — допишите в .env
+     #  - "invalid yaml" — откатите config.yaml из .pre-import-*
+     #  - "skill not loaded" — `hermes skills list`, затем
+     #    `hermes skills config`, проверьте enabled per platform
+
+8.2. Проверить, что импортированные skills реально доступны
+     в чате (выйдите из активной сессии и откройте заново):
+     hermes chat -q "/skills"
+     # в списке должны быть все импортированные names
+     # при ручном тестировании:
+     hermes chat -q "Загрузи skill <имя_импортированного> и расскажи,
+                     что он умеет." --tools skills
+
+8.3. Если что-то пошло не так — откат целиком:
+     sudo systemctl --user stop hermes-gateway
+     rm -rf "$HOME/.hermes"
+     tar -C $HOME -xzf /var/tmp/hermes-pre-import-$BACKUP_TS.tar.gz
+     sudo systemctl --user start hermes-gateway
+     # Всё вернётся в состояние "до импорта".
+
+8.4. Если всё ок — закоммитьте в свой локальный git-репо
+     `~/.hermes/` (если ведёте), а внешний пакет пометьте
+     как проверенный:
+     echo "$BACKUP_TS — импортировано успешно (skills: A,B,C; v$VERSION)" \
+        >> "$HOME/.hermes/import-log.txt"
+
+----------------------------------------------------------------
+9. ЭТАЛОННАЯ СТРУКТУРА ЭКСПОРТА (для автора пакета)
+----------------------------------------------------------------
+Если вы СОЗДАЁТЕ агентский пакет для публикации в GitHab,
+придерживайтесь этой раскладки. Импортирующая сторона
+будет ожидать именно её.
+
+  agents-backup/
+  ├── README.md
+  ├── CHANGELOG.md
+  ├── VERSION                          # напр. "1.2.3"
+  ├── skills/<skill-name>/SKILL.md
+  │                  /references/...
+  │                  /templates/...
+  │                  /scripts/...
+  ├── memories/user.md                 # user profile
+  ├── memories/memory.md               # agent long-term memory
+  ├── memories/<topic>.json            # структурированные блоки
+  ├── config-snippets/<name>.yaml      # мерджимые куски
+  ├── cron/<job-name>.yaml             # schedule + prompt
+  ├── mcp/servers.yaml                 # реестр MCP-серверов
+  ├── env-template.env                 # ТОЛЬКО имена переменных
+  ├── .gitignore                       # *.bak, .env, *.local
+  └── release/
+      ├── agents-backup-1.2.3.tar.gz   # готовый тарбол
+      ├── agents-backup-1.2.3.sha256
+      └── agents-backup-1.2.3.tar.gz.asc   # GPG-подпись
+
+  .gitignore минимум:
+      .env
+      *.bak
+      *.local
+      __pycache__/
+      *.pyc
+      .DS_Store
+
+----------------------------------------------------------------
+10. ЧАСТЫЕ ОШИБКИ
+----------------------------------------------------------------
+- "Skill загрузился, но агенту его не видно" — нужно либо
+  `hermes skills config` (включить для платформы), либо
+  `/reset` в активной сессии, либо рестарт gateway.
+- "Config.yaml — invalid yaml" — после мерджа yq запускался
+  с разными версиями. Откат: `cp config.yaml.pre-import-*.bak
+  config.yaml` и вручную через `hermes config edit`.
+- "Cron-джоба создалась, но не запускается" — `hermes cron
+  status` покажет состояние планировщика; если OFF —
+  `hermes cron run <id>` для теста.
+- "MCP-сервер добавился, но без инструментов" — `hermes
+  mcp test <name>` покажет, дошёл ли handshake; обычно
+  проблема в `--command` vs `--url` либо в missing
+  environment variables для самого MCP.
+- "Секреты из env-template кто-то уже заполнил" — НЕЛЬЗЯ
+  коммитить заполненный .env в GitHab. Если такое случилось —
+  ротация ключей сразу, без разговоров.
+- "Агент работает, но отвечает в чужом профиле" — проверьте
+  `echo $HERMES_PROFILE` и флаг `-p/--profile` при запуске.
+  Импорт по умолчанию идёт в `default`.
+
+----------------------------------------------------------------
+11. ОТКАТ УЖЕ РАБОТАЮЩЕГО АГЕНТА НА ИМПОРТИРОВАННОГО
+----------------------------------------------------------------
+Когда импортированный пакет порушил поведение живого агента,
+нужна быстрая и точечная реакция. Три сценария, от тяжёлого
+к лёгкому.
+
+11.1. ПОЛНЫЙ ОТКАТ ИМПОРТА (когда сломалось всё)
+     Используем снимок из §1.1 — файл
+     /var/tmp/hermes-pre-import-$BACKUP_TS.tar.gz
+     a) Снять текущее (уже испорченное) состояние для разбора:
+        BAD_TS=$(date -u +%Y%m%dT%H%M%SZ)
+        sudo systemctl --user stop hermes-gateway
+        tar -czf /var/tmp/hermes-broken-$BAD_TS.tar.gz -C $HOME .hermes
+     b) Восстановить из снимка:
+        rm -rf "$HOME/.hermes"
+        tar -C $HOME -xzf /var/tmp/hermes-pre-import-$BACKUP_TS.tar.gz
+     c) Почистить наполовину импортированные skills, память и
+        cron-джобы, которые могли остаться в `default`-профиле
+        сверх снимка (на случай, если импорт шёл параллельно):
+        ls -la $HOME/.hermes/skills/ | grep -E '(from-repo|local\.bak)' \
+            || echo "  чисто"
+        # Если такие есть — удалить:
+        #   rm -rf $HOME/.hermes/skills/*from-repo*
+        #   rm -rf $HOME/.hermes/skills/*.local.*.bak
+        #   rm -f  $HOME/.hermes/memories/*.from-repo-*
+     d) Поднять gateway и проверить:
+        sudo systemctl --user start hermes-gateway
+        hermes doctor
+        hermes skills list | wc -l   # должно вернуться к числу "до"
+     e) Проверить, что версия совпадает с зафиксированной:
+        cat /var/tmp/hermes-pre-import-$BACKUP_TS.ver
+
+11.2. ОТКАТ ОДНОГО SKILL (когда сломался только что
+     импортированный skill, остальные нужны)
+     a) Найти, какой именно был импортирован последним:
+        ls -lt $HOME/.hermes/skills/ | head -10
+        # Смотрим mtime каталогов skills, выбираем подозрительный.
+     b) Посмотреть, есть ли в нём файл .from-repo-* (след
+        конфликтного импорта) или .local.*.bak (старая версия):
+        ls -la $HOME/.hermes/skills/<имя>/
+        ls -la $HOME/.hermes/skills/<имя>.local.*.bak 2>/dev/null
+     c) Вариант A — откатить на .local.*.bak, если сохранили:
+        if [ -d "$HOME/.hermes/skills/<имя>.local.*.bak" ]; then
+            rm -rf "$HOME/.hermes/skills/<имя>"
+            mv "$HOME/.hermes/skills/<имя>.local.*.bak" \
+               "$HOME/.hermes/skills/<имя>"
+        fi
+     d) Вариант B — заменить на .from-repo-* копию (то, что было
+        ДО импорта в этом месте, удалив новую):
+        if [ -d "$HOME/.hermes/skills/<имя>.from-repo-*" ]; then
+            rm -rf "$HOME/.hermes/skills/<имя>"
+            mv "$HOME/.hermes/skills/<имя>.from-repo-*" \
+               "$HOME/.hermes/skills/<имя>"
+        fi
+     e) Если ни .local.*.bak, ни .from-repo-* нет — значит,
+        это был импорт "с нуля" (конфликта не было). Восстановить
+        этот один skill можно ТОЛЬКО из снимка §1.1:
+        SKILL_TMP=/var/tmp/hermes-skill-restore
+        rm -rf "$SKILL_TMP" && mkdir -p "$SKILL_TMP"
+        tar -C "$SKILL_TMP" -xzf \
+            /var/tmp/hermes-pre-import-$BACKUP_TS.tar.gz \
+            .hermes/skills/<имя>/
+        # ВНИМАНИЕ: путь внутри тарбола начинается с ".hermes/", не
+        # с "/root/" — это сделано через `tar -C $HOME` (см. §1.1).
+        rm -rf "$HOME/.hermes/skills/<имя>"
+        cp -a "$SKILL_TMP/.hermes/skills/<имя>" \
+              "$HOME/.hermes/skills/<имя>"
+     f) Перечитать skills в работающей сессии:
+        sudo systemctl --user restart hermes-gateway
+        # или в CLI: /reload-skills, в gateway-сессии: /restart
+     g) Проверить, что откат достиг цели:
+        hermes skills list | grep -w '<имя>'
+        # Сравнить версию SKILL.md в $WORK/repo/skills/<имя>/SKILL.md
+        # с тем, что в $HOME/.hermes/skills/<имя>/SKILL.md — они
+        # должны различаться, если импорт действительно был.
+
+11.3. ОТКАТ ВЕРСИИ SKILL ЧЕРЕЗ ВСТРОЕННЫЙ GIT В ~/.HERMES/
+     Если вы ведёте локальный git-репо для `~/.hermes/`
+     (см. §8.4), откат тривиален:
+     a) Посмотреть историю:
+        cd $HOME/.hermes
+        git log --oneline -n 20 -- skills/<имя>/
+     b) Найти коммит, в котором был импортирован skill:
+        git log --diff-filter=A --name-only -- skills/<имя>/ | head
+        # ^ ищем, в каком коммите этот путь появился впервые
+     c) Посмотреть, что было ДО этого коммита (т.е. ваша
+        локальная версия):
+        git log --oneline -- skills/<имя>/ | head -5
+     d) Восстановить skill из pre-import-коммита:
+        PRE=$(git log --oneline -- skills/<имя>/ | sed -n '2p' | awk '{print $1}')
+        # ^ SHA предпоследнего коммита, трогавшего этот skill
+        git checkout "$PRE" -- skills/<имя>/
+     e) Закоммитить откат:
+        git commit -am "revert: skill <имя> до импорта $VERSION"
+     f) Перечитать skills и проверить:
+        sudo systemctl --user restart hermes-gateway
+        hermes chat -q "/skill <имя> — что ты делаешь?" \
+                    --tools skills
+        # Поведение должно соответствовать pre-import версии.
+
+11.4. ОТКАТ CHRON-ДЖОБЫ, СОЗДАННОЙ В §7.3
+     a) Список:
+        hermes cron list
+     b) Удалить проблемную (не disable, а remove, чтобы не
+        оставалось "зомби" в SQLite):
+        hermes cron remove <id>
+     c) Убедиться, что больше не запускается (планировщик —
+        фоновый, удаление из БД ещё не значит немедленный стоп):
+        hermes cron status
+        journalctl --user -u hermes-gateway -n 50 --no-pager | tail
+     d) Если джоба успела отработать с побочными эффектами
+        (создала файл, отправила сообщение) — откатывайте
+        эти эффекты отдельно:
+        # например, удалить созданный ею файл
+        rm -f $HOME/.hermes/agents/<job-name>-output.json
+
+11.5. ОТКАТ MCP-СЕРВЕРА, ДОБАВЛЕННОГО В §7.2
+     a) Список:
+        hermes mcp list
+     b) Снять:
+        hermes mcp remove <name>
+     c) Перезапустить gateway, чтобы не висел зависший
+        subprocess:
+        sudo systemctl --user restart hermes-gateway
+     d) Если сервер при установке что-то записал в `~/.hermes/`
+        (кэш, локальную БД) — почистить вручную:
+        rm -rf $HOME/.hermes/mcp/<name>/
+        rm -rf $HOME/.hermes/cache/mcp/<name>/
+
+11.6. ПОСЛЕ ОТКАТА — ЧЕКЛИСТ "ВЕРНУЛОСЬ ЛИ"
+     [ ] hermes doctor   → все ✓
+     [ ] hermes skills list → состав и количество как до импорта
+     [ ] hermes config check → OK
+     [ ] hermes cron list → без лишних job-id
+     [ ] hermes mcp list  → без лишних имён
+     [ ] ls $HOME/.hermes/memories/ → без *.from-repo-*
+     [ ] ls $HOME/.hermes/skills/    → без *.local.*.bak
+     [ ] Тестовый прогон в chat: `/skills` показывает ожидаемое
+     [ ] Размер $HOME/.hermes совпадает с pre-import-*$BACKUP_TS.tar.gz:
+           du -sb $HOME/.hermes
+           tar -tzf /var/tmp/hermes-pre-import-$BACKUP_TS.tar.gz | wc -l
+     Если хоть один пункт не сходится — переход к §11.1 (полный
+     откат через снимок). Лучше перебдеть, чем разгребать
+     "плавающие" баги от полу-импорта неделями.
+
+11.7. КОГДА ОТКАТ НЕ ПОМОГ — ESCAPE-VALVE
+     Если импорт необратимо испортил состояние и даже снимок
+     не восстанавливает работоспособность (например, успели
+     перезаписать и снимок, или он сам был снят с уже
+     полусломанного состояния):
+     a) Сбросить Hermes к чистому состоянию:
+        sudo systemctl --user stop hermes-gateway
+        rm -rf $HOME/.hermes
+        # переустановить (см. https://hermes-agent.nousresearch.com/docs/)
+        curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash
+        # setup wizard заново:
+        hermes setup
+     b) После чистой установки — НЕ повторять импорт, пока не
+        разобрались, что именно сломалось. Полезный диагностический
+        шаг — посмотреть /var/tmp/hermes-broken-$BAD_TS.tar.gz
+        (снимок "сломанного" состояния, см. §11.1.a):
+        tar -tzf /var/tmp/hermes-broken-$BAD_TS.tar.gz | head -50
+        # понять, какие именно skills/cron/конфиг были импортированы,
+        # и сначала починить пакет на стороне GitHab, и только
+        # потом импортировать заново.
+
+Конец инструкции.

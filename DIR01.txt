@@ -1,0 +1,358 @@
+Hermes Agent — структура каталогов этого инстанса
+Хост: twc1.net (Linux 6.8.0-124-generic)
+Версия пакета: Version: 0.16.0
+Дата снимка: 2026-06-29
+
+Инсталл: editable uv (исходники в /usr/local/lib/hermes-agent, не клон).
+Бинарь: /usr/local/bin/hermes → /usr/local/lib/hermes-agent/venv/bin/hermes
+Конфиг : /root/.hermes/config.yaml
+State  : /root/.hermes/state.db  (SQLite WAL, 32 MB)
+
+
+══════════════════════════════════════════════════════════════════════════════
+Часть A. ИСХОДНИКИ ПАКЕТА  /usr/local/lib/hermes-agent/
+══════════════════════════════════════════════════════════════════════════════
+Установка как editable uv: файлы — это реальный source tree, не wheel.
+
+/usr/local/lib/hermes-agent/
+├── .dockerignore
+├── .env.example                        (23 KB)  шаблон переменных окружения
+├── .git/                                       git-репозиторий пакета
+├── .github/                                    CI workflows
+├── .gitignore
+├── .hadolint.yaml
+├── .plans/                                     внутренние планы
+├── AGENTS.md                             (57 KB)  правила для агентов, пишущих в пакет
+├── CONTRIBUTING.md                       (44 KB)
+├── Dockerfile                            (19 KB)
+├── LICENSE
+├── MANIFEST.in
+├── README.md / README.ur-pk.md / README.zh-CN.md
+├── SECURITY.md
+├── __pycache__/
+├── acp_adapter/                                Agent Communication Protocol — JSON-RPC сервер для IDE/ACP-клиентов
+│   ├── __init__.py / __main__.py / entry.py
+│   ├── auth.py / edit_approval.py / events.py
+│   ├── permissions.py / provenance.py
+│   ├── server.py / session.py / tools.py
+├── acp_registry/                               манифест ACP-агента + иконка
+├── agent/                              (93 файла) ядро рантайма
+│   ├── AIAgent loop, model adapters, prompt builder
+│   ├── context compression, memory manager, skill dispatcher
+│   ├── anthropic_adapter.py, bedrock_adapter.py, azure_identity_adapter.py
+│   ├── codex_responses_adapter.py, chat_completion_helpers.py
+│   ├── account_usage.py, async_utils.py, auxiliary_client.py
+│   ├── background_review.py, browser_provider.py, browser_registry.py
+│   ├── agent_init.py, agent_runtime_helpers.py
+├── apps/                                       companion apps
+│   ├── bootstrap-installer/
+│   ├── desktop/                                Tauri-десктоп
+│   └── shared/
+├── assets/banner.png
+├── batch_runner.py                     (57 KB)  headless batch-прогон агента (JSONL → траектории)
+├── cli-config.yaml.example             (63 KB)
+├── cli.py                              (619 KB) интерактивный CLI — HermesCLI
+├── constraints-termux.txt
+├── cron/                                       планировщик задач
+│   ├── __init__.py
+│   ├── jobs.py                                определения задач
+│   └── scheduler.py                           тик-планировщик
+├── datagen-config-examples/
+│   ├── example_browser_tasks.jsonl
+│   ├── run_browser_tasks.sh
+│   ├── trajectory_compression.yaml
+│   └── web_research.yaml
+├── docker/                                     контейнер-сборка
+│   ├── Dockerfile.stage / entrypoint.sh
+│   ├── cont-init.d/, s6-rc.d/
+│   ├── hermes-exec-shim.sh, main-wrapper.sh, stage2-hook.sh
+├── docs/
+│   ├── hermes-kanban-v1-spec.pdf
+│   ├── kanban/, middleware/, observability/, security/
+├── flake.lock / flake.nix
+├── gateway/                            (30 файлов) мессенджер-шлюз
+│   ├── run.py / session.py / delivery.py
+│   ├── authz_mixin.py, pairing.py, channel_directory.py
+│   ├── config.py / display_config.py
+│   ├── hooks.py / builtin_hooks/              per-event user hooks
+│   ├── kanban_watchers.py, memory_monitor.py
+│   ├── mirror.py / platform_registry.py
+│   └── platforms/                              по адаптеру на платформу
+│       ├── base.py                            MessagingPlatform ABC
+│       ├── matrix.py / telegram.py / discord.py / slack.py / ...
+├── hermes_agent.egg-info/                       editable-install метаданные
+├── hermes_cli/                        (115 файлов) дерево slash-команд
+│   ├── __init__.py / _parser.py / main.py
+│   ├── auth.py / auth_commands.py
+│   ├── azure_detect.py / active_sessions.py
+│   ├── backup.py / banner.py
+│   ├── browser_connect.py / build_info.py
+│   ├── bundles.py / callbacks.py / checkpoints.py
+│   ├── profiles.py / config.py                изоляция профилей
+│   ├── commands.py                            COMMAND_REGISTRY
+│   └── ... (ещё ~100 файлов)
+├── hermes_bootstrap.py
+├── hermes_constants.py
+├── hermes_logging.py
+├── hermes_state.py                              SQLite WAL, FTS5 сессий/сообщений
+├── hermes_time.py
+├── infographic/
+│   └── kanban-db-corruption-defense
+├── locales/                            (16 языков) i18n YAML
+│   ├── en.yaml / ru.yaml / uk.yaml / de.yaml / fr.yaml / es.yaml
+│   ├── it.yaml / pt.yaml / ja.yaml / ko.yaml / zh-hant.yaml / ...
+│   └── af.yaml / ga.yaml / hu.yaml / tr.yaml
+├── models_dev_cache.json                        каталог моделей (оверрайды models.dev)
+├── nix/                                (12 файлов) NixOS/nixpkgs модули
+├── node_modules/                       (800 пакетов) Node-зависимости
+│   └── @electron / vite / docusaurus / ui-tui / web / ...
+├── optional-mcps/                               опциональные MCP-сервера (linear, n8n)
+├── optional-skills/                             доп. skill-паки (opt-in)
+│   ├── autonomous-ai-agents/, creative/, devops/
+│   ├── blockchain/, communication/, dogfood/, email/
+│   ├── finance/, gaming/, health/, mcp/
+│   ├── migration/, mlops/, productivity/, red-teaming/
+│   └── ... (4 ещё)
+├── packaging/
+│   └── homebrew/
+├── plans/                                      рабочие дизайн-доки / RFC
+│   └── gemini-oauth-provider.md
+├── plugins/                            (20 категорий) расширения
+│   ├── __init__.py / plugin_utils.py
+│   ├── browser/                                браузер-провайдеры
+│   ├── context_engine/
+│   ├── dashboard_auth/
+│   ├── disk-cleanup/
+│   ├── google_meet/
+│   ├── hermes-achievements/
+│   ├── image_gen/
+│   ├── kanban/
+│   ├── memory/                                 провайдеры памяти
+│   │   ├── mem0/                               SaaS, server-side extraction + rerank
+│   │   ├── supermemory/                        SaaS, auto-recall/auto-capture
+│   │   ├── retaindb/                           SaaS, диалектика + self-model из SOUL.md
+│   │   ├── honcho/                             SaaS, peer user-modeling
+│   │   ├── hindsight/                          KG + entities, cloud ИЛИ local
+│   │   ├── openviking/                         Volcengine, viking:// URI, L0/L1/L2
+│   │   ├── byterover/
+│   │   └── holographic/                        LOCAL: HRR + SHA-256 + FTS5 + Jaccard
+│   ├── model-providers/
+│   ├── observability/
+│   └── platforms/                              пользовательские platform-адаптеры
+├── providers/                                   model-providers scaffolding
+│   ├── README.md / base.py
+├── run_agent.py                                 AIAgent conversation loop
+├── scripts/                            (28 файлов) установка/обслуживание
+│   ├── install.sh / install.ps1 / install.cmd
+│   ├── hermes-gateway
+│   ├── analyze_livetest.py / benchmark_browser_eval.py
+│   ├── build_model_catalog.py / build_skills_index.py
+│   ├── contributor_audit.py
+│   ├── discord-voice-doctor.py
+│   └── ... (~15 ещё)
+├── skills/                              (19 категорий) штатные skill-паки
+│   ├── apple/, autonomous-ai-agents/, creative/
+│   ├── data-science/, devops/, dogfood/
+│   ├── email/, github/, hermes-agent/
+│   ├── hermes-agent-skill-authoring/, hermes-agent-vcs-portability/
+│   ├── hermes-internals-inspection/, media/
+│   ├── mlops/, note-taking/, productivity/
+│   ├── red-teaming/, research/
+│   └── ... (3 ещё)
+├── tests/                              (108 файлов) pytest suite
+│   ├── conftest.py                             авто-редирект HERMES_HOME в tempdir
+│   ├── acp/, acp_adapter/, agent/, cli/
+│   ├── cron/, docker/, e2e/, gateway/
+│   ├── hermes_cli/, hermes_state/
+│   └── ... (~95 ещё)
+├── tools/                              (86 файлов) реестр инструментов
+│   ├── __init__.py / approval.py
+│   ├── browser_*.py (browser_tool, browser_cdp_tool, browser_dialog_tool,
+│   │   browser_supervisor, browser_camofox, browser_camofox_state)
+│   ├── budget_config.py / tool_result_storage.py
+│   ├── checkpoint_manager.py
+│   ├── clarify_gateway.py / clarify_tool.py
+│   ├── session_search_tool.py                  FTS5 + bookends
+│   ├── tool_search.py                          progressive disclosure
+│   ├── file_*, terminal_*, web_*, ...
+├── tui_gateway/                                 TUI ↔ gateway транспорт
+│   ├── entry.py / event_publisher.py
+│   ├── render.py / server.py
+│   ├── slash_worker.py / transport.py / ws.py
+├── ui-tui/                              (12 файлов) TS-фронтенд терминала
+│   ├── package.json / tsconfig*.json / vite.config.ts
+│   ├── src/, packages/, scripts/
+│   └── node_modules/
+├── venv/                                        Python venv (deps — в venv/lib/)
+├── web/                                 (11 файлов) Vite+React веб-дашборд
+│   └── src/, public/, node_modules/
+└── website/                             (12 файлов) Docusaurus сайт
+    └── src/, docs/, i18n/, static/, scripts/
+
+
+══════════════════════════════════════════════════════════════════════════════
+Часть B. СОСТОЯНИЕ АГЕНТА  /root/.hermes/
+══════════════════════════════════════════════════════════════════════════════
+Runtime-данные конкретного профиля (profile: default).
+
+/root/.hermes/
+├── .env                                (24 KB)  API-ключи, homeserver URLs, TG/Matrix токены (mode 0600)
+├── .env.bak.20260614-173444            (24 KB)  таймстамп-бэкапы .env
+├── .env.bak.allowed-users-20260615-141325
+├── .env.bak.matrix-20260612_111715
+├── .hermes_history                     (14 KB)  история интерактивного CLI
+├── .install_method                              способ инсталла (4 байта)
+├── .skills_prompt_snapshot.json        (43 KB)  кэш skills-промпта (регенерится при изменениях)
+├── .update_check                                таймстамп последней проверки обновлений
+├── SOUL.md                              (537 B) self-description агента
+├── audio_cache/                                 кэш TTS-аудио
+├── auth.json                           (1.2 KB) кэш токенов gateway
+├── auth.lock                                    lock-файл (0 байт = unlocked)
+├── bin/                                         пользовательские executable'ы
+├── cache/                                        кэш по инструментам (HTML/MD-загрузки, транскрипты)
+├── channel_directory.json              (10 KB)  кэш каталога чатов/каналов
+├── config.yaml                         (15 KB)  главный конфиг (model, gateway, memory, toolsets)
+├── config.yaml.bak.20260609_*                   таймстамп-бэкапы конфига
+├── cron/                                         хранилище cron-задач (state, history, last-run)
+├── gateway.lock / gateway.pid                   lock + PID gateway
+├── gateway_state.json                            снимок состояния gateway
+├── hooks/                                        пользовательские gateway-хуки
+├── image_cache/                                  кэш vision / image-gen
+├── images/                                       локально сохранённые картинки
+├── interrupt_debug.log                          debug-лог обработчика прерываний
+├── kanban.db                          (115 KB)  Kanban SQLite
+├── kanban.db.init.lock                          lock-файл инициализации
+├── logs/                                         ротированные логи агента/gateway
+├── matrix_threads.json                 (1.6 KB) кэш thread-id (последний тред на комнату)
+├── memories/                                     persistent memory файлы
+├── models_dev_cache.json              (2.4 MB)  кэш каталога models.dev
+├── node/                                         vendored Node.js runtime (TUI/web)
+├── ollama_cloud_models_cache.json                кэш Ollama-cloud моделей
+├── pairing/                                      состояние авторизации пользователей
+├── platforms/                                    per-platform state (Matrix HS-токены и т.п.)
+├── processes.json                               реестр background-процессов
+├── provider_models_cache.json                    кэш провайдер → модели
+├── sandboxes/                                    code-execution sandbox'ы (per-task)
+├── sessions/                                     персистированные JSON сессий
+├── skills/                              (24 пака) установленные пользовательские skill'ы
+└── state.db / state.db-shm / state.db-wal       (32 MB) главная SQLite БД:
+                                                  сессии, сообщения, FTS5-индекс (WAL mode)
+
+
+══════════════════════════════════════════════════════════════════════════════
+Часть C. НАЗНАЧЕНИЕ КЛЮЧЕВЫХ ДИРЕКТОРИЙ ПАКЕТА
+══════════════════════════════════════════════════════════════════════════════
+
+  Директория                        Назначение
+  ──────────────────────────────── ──────────────────────────────────────────
+  agent/                            Core agent runtime — AIAgent loop,
+                                    model adapters, prompt builder,
+                                    context compression, memory manager
+  apps/                             Companion apps (desktop Tauri,
+                                    bootstrap-installer, shared frontend)
+  cli.py                            Интерактивный CLI (HermesCLI) —
+                                    главный conversation loop
+  cron/                             Scheduled jobs: jobs.py + scheduler.py
+  datagen-config-examples/          Примеры конфигов для batch data-gen
+  docker/                           Dockerfile + s6 services + entrypoint
+  docs/                             Внутренние reference-доки (kanban,
+                                    middleware, observability, security)
+  gateway/                          Мессенджер-шлюз: адаптеры TG/Matrix/
+                                    Discord/Slack, hooks, authz
+  gateway/platforms/                Per-platform адаптеры (matrix.py и т.д.)
+  hermes_cli/                       CLI command tree: slash-команды,
+                                    profiles, config, auth-команды
+  hermes_state.py                   SQLite WAL persistence, FTS5,
+                                    parent_session_id lineage
+  infographic/                      Kanban-corruption-defense инфографика
+  locales/                          i18n YAML (16 языков)
+  nix/                              NixOS / nixpkgs модули
+  optional-mcps/                    Опц. MCP-серверы (linear, n8n)
+  optional-skills/                  Доп. skill-паки (opt-in)
+  plans/                            Рабочие дизайн-доки / RFC
+  plugins/                          Расширения (memory, platforms,
+                                    image-gen, kanban, observability)
+  plugins/memory/                   Провайдеры памяти (mem0,
+                                    supermemory, holographic, ...)
+  run_agent.py                      AIAgent conversation loop
+  scripts/                          Install / maintenance / livetest
+  skills/                           Штатные SKILL.md паки (read-only)
+  tests/                            Pytest (~3000 тестов)
+  tools/                            Реестр инструментов: file, terminal,
+                                    web, browser, session_search, cron
+  tui_gateway/                      TUI↔gateway транспорт
+  ui-tui/                           TS-фронтенд терминала (Electron-style)
+  web/                              Vite+React dashboard
+  website/                          Docusaurus marketing/docs
+  acp_adapter/                      ACP JSON-RPC сервер для IDE-клиентов
+  acp_registry/                     ACP-манифест агента
+
+
+══════════════════════════════════════════════════════════════════════════════
+Часть D. ГДЕ ЧТО ИСКАТЬ — краткая карта фич → файлов
+══════════════════════════════════════════════════════════════════════════════
+
+  Фича                                       → Где искать
+  ─────────────────────────────────────────── ─────────────────────────────────
+  Agent runtime loop (AIAgent, tool dispatch) → run_agent.py, model_tools.py,
+                                                agent/*.py
+  Skill loading + dispatch                    → agent/skill_dispatcher.py,
+                                                agent/skill_loader.py
+  Memory providers                            → agent/memory_provider.py +
+                                                plugins/memory/<name>/
+  Session persistence + FTS5 search           → hermes_state.py +
+                                                tools/session_search_tool.py
+  Context budget / tool-result overflow       → tools/budget_config.py +
+                                                tools/tool_result_storage.py
+  Progressive tool disclosure (tool_search)   → tools/tool_search.py
+  Gateway adapters                            → gateway/run.py +
+                                                gateway/platforms/<name>.py
+  Gateway hooks (per-event user scripts)      → gateway/hooks.py +
+                                                ~/.hermes/hooks/
+  Cron scheduler                              → cron/scheduler.py +
+                                                cron/jobs.py
+  Slash-команды и CLI                         → cli.py +
+                                                hermes_cli/commands.py
+                                                (COMMAND_REGISTRY)
+  Profiles isolation                          → hermes_cli/profiles.py
+  ACP (Agent Communication Protocol) server   → acp_adapter/server.py
+  Desktop / TUI frontend                      → apps/desktop/ + ui-tui/ +
+                                                tui_gateway/
+  Web dashboard                               → web/ (Vite + React)
+  Marketing / docs site                       → website/ (Docusaurus)
+  Packaging (Docker, Homebrew, NixOS)         → docker/ + packaging/homebrew/
+                                                + nix/
+  Optional skills & MCPs                      → optional-skills/,
+                                                optional-mcps/
+  Tests (~3000)                               → tests/ (auto-редиректит
+                                                HERMES_HOME в tempdirs)
+  i18n (16 языков)                            → locales/<lang>.yaml
+
+
+══════════════════════════════════════════════════════════════════════════════
+Часть E. АКТИВНО НА ЭТОМ ХОСТЕ (по config.yaml / pip list)
+══════════════════════════════════════════════════════════════════════════════
+
+  Подключённые платформы gateway (по session-context):
+    • Telegram — Connected ✓ (Home: 505586502)
+    • Matrix   — Connected ✓ (Home: !OwBtrzzKTGFSNSmvQU:msg.lab.aidemo.adaptivepm.ru)
+
+  Profile: default
+  Python venv: /usr/local/lib/hermes-agent/venv/bin/python
+
+
+══════════════════════════════════════════════════════════════════════════════
+Часть F. ВАЖНЫЕ ФАЙЛЫ ДЛЯ РЕДАКТИРОВАНИЯ
+══════════════════════════════════════════════════════════════════════════════
+
+  • ~/.hermes/SOUL.md              — persona / self-description
+  • ~/.hermes/memories/MEMORY.md   — agent notes (env quirks, project facts)
+  • ~/.hermes/memories/USER.md     — user profile (preferences, identity)
+  • ~/.hermes/config.yaml          — main config (model, gateway, memory,
+                                     toolsets, profiles)
+  • ~/.hermes/skills/<name>/       — user-installed SKILL.md packs
+                                     (24 пака в этом профиле)
+  • ~/.hermes/state.db             — все сессии, сообщения, FTS5-индекс
+
+──────────────────────────────────────────────────────────────────────────────
+Конец.

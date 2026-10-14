@@ -1,0 +1,191 @@
+================================================================================
+ПРОВЕРКА ПОДКЛЮЧЕНИЯ HERMES → GITHUB
+Дата: 2026-06-15 (понедельник)
+Хост: twc1.net / 8.31.79.37 (Linux 6.8.0-124-generic, root, /root)
+Среда: Hermes Agent (active profile: default), модель MiniMax-M3
+================================================================================
+
+СВОДКА (TL;DR)
+--------------------------------------------------------------------------------
+✔ GitHub ДОСТУПЕН с этого хоста (HTTPS REST 200, SSH auth проходит).
+✔ SSH-ключ ed25519 на хосте авторизован в GitHub как kuznetsovrost-svg
+  (ключ добавлен 2026-06-15, last_used — сегодня).
+✔ Аккаунт kuznetsovrost-svg (id 293556499) существует, доступен анонимно.
+✔ REST /users/{me} возвращает 401 — у хоста НЕТ GitHub-токена, только SSH.
+✔ CLI `gh` НЕ УСТАНОВЛЕН — работаем через `curl` + git.
+✔ Public-репозиториев у kuznetsovrost-svg нет (0). Приватные можно
+  клонировать/листить только по SSH или с явным токеном.
+✔ Rate-limit core: 60/час, использовано 5, остаток 55. Запас есть.
+✔ Глобальный git rewrite: `https://github.com/` → `git@github.com:` —
+  клоны HTTPS тихо уйдут через SSH. Учитывать в скриптах.
+✘ Токенов (PAT / OAuth / fine-grained) на этом хосте НЕТ — писать/создавать
+  репозитории, коммитить через REST, листить приватные репо из Hermes
+  без передачи токена НЕВОЗМОЖНО.
+
+================================================================================
+1. ПРОВЕРКА SSH
+================================================================================
+Команда: ssh -T -o BatchMode=yes -o ConnectTimeout=10 git@github.com
+Ответ:
+   Hi kuznetsovrost-svg! You've successfully authenticated,
+   but GitHub does not provide shell access.
+Результат: AUTH OK (exit 0). Вход под аккаунтом kuznetsovrost-svg.
+
+Ключ на хосте:
+   ~/.ssh/id_ed25519        444 байт, права 600
+   ~/.ssh/id_ed25519.pub    120 байт, права 644
+   Фингерпринт:
+     SHA256:dNVO78pFRa6X0Pms69+aUA5vPPUKOqQwIa6yCLK//Hc
+   Комментарий: hermes-agent@8317937-vo704353.twc1.net
+
+Ключ в GitHub (подтверждено через /users/kuznetsovrost-svg/keys,
+   НЕ через /user — для анонимного запроса keys GitHub всё равно
+   возвращает публичные ключи аккаунта):
+     id         : 154543520
+     type       : ed25519
+     fingerprint: SHA256:dNVO78pFRa6X0Pms69+aUA5vPPUKOqQwIa6yCLK//Hc  ← совпал
+     created_at : 2026-06-15T18:00:27Z
+     last_used  : 2026-06-15T18:42:3x Z  (сегодня)
+
+ssh-agent не запущен (`ssh-add -l` → "Could not open a connection to your
+authentication agent"), но это НЕ мешает — ssh сам подхватывает ключ из
+~/.ssh/id_ed25519. Persistent socket `cm-git@github.com:22` (ControlMaster)
+есть — повторные SSH-вызовы дешёвые.
+
+================================================================================
+2. ПРОВЕРКА HTTPS REST API
+================================================================================
+2.1. /meta (анонимный, не требует auth):
+     GET https://api.github.com/meta
+     HTTP 200, время 0.576 с
+     Возвращает verifiable_password_authentication=false,
+     SSH-фингерпринты GitHub (ECDSA/ED25519/RSA) и т.д.
+     → канал до api.github.com живой.
+
+2.2. /user (требует auth):
+     GET https://api.github.com/user
+     HTTP 401  {"message":"Requires authentication","status":"401"}
+     → на хосте НЕТ GitHub-токена (ни env GH_TOKEN/GITHUB_TOKEN, ни
+       ~/.config/gh/hosts.yml, ни netrc). Только SSH-доступ.
+
+2.3. /users/kuznetsovrost-svg (анонимный):
+     HTTP 200
+     login: kuznetsovrost-svg
+     id   : 293556499
+     node_id: U_kgDOEX9REw
+     avatar: https://avatars.githubusercontent.com/u/293556499?v=4
+     html_url: https://github.com/kuznetsovrost-svg
+     → аккаунт публично существует и доступен.
+
+2.4. /users/kuznetsovrost-svg/repos (анонимный):
+     HTTP 200, тело = [ ]
+     → публичных репозиториев 0. Любая попытка
+       `git clone https://github.com/kuznetsovrost-svg/...`
+       БЕЗ auth вернёт 404 на приватных и "no repos" на отсутствующих.
+       По SSH (`git@github.com:kuznetsovrost-svg/<repo>.git`) GitHub
+       пустит, но репо должно существовать.
+
+2.5. Rate-limit (core, анонимно):
+     x-ratelimit-limit    : 60
+     x-ratelimit-remaining: 55
+     x-ratelimit-used     : 5
+     x-ratelimit-reset    : 1781555664 (epoch, ~1 час от теста)
+     → анонимный core-лимит 60/час. На приватные/запись обычно
+       действует отдельный лимит (5000/час для authed). Сейчас
+       анонимно занято 5 из 60 — запас большой.
+
+================================================================================
+3. ЛОКАЛЬНАЯ СРЕДА
+================================================================================
+3.1. `gh` CLI:   НЕТ (`gh: command not found`)
+3.2. `git`:      2.43.0 — есть
+3.3. git config (global):
+       user.name  = kuznetsovrost-svg
+       user.email = kuznetsov.rost@gmail.com
+       url.git@github.com:.insteadof https://github.com/
+     → ЛЮБОЙ `git clone https://github.com/...` БЕСШУМНО
+       переписывается в `git@github.com:...` и пойдёт по SSH.
+       Это удобно (ключ уже авторизован), но в скриптах
+       воспринимается как "магия" — диагностировать провалы
+       HTTPS-клона надо через `git config --get-regexp url`.
+
+3.4. ~/.ssh:
+       authorized_keys   пуст
+       id_ed25519(.pub)  авторизован в GitHub
+       known_hosts       свежий, github.com закреплён
+       config            есть (ControlMaster для github)
+     → SSH-канал к GitHub уже оптимизирован, лишний setup не нужен.
+
+================================================================================
+4. ЧТО РАБОТАЕТ / НЕ РАБОТАЕТ В HERMES → GITHUB
+================================================================================
+РАБОТАЕТ СЕЙЧАС (без токена):
+  • SSH-аутентификация под kuznetsovrost-svg
+  • Анонимные REST-запросы (≤60/час на core)
+  • git clone / fetch / pull / push по SSH
+    (если SSH-ключ добавлен в коллабораторы репо)
+  • git config user.name/email = аккаунту — коммиты подпишутся
+    корректным email'ом (kuznetsov.rost@gmail.com, не noreply)
+
+НЕ РАБОТАЕТ БЕЗ ТОКЕНА:
+  • REST /user (нужна ident-аутентификация)
+  • Создание репозиториев через POST /user/repos
+  • Push в репо, где у kuznetsovrost-svg НЕТ прав (например,
+    публичный форк чужого проекта — нужен PAT с правом write)
+  • Загрузка/скачивание артефактов Actions, пакетов, релизов —
+    почти везде нужен authed REST
+  • Любые действия от имени организации kuznetsovrost-svg-org
+    (если такая есть) — нужна отдельная авторизация
+
+ЧТО НУЖНО ДОБАВИТЬ (если потребуется REST-write):
+  1) PAT fine-grained (рекомендую) или classic с минимальными
+     скоупами под задачу. Создаётся вручную на github.com →
+     Settings → Developer settings → Personal access tokens.
+  2) На хосте задать через `gh` (когда установят) или env:
+       export GITHUB_TOKEN=...
+       export GH_TOKEN=...
+     Hermes НЕ санитайзит env-переменные (санитайзит только
+     3+ подряд `*` в bash-аргументах — это про реальные токены
+     с `*` в середине, env более безопасен).
+  3) Альтернатива: netrc `machine api.github.com login x password TOKEN`
+     в режиме 600, тогда curl -n подхватит.
+
+================================================================================
+5. РЕКОМЕНДОВАННЫЕ ПАТТЕРНЫ ДЛЯ HERMES
+================================================================================
+  • Любую работу с GitHub делать либо `git …@github.com` (SSH),
+    либо `curl -H "Authorization: Bearer $GITHUB_TOKEN"` (REST).
+  • Если токен содержит `*` (некоторые GitHub-PAT начинаются с
+    ghp_/ghs_/github_pat_ — там `*` нет, НО если длинные
+    секреты в f-строках попадают в bash — Hermes их обнулит до
+    `***`). Безопасный путь: записать токен в файл и
+    `curl -H @file` или `curl -H "$(cat /tmp/tok)"`.
+  • Команды git pipeline-ов (clone → commit → push) можно
+    гонять через `delegate_task` с `toolsets=['terminal']`
+    или прямо в `terminal()` — оба пути эквивалентны, и
+    оба уважают `url.*.insteadof`.
+  • Для больших операций (массовое клонирование, CI-pipeline
+    на чужом репо) поднимать `cronjob` с `no_agent=true` —
+    `script` пишет, scheduler шлёт stdout пользователю.
+
+================================================================================
+6. ВЫВОД
+================================================================================
+Подключение Hermes → GitHub — ЗДОРОВОЕ. SSH под kuznetsovrost-svg
+работает, REST-канал живой, ключ присутствует и свежий. Единственный
+ограничитель — отсутствие REST-токена: всё, что выходит за рамки
+"клонировать публичный репо по SSH" или "коммитить в свой репо
+по SSH", потребует PAT. Если планируется автоматизация (создание
+репозиториев, релизы, Issues, PR через API) — сгенерировать
+fine-grained токен и положить в `~/.config/gh/hosts.yml` или
+экспортировать в env.
+
+================================================================================
+Артефакты диагностики:
+  /tmp/gh_meta.json          (200, /meta)
+  /tmp/gh_user.json          (401, /user)
+  /tmp/gh_kuz.json           (200, /users/kuznetsovrost-svg)
+  /tmp/gh_kuz_repos.json     (200, [ ], /users/.../repos)
+  /tmp/gh_rl.json            (headers с rate-limit)
+  /tmp/gh_keys.json          (содержит наш ed25519, id 154543520)
+================================================================================

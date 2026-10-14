@@ -1,0 +1,253 @@
+===============================================================================================
+Состав полей сущности PROJECT (Проект)
+===============================================================================================
+
+Дата запроса:  2026-07-21 20:22:30
+Сервер:        PMForesight MCP v3.2.4
+Endpoint:      https://ppreplica.hera.pmpractice.ru/mcp
+Entity:        Project
+
+  classid:    46caa4ad-02b8-4d70-a1db-196bab860742
+  classname:  Project
+  classtitle: Проект
+  entityname: Project
+  IdFieldName: ProjectId
+  Всего полей: 68
+
+1. ОБЩАЯ ТАБЛИЦА ВСЕХ ПОЛЕЙ (по алфавиту имени)
+-----------------------------------------------------------------------------------------------
+
+|  #  | Name (system)         | Title (RU)                       | Type           | Kind                | Req | Vis |
+|-----|----------------------|----------------------------------|----------------|---------------------|-----|-----|
+|   1 | ActivityGoal         |                                  | bigint         | MultiSelectField    |     | ✓   |
+|   2 | ActivityId           | Ключ                             | bigint         | StringInputField    |     |     |
+|   3 | ActivityPhaseId      | Текущая стадия                   | bigint         | SingleSelectField   |     | ✓   |
+|   4 | ActivityTypeOfIntegrationInformation |                                  | bigint         | MultiSelectField    |     |     |
+|   5 | AdditionalInformation | Дополнительная информация        | character varying | StringInputField    |     | ✓   |
+|   6 | AdministratorId      |                                  | bigint         | MultiSelectRole     |     | ✓   |
+|   7 | CalendarExceptionActivity |                                  | bigint         | MultiSelectField    |     |     |
+|   8 | CalendarPeriodId     | Периодичность данных             | bigint         | SingleSelectField   |     | ✓   |
+|   9 | ChangeAuthorId       | Автор изменения                  | bigint         | StringInputField    |     |     |
+|  10 | ChangeDate           | Дата изменения                   | timestamp without time zone | StringInputField    |     |     |
+|  11 | Code                 | Код                              | character varying | StringInputField    |     | ✓   |
+|  12 | ConcernedSide        | Заинтересованные стороны         | character varying | StringInputField    |     | ✓   |
+|  13 | ContractorId         | Контрагент (Заказчик)            | bigint         | SingleSelectField   |     | ✓   |
+|  14 | CreationAuthorId     | Автор                            | bigint         | StringInputField    |     |     |
+|  15 | CreationDate         | Дата создания                    | timestamp without time zone | StringInputField    |     |     |
+|  16 | CustomerId           |                                  | bigint         | SingleSelectRole    |     | ✓   |
+|  17 | Description          | Описание                         | character varying | StringInputField    |     | ✓   |
+|  18 | DirectProjectCostsGrade | Прямые затраты проекта (оценка), руб. | numeric        | StringInputField    |     | ✓   |
+|  19 | EntityId             | Сущность                         | uuid           | SingleSelectField   |     |     |
+|  20 | ExpectedEffects      | Ожидаемые эффекты и выгоды       | character varying | StringInputField    |     | ✓   |
+|  21 | Explanation          | Обоснование                      | character varying | StringInputField    |     | ✓   |
+|  22 | ExpResult            | Ожидаемые результаты             | character varying | StringInputField    |     | ✓   |
+|  23 | FolderPath           | Папка к документам               | character varying | StringInputField    |     |     |
+|  24 | InContractActivity   |                                  | bigint         | MultiSelectField    |     | ✓   |
+|  25 | InitiativeId         | Предложение по проекту           | bigint         | SingleSelectField   |     | ✓   |
+|  26 | IsEBSynced           | Синхронизировать с Электронным Бюджетом | boolean        | StringInputField    |     | ✓   |
+|  27 | IsFullProfile        | Полный профиль                   | character varying | StringInputField    |     | ✓   |
+|  28 | IsUseInResourcePlan  | Учитывать в ресурсном плане      | boolean        | StringInputField    |     | ✓   |
+|  29 | LeaderId             |                                  | bigint         | SingleSelectRole    |     | ✓   |
+|  30 | ManualKP             | Ручное планирование календарного плана | boolean        | StringInputField    |     | ✓   |
+|  31 | MeasureOfSuccess     | MeasureOfSuccess                 | character varying | StringInputField    |     | ✓   |
+|  32 | Messenger            | Проектный чат                    | character varying | StringInputField    |     | ✓   |
+|  33 | Name                 | Наименование                     | character varying | StringInputField    | ✓   | ✓   |
+|  34 | OrgUnitId            | Подразделение                    | bigint         | SingleSelectField   |     | ✓   |
+|  35 | OutcomeContractActivity |                                  | bigint         | MultiSelectField    |     | ✓   |
+|  36 | OwnerId              |                                  | bigint         | SingleSelectRole    | ✓   | ✓   |
+|  37 | ParentId             | Родитель                         | bigint         | SingleSelectField   | ✓   | ✓   |
+|  38 | PassportDeveloperId  |                                  | bigint         | SingleSelectRole    |     | ✓   |
+|  39 | PlanUrl              | Ссылка на план                   | character varying | StringInputField    |     |     |
+|  40 | Prerequisite         | Формальное основание для инициации | character varying | StringInputField    |     | ✓   |
+|  41 | PresaleBudgetPercentage | % пресейла от бюджета            | numeric        | StringInputField    |     | ✓   |
+|  42 | PresaleFreezeDate    | Дата заморозки пресейла          | date           | StringInputField    |     | ✓   |
+|  43 | PresaleLeaderId      |                                  | bigint         | SingleSelectRole    |     | ✓   |
+|  44 | PresaleLimit         | Лимит на пресейл, руб.           | numeric        | StringInputField    |     | ✓   |
+|  45 | PresaleRegisterDate  | Дата регистрации пресейла        | date           | StringInputField    |     | ✓   |
+|  46 | PresaleStateId       | Состояние пресейла               | bigint         | SingleSelectField   |     | ✓   |
+|  47 | PriorityId           | Приоритет                        | bigint         | SingleSelectField   | ✓   | ✓   |
+|  48 | ProbabilitySaleId    | Вероятность продажи              | bigint         | SingleSelectField   |     | ✓   |
+|  49 | ProjectBudgetGrade   | Бюджет проекта (оценка), руб.    | numeric        | StringInputField    |     | ✓   |
+|  50 | ProjectCompany       |                                  | bigint         | MultiSelectField    |     | ✓   |
+|  51 | ProjectCustomerTypeId | Тип заказчика проекта            | bigint         | SingleSelectField   |     | ✓   |
+|  52 | ProjectGUID          | GUID плана                       | uuid           | StringInputField    |     |     |
+|  53 | ProjectId            | Ключ                             | bigint         | StringInputField    |     |     |
+|  54 | ProjectLimit         | Допущения / ограничения проекта  | character varying | StringInputField    |     | ✓   |
+|  55 | ProjectProfileId     | Профиль проекта                  | bigint         | SingleSelectField   | ✓   | ✓   |
+|  56 | ProjectScope         | Границы проекта                  | character varying | StringInputField    |     | ✓   |
+|  57 | ProjectTypeId        | Тип проекта                      | bigint         | SingleSelectField   | ✓   | ✓   |
+|  58 | RCalendarPeriodId    | Периодичность данных (ресурсы)   | bigint         | SingleSelectField   |     | ✓   |
+|  59 | ReportClosingDate    | Дата закрытия периода отчетности по факту | date           | StringInputField    |     | ✓   |
+|  60 | RequestSourceId      | Источник запроса                 | bigint         | SingleSelectField   |     | ✓   |
+|  61 | Responsibles         | Исполнители и соисполнители мероприятий | text           | StringInputField    |     | ✓   |
+|  62 | ShortName            | Краткое наименование             | character varying | StringInputField    |     | ✓   |
+|  63 | SiteUrl              | Ссылка на сайт                   | character varying | StringInputField    |     |     |
+|  64 | StartActivityPhaseId | Текущая стадия при создании      | bigint         | SingleSelectField   |     | ✓   |
+|  65 | StrategicDirectionId | Наименование направления         | bigint         | SingleSelectField   |     | ✓   |
+|  66 | SyncCode             | Код из Электронного Бюджета      | character varying | StringInputField    |     |     |
+|  67 | SyncDate             | Дата последней синхронизации с ЭБ | timestamp without time zone | StringInputField    |     | ✓   |
+|  68 | WorkGroupId          |                                  | bigint         | MultiSelectRole     |     | ✓   |
+
+
+2. ГРУППИРОВКА ПО ТИПАМ
+-----------------------------------------------------------------------------------------------
+
+| Категория           | Кол-во |
+|---------------------|--------|
+| 🔑 Первичные ключи (служебные)           |      2 |
+| 📝 Строковые поля                        |     24 |
+| 📅 Дата / время                          |      3 |
+| 🔢 Числовые поля                         |      6 |
+| ☑️ Логические (да/нет)                  |      3 |
+| 🔗 Ссылки на другие сущности (Single)    |     17 |
+| 🔗 Множественные ссылки (Multi)          |      6 |
+| 👤 Роли (участники)                      |      7 |
+
+
+3. ПОДРОБНОЕ ОПИСАНИЕ ПО ГРУППАМ
+-----------------------------------------------------------------------------------------------
+
+3.1. 🔑 Первичные ключи (служебные) (2)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name (system)     | Title (RU)                  | Type             | Req | Ro  | Vis | Notes
+|-------------------|-----------------------------|------------------|-----|-----|-----|------
+| ProjectId         | Ключ                        | bigint           |     |     |     | 
+| ActivityId        | Ключ                        | bigint           |     |     |     | 
+
+3.2. 📝 Строковые поля (24)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name (system)     | Title (RU)                  | Type             | Req | Ro  | Vis | Notes
+|-------------------|-----------------------------|------------------|-----|-----|-----|------
+| Name              | Наименование                | character varying | ✓   |     | ✓   | maxlen=4000
+| ExpResult         | Ожидаемые результаты        | character varying |     |     | ✓   | maxlen=4000
+| ShortName         | Краткое наименование        | character varying |     |     | ✓   | maxlen=4000
+| FolderPath        | Папка к документам          | character varying |     |     |     | maxlen=255
+| Code              | Код                         | character varying |     | ✓   | ✓   | maxlen=10
+| PlanUrl           | Ссылка на план              | character varying |     |     |     | maxlen=255
+| Description       | Описание                    | character varying |     |     | ✓   | maxlen=4000
+| SiteUrl           | Ссылка на сайт              | character varying |     |     |     | maxlen=255
+| ReportClosingDate | Дата закрытия периода отчетности по факту | date             |     |     | ✓   | 
+| ProjectGUID       | GUID плана                  | uuid             |     |     |     | 
+| IsFullProfile     | Полный профиль              | character varying |     |     | ✓   | maxlen=255
+| MeasureOfSuccess  | MeasureOfSuccess            | character varying |     |     | ✓   | maxlen=4000
+| Prerequisite      | Формальное основание для инициации | character varying |     |     | ✓   | maxlen=4000
+| ConcernedSide     | Заинтересованные стороны    | character varying |     |     | ✓   | maxlen=4000
+| Explanation       | Обоснование                 | character varying |     |     | ✓   | maxlen=4000
+| Responsibles      | Исполнители и соисполнители мероприятий | text             |     |     | ✓   | 
+| AdditionalInformation | Дополнительная информация   | character varying |     |     | ✓   | maxlen=4000
+| SyncCode          | Код из Электронного Бюджета | character varying |     |     |     | maxlen=2000
+| ProjectScope      | Границы проекта             | character varying |     |     | ✓   | maxlen=2000
+| Messenger         | Проектный чат               | character varying |     |     | ✓   | maxlen=255
+| ProjectLimit      | Допущения / ограничения проекта | character varying |     |     | ✓   | maxlen=2000
+| ExpectedEffects   | Ожидаемые эффекты и выгоды  | character varying |     |     | ✓   | maxlen=2000
+| PresaleRegisterDate | Дата регистрации пресейла   | date             |     |     | ✓   | 
+| PresaleFreezeDate | Дата заморозки пресейла     | date             |     |     | ✓   | 
+
+3.3. 📅 Дата / время (3)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name (system)     | Title (RU)                  | Type             | Req | Ro  | Vis | Notes
+|-------------------|-----------------------------|------------------|-----|-----|-----|------
+| SyncDate          | Дата последней синхронизации с ЭБ | timestamp without time zone |     |     | ✓   | 
+| CreationDate      | Дата создания               | timestamp without time zone |     | ✓   |     | 
+| ChangeDate        | Дата изменения              | timestamp without time zone |     | ✓   |     | 
+
+3.4. 🔢 Числовые поля (6)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name (system)     | Title (RU)                  | Type             | Req | Ro  | Vis | Notes
+|-------------------|-----------------------------|------------------|-----|-----|-----|------
+| ProjectBudgetGrade | Бюджет проекта (оценка), руб. | numeric          |     |     | ✓   | "Предварительная обобщенная оценка бюдже
+| DirectProjectCostsGrade | Прямые затраты проекта (оценка), руб. | numeric          |     |     | ✓   | "Предварительная оценка затрат на провед
+| PresaleLimit      | Лимит на пресейл, руб.      | numeric          |     |     | ✓   | "Допустимый объем затрат на проведение п
+| PresaleBudgetPercentage | % пресейла от бюджета       | numeric          |     |     | ✓   | "Процентное выражение доли значения поля
+| CreationAuthorId  | Автор                       | bigint           |     | ✓   |     | 
+| ChangeAuthorId    | Автор изменения             | bigint           |     | ✓   |     | 
+
+3.5. ☑️ Логические (да/нет) (3)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name (system)     | Title (RU)                  | Type             | Req | Ro  | Vis | Notes
+|-------------------|-----------------------------|------------------|-----|-----|-----|------
+| ManualKP          | Ручное планирование календарного плана | boolean          |     |     | ✓   | "Отображение дат в календарном плане без
+| IsEBSynced        | Синхронизировать с Электронным Бюджетом | boolean          |     |     | ✓   | 
+| IsUseInResourcePlan | Учитывать в ресурсном плане | boolean          |     |     | ✓   | 
+
+3.6. 🔗 Ссылки на другие сущности (Single) (17)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name (system)     | Title (RU)                  | Type             | Req | Ro  | Vis | Notes
+|-------------------|-----------------------------|------------------|-----|-----|-----|------
+| EntityId          | Сущность                    | uuid             |     |     |     | → MetaEntity
+| ParentId          | Родитель                    | bigint           | ✓   |     | ✓   | → Activity
+| OrgUnitId         | Подразделение               | bigint           |     |     | ✓   | → OrgUnit
+| ProjectTypeId     | Тип проекта                 | bigint           | ✓   |     | ✓   | → ProjectType
+| ActivityPhaseId   | Текущая стадия              | bigint           |     |     | ✓   | → ActivityPhase
+| InitiativeId      | Предложение по проекту      | bigint           |     |     | ✓   | → Initiative
+| PriorityId        | Приоритет                   | bigint           | ✓   |     | ✓   | → Priority
+| StrategicDirectionId | Наименование направления    | bigint           |     |     | ✓   | → StrategicDirection
+| ProjectCustomerTypeId | Тип заказчика проекта       | bigint           |     |     | ✓   | → ProjectCustomerType, maxlen=2000
+| CalendarPeriodId  | Периодичность данных        | bigint           |     |     | ✓   | → CalendarPeriod, maxlen=2000
+| ProjectProfileId  | Профиль проекта             | bigint           | ✓   |     | ✓   | → ProjectProfile
+| RCalendarPeriodId | Периодичность данных (ресурсы) | bigint           |     |     | ✓   | → CalendarPeriod, maxlen=2000
+| ContractorId      | Контрагент (Заказчик)       | bigint           |     |     | ✓   | → Contractor
+| ProbabilitySaleId | Вероятность продажи         | bigint           |     |     | ✓   | → ProbabilitySale
+| PresaleStateId    | Состояние пресейла          | bigint           |     |     | ✓   | → PresaleState
+| RequestSourceId   | Источник запроса            | bigint           |     |     | ✓   | → RequestSource | "Канал привлечения заказчика"
+| StartActivityPhaseId | Текущая стадия при создании | bigint           |     |     | ✓   | → ActivityPhase
+
+3.7. 🔗 Множественные ссылки (Multi) (6)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name (system)     | Title (RU)                  | Type             | Req | Ro  | Vis | Notes
+|-------------------|-----------------------------|------------------|-----|-----|-----|------
+| ProjectCompany    |                             | bigint           |     |     | ✓   | "Организация, осуществляющая проведение 
+| ActivityTypeOfIntegrationInformation |                             | bigint           |     |     |     | 
+| InContractActivity |                             | bigint           |     |     | ✓   | Для выбора доступны контракты, не имеющи
+| OutcomeContractActivity |                             | bigint           |     |     | ✓   | Для выбора доступны контракты, не имеющи
+| CalendarExceptionActivity |                             | bigint           |     |     |     | 
+| ActivityGoal      |                             | bigint           |     |     | ✓   | 
+
+3.8. 👤 Роли (участники) (7)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+| Name (system)     | Title (RU)                  | Type             | Req | Ro  | Vis | Notes
+|-------------------|-----------------------------|------------------|-----|-----|-----|------
+| CustomerId        |                             | bigint           |     |     | ✓   | 
+| OwnerId           |                             | bigint           | ✓   |     | ✓   | Управление заинтересованными сторонами
+| LeaderId          |                             | bigint           |     |     | ✓   | Руководство проектом, принятие управленч
+| AdministratorId   |                             | bigint           |     |     | ✓   | Общий контроль и мониторинг реализации п
+| WorkGroupId       |                             | bigint           |     |     | ✓   | Исполнение поручений
+| PassportDeveloperId |                             | bigint           |     |     | ✓   | 
+| PresaleLeaderId   |                             | bigint           |     |     | ✓   | 
+
+4. СТАТИСТИКА ПО СХЕМЕ
+-----------------------------------------------------------------------------------------------
+
+  Всего полей:                68
+  Обязательных (IsRequired):  6
+  Видимых в UI (IsVisible):   54
+  Только для чтения:          5
+  Строковые поля                  24
+  Дата / время                     3
+  Числовые поля                    6
+  Логические (да/нет)              3
+  Ссылки на другие сущности (Single)    17
+  Множественные ссылки (Multi)     6
+  Роли (участники)                 7
+  Первичных ключей:           2
+
+5. РЕАЛЬНЫЕ ЗНАЧЕНИЯ ДЛЯ ПРОЕКТА ProjectId=1682
+-----------------------------------------------------------------------------------------------
+
+Заполнено полей: 0 из 68
+
+| Name (system)             | Title (RU)                  | Value
+|---------------------------|-----------------------------|------------------------------------------------------------
+
+
+===============================================================================================
+Конец отчёта
+===============================================================================================

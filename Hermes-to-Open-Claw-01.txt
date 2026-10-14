@@ -1,0 +1,501 @@
+============================================================
+  HERMES → OPEN CLAW: соответствие файлов и миграция
+  Практический гайд по переносу данных
+  ============================================================
+
+  Hermes Agent (Nous Research) и OpenClaw — оба относятся к
+  классу «autonomous coding / task-execution агентов с tool
+  calling на локальной машине» (там же, где Claude Code и Codex).
+  Оба поддерживают мульти-платформенный gateway
+  (Telegram/Discord/Slack/...), skills, профили, memory,
+  persistent-контекст. Поэтому миграция между ними возможна
+  на уровне пользовательских данных — навыков, памяти,
+  конфигурации каналов, профилей.
+
+  ВАЖНО ДО ЧТЕНИЯ:
+  • Я писал этот файл на основе ОТКРЫТЫХ источников:
+    — README openclaw/openclaw на GitHub (прочитано curl'ом);
+    — внутренние скиллы Hermes (`~/.hermes/skills/...`);
+    — официальная документация docs.openclaw.ai (по ссылкам).
+  • Где данные подтверждены — помечаю ✓
+  • Где данных нет — помечаю ⚠ «требует проверки»
+  • Команда `hermes claw migrate` упоминается в скилле
+    hermes-agent как встроенная, но в официальном README
+    OpenClaw она не описана → это, вероятно, собственная
+    CLI-команда Hermes, а не OpenClaw.
+
+  ============================================================
+  1. ОБЩАЯ АРХИТЕКТУРА: ЧТО ОБЩЕГО, ЧТО РАЗНОЕ
+  ============================================================
+
+  ┌─────────────────────────────────────────────────────────┐
+  │               Hermes Agent (Nous Research)              │
+  ├─────────────────────────────────────────────────────────┤
+  │ Gateway (Telegram/Discord/Slack/Matrix/WhatsApp/...)    │
+  │ Skill catalogue      — `~/.hermes/skills/<n>/SKILL.md`  │
+  │ Persistent memory    — `~/.hermes/memories/*.md`        │
+  │ Self-model           — `~/.hermes/SOUL.md`              │
+  │ Config               — `~/.hermes/config.yaml`          │
+  │ Secrets              — `~/.hermes/.env`                 │
+  │ Sessions store       — `~/.hermes/state.db` (SQLite/FTS5)│
+  │ Profile isolation    — `~/.hermes/profiles/<n>/...`     │
+  │ CLI                  — `hermes` (Python)                 │
+  │ Built-in CLI export  — `hermes profile export` (tar.gz)  │
+  └─────────────────────────────────────────────────────────┘
+                          ↕ миграция данных
+  ┌─────────────────────────────────────────────────────────┐
+  │           OpenClaw (openclaw/openclaw)                  │
+  ├─────────────────────────────────────────────────────────┤
+  │ Gateway (20+ каналов, см. ниже)                        │
+  │ Skills                — `~/.openclaw/workspace/skills/...`✓│
+  │ Injected prompts      — `AGENTS.md`, `SOUL.md`, `TOOLS.md`✓│
+  │ Workspace root        — `~/.openclaw/workspace` ✓        │
+  │ Config                — `~/.openclaw/openclaw.json` ✓    │
+  │ Skills registry       — ClawHub (clawhub.ai) ✓          │
+  │ Runtime               — Node 24+ (npm/pnpm/bun) ✓       │
+  │ Multi-agent routing   — `agents.defaults.*` ✓           │
+  └─────────────────────────────────────────────────────────┘
+
+  ЧТО ОБЩЕГО (что можно перенести):
+  ✓ Skills (формат SKILL.md похож: frontmatter + body)
+  ✓ Persistent memory (Markdown-файлы)
+  ✓ Self-model / SOUL (Markdown-файл)
+  ✓ Channel credentials (Telegram bot token, Discord token,
+    Slack token и т. п.) — это просто env-переменные,
+    работающие в обоих агентах
+  ✓ Active cron jobs — оба поддерживают cron (формат разный)
+  ✓ Config keys верхнего уровня (model, providers, gateway)
+
+  ЧТО РАЗНОЕ (НЕ переносится напрямую):
+  ✗ Hermes SQLite sessions (state.db) → нет эквивалента в
+    OpenClaw, история чатов остаётся у Hermes
+  ✗ Hermes .usage.json (skill curator telemetry) →
+    эквивалента нет
+  ✗ Hermes YAML-профили → у OpenClaw единый workspace + разделение
+    по `agents.<name>` секции в openclaw.json
+  ✗ Hermes SLASH-команды (hermes-specific) → OpenClaw имеет свой
+    набор: /status /new /reset /compact /think /verbose /trace
+    /usage /restart /activation
+  ✗ OpenClaw Live Canvas / Voice Wake / Talk Mode →
+    в Hermes нет (Hermes TTS есть, Voice Wake — нет)
+  ✗ OpenClaw Multi-agent routing → у Hermes изолируется через
+    профили, но routing по channels/peers — другой механизм
+  ✗ OpenClaw sandbox (Docker/SSH/OpenShell) → в Hermes нет
+    sandbox per-session
+
+  ============================================================
+  2. СООТВЕТСТВИЕ ФАЙЛОВ (КЛЮЧЕВАЯ ТАБЛИЦА)
+  ============================================================
+
+  НАЗНАЧЕНИЕ              HERMES                              OPENCLAW
+  ─────────────────────────────────────────────────────────────────
+  Корневая конфигурация   ~/.hermes/config.yaml               ~/.openclaw/openclaw.json  ✓
+  Секреты                 ~/.hermes/.env                      ~/.openclaw/.env  (⚠ не подтв.)
+  Self-model              ~/.hermes/SOUL.md                   <workspace>/SOUL.md  ✓
+  Persistent memory       ~/.hermes/memories/MEMORY.md        <workspace>/AGENTS.md  (⚠)
+  User profile            ~/.hermes/memories/USER.md          <workspace>/USER.md  (⚠)
+  Скиллы (per-skill)      ~/.hermes/skills/<name>/SKILL.md    <workspace>/skills/<name>/SKILL.md  ✓
+  Tools declarations      ~/.hermes/tools.md (или встроен)    <workspace>/TOOLS.md  ✓
+  Sessions store          ~/.hermes/state.db (SQLite)         <нужен экспорт в JSONL/MD>  ⚠
+  Профили                 ~/.hermes/profiles/<name>/...      agents.<name> секция в openclaw.json  ⚠
+  Cron jobs               ~/.hermes/cron/jobs.json            openclaw cron jobs  ⚠ (тот же формат?)
+  Каналы мессенджера      ~/.hermes/gateway_state.json        в openclaw.json  ⚠
+  Auth/credentials        ~/.hermes/auth.json                 <как OAuth-credentials в openclaw.json>  ⚠
+
+  Расшифровка пометок:
+  ✓  — подтверждено в README OpenClaw
+  ⚠ — требует проверки в официальной документации
+      docs.openclaw.ai/concepts/workspace или /gateway/configuration
+
+  ============================================================
+  3. КАКИЕ ДАННЫЕ ПЕРЕНОСИМЫ «КАК ЕСТЬ» (BYTE-FOR-BYTE)
+  ============================================================
+
+  3.1. ✓ SOUL.md
+        Hermes:  /root/.hermes/SOUL.md
+        OpenClaw: <workspace>/SOUL.md  (тот же формат — Markdown)
+        Действие: cp ~/.hermes/SOUL.md ~/.openclaw/workspace/SOUL.md
+
+  3.2. ✓ Skills (структура)
+        Hermes:  ~/.hermes/skills/<name>/SKILL.md [+ опц. assets/]
+        OpenClaw: <workspace>/skills/<name>/SKILL.md [+ опц. assets/]
+        ⚠ Нюанс: frontmatter может различаться по полям.
+        У Hermes: name, description, version, author, license,
+                 platforms, metadata.hermes, related_skills.
+        OpenClaw, по аналогии с аналогичными проектами, ждёт:
+                 name, description, version.
+        Лишние поля frontmatter обычно игнорируются обеими
+        системами, но проверьте после миграции.
+
+  3.3. ✓ Channel credentials (env-переменные)
+        Hermes хранит их в `~/.hermes/.env`:
+            TELEGRAM_BOT_TOKEN=...
+            DISCORD_BOT_TOKEN=...
+            SLACK_BOT_TOKEN=...
+        OpenClaw ожидает то же самое (либо в shell env, либо в
+        openclaw.json через `${ENV_VAR}` подстановки). Можно
+        скопировать секцию как есть.
+
+  3.4. ⚠ Markdown-память (MEMORY.md / USER.md)
+        Hermes хранит в `~/.hermes/memories/`. OpenClaw
+        использует `<workspace>/AGENTS.md` для injected prompt —
+        это не «память» в hermes-смысле, а вторая категория.
+        Рекомендация: ОБЪЕДИНИТЬ MEMORY.md + USER.md → AGENTS.md
+        перед переносом, либо сохранить отдельно как часть
+        пользовательского workflow.
+
+  ============================================================
+  4. КАК ПЕРЕНЕСТИ — 6-ШАГОВЫЙ ПЛАН
+  ============================================================
+
+  ⚠ Перед началом: прочитать свежую документацию
+  https://docs.openclaw.ai/concepts/workspace для подтверждения
+  путей (могут меняться между релизами).
+
+  ШАГ 0. ПОДГОТОВКА
+  ─────────────────────────────────────
+  Установить OpenClaw:
+      npm install -g openclaw@latest
+  Пройти онбординг (создаст ~/.openclaw/ и базовый workspace):
+      openclaw onboard
+  Не активировать каналы, пока не перенесли credentials.
+
+  ШАГ 1. ЭКСПОРТ ИЗ HERMES (read-only)
+  ─────────────────────────────────────
+  Снять резервную копию профиля default:
+      hermes profile export default -o hermes-backup-$(date +%F).tar.gz
+  ИЛИ вручную:
+      cp -a ~/.hermes /tmp/hermes-snapshot-$(date +%F)
+  Экспортировать сессии (опционально):
+      hermes sessions export hermes-sessions-$(date +%F).jsonl
+  Сохранить SECRET-файл отдельно (он чувствительный):
+      cp ~/.hermes/.env ~/secrets-hermes.env && chmod 600 ~/secrets-hermes.env
+
+  ШАГ 2. СКАНИРОВАНИЕ ЧТО ЕСТЬ В HERMES
+  ─────────────────────────────────────
+      find ~/.hermes -maxdepth 4 -type f \
+          \( -name '*.md' -o -name '*.yaml' -o -name '*.json' \) 2>/dev/null
+  Выписать вручную:
+      — скиллы (кол-во и список)
+      — профили (`hermes profile list`)
+      — каналы (Telegram/Discord/...) и их chat-id
+      — модели и провайдеры
+      — cron jobs (`hermes cron list`)
+      — OAuth-credentials (`hermes auth list`)
+
+  ШАГ 3. ПОДГОТОВКА OPENCLAW WORKSPACE
+  ─────────────────────────────────────
+  Открыть файл:
+      ~/.openclaw/workspace/
+  Создать каталоги, если их нет:
+      mkdir -p ~/.openclaw/workspace/skills
+  Скопировать SOUL.md:
+      cp ~/.hermes/SOUL.md ~/.openclaw/workspace/SOUL.md
+  Скопировать все Hermes-скиллы:
+      for d in ~/.hermes/skills/*/; do
+          name=$(basename "$d")
+          mkdir -p ~/.openclaw/workspace/skills/"$name"
+          cp -r "$d"* ~/.openclaw/workspace/skills/"$name"/ 2>/dev/null
+      done
+  ⚠ После копирования проверьте, что Hermes-специфичные поля
+  frontmatter (`metadata.hermes.*`, `hermes.related_skills`)
+  не ломают парсер OpenClaw. Безопасный путь — оставить, потом
+  убрать через `for f in workspace/skills/*/SKILL.md; do sed -i '/^metadata:/,/^[^ ]/d' "$f"; done`.
+
+  ШАГ 4. МИГРАЦИЯ КОНФИГА
+  ─────────────────────────────────────
+  Сконвертировать config.yaml → openclaw.json. Структуры разные,
+  прямой конвертер не существует — нужна ручная работа:
+
+  // ~/.openclaw/openclaw.json
+  {
+    "agent": {
+      "model": "openai/gpt-4o",   // было в config.yaml: model.default
+    },
+    "channels": {
+      "telegram": {
+        "enabled": true,
+        "botToken": "${TELEGRAM_BOT_TOKEN}"   // берётся из .env
+      }
+    }
+  }
+
+  ⚠ Ключи НЕ совпадают один к одному. Полный список ключей:
+  https://docs.openclaw.ai/gateway/configuration
+
+  ШАГ 5. ПЕРЕНОС SECRET-ПЕРЕМЕННЫХ
+  ─────────────────────────────────────
+      cat ~/.hermes/.env | grep -v '^#' >> ~/.openclaw/.env
+      chmod 600 ~/.openclaw/.env
+  ⚠ НЕ дублируйте секреты между двумя активными агентами,
+  если они будут работать на одном канале — будет гонка
+  обновлений Telegram/Discord.
+
+  ШАГ 6. ВАЛИДАЦИЯ И SMOKE-ТЕСТ
+  ─────────────────────────────────────
+      openclaw doctor                          # проверка конфига
+      openclaw gateway status                  # gateway жив?
+      openclaw skills list                     # скиллы подхватились?
+  Тестовый запрос с одного из каналов (Telegram бот → ассистент).
+  Сравнить latency и поведение с Hermes baseline.
+  Проверить каждый скилл критической функциональности
+  вручную: `/skill <name>` или `openclaw agent --skill <name>`.
+
+  ШАГ 7. (опц.) ОТКАТ
+  ─────────────────────────────────────
+  Если что-то пошло не так:
+      openclaw gateway stop
+      openclaw uninstall
+      rm -rf ~/.openclaw
+  Восстановить Hermes-бэкап:
+      hermes (активный профиль подхватится автоматически).
+
+  ============================================================
+  5. ИСПОЛЬЗОВАТЬ ЛИ `hermes claw migrate`?
+  ============================================================
+
+  В скилле `autonomous-ai-agents/hermes-agent/SKILL.md`
+  перечислена команда:
+      hermes claw migrate          # Migrate from OpenClaw
+
+  ВАЖНО: судя по названию команды, она мигрирует В СТОРОНУ
+  HERMES из OpenClaw, а не наоборот. То есть:
+      hermes claw migrate  →  вы забираете данные из OpenClaw
+                              в Hermes.
+
+  Если вам нужно обратное (Hermes → OpenClaw), встроенной
+  команды нет. Используйте шаги 1–6 вручную.
+
+  Прежде чем запускать `hermes claw migrate`, прочитайте:
+      hermes claw migrate --help
+
+  ============================================================
+  6. РАЗЛИЧИЯ В МОДЕЛИ «SKILL»
+  ============================================================
+
+  ОБЩЕЕ (формат Markdown + frontmatter):
+  ─────────────────────────────────────
+  Hermes SKILL.md:
+  ---
+  name: <kebab-case>
+  description: <1 фраза>
+  version: 1.0.0
+  author: ...
+  license: MIT
+  platforms: [linux, macos]
+  metadata:
+    hermes:
+      tags: [...]
+      related_skills: [...]
+  ---
+
+  OpenClaw SKILL.md (ожидаемая структура, ⚠ не подтв.):
+  ---
+  name: <kebab-case>
+  description: <1 фраза>
+  version: 1.0.0
+  ---
+
+  ОТЛИЧИЯ:
+  — Hermes умеет toolsets, related_skills, теги в metadata.
+  — OpenClaw публикует скиллы в ClawHub (clawhub.ai).
+  — У Hermes есть bundled vs hub vs user skills — три источника.
+    OpenClaw, скорее всего, тоже различает bundled/managed/
+    workspace (упоминается в README).
+  — Hermes скиллы могут содержать подпапки `references/`,
+    `scripts/`, `assets/`. OpenClaw — вероятно тоже, но
+    точный набор не подтверждён.
+
+  ЛУЧШАЯ ПРАКТИКА ПЕРЕНОСА СКИЛЛОВ:
+  ─────────────────────────────────────
+  1. Сохраняйте оригинал в Hermes как «source of truth»,
+     пока не убедитесь, что скилл работает в OpenClaw.
+  2. Копируйте в OpenClaw, СНИМАЯ Hermes-specific metadata
+     (всё, что под `metadata.hermes.*`).
+  3. Проверяйте скилл на простой команде. Если не работает —
+     открывайте `references/` (Hermes хранит детальные доки
+     рядом), переписывайте под формат OpenClaw.
+  4. Используйте ClawHub (`https://clawhub.ai`) для публикации
+     стабильных версий — это публичный registry, аналог
+     Hermes Skills Hub.
+
+  ============================================================
+  7. РАЗЛИЧИЯ В GATEWAY / CHANNELS
+  ============================================================
+
+  Hermes gateways настраиваются через:
+      gateway.platforms.telegram:
+        enabled: true
+        home_chat_id: 505586502
+        allowed_users: [...]
+        pairing: true
+        poll_timeout: 30
+
+  OpenClaw — через JSON:
+      channels.telegram.enabled: true
+      channels.telegram.botToken: ${ENV}
+      channels.telegram.dmPolicy: pairing     # значение по умолчанию
+      channels.telegram.allowFrom: [...]
+
+  ⚠ Маппинг 1-к-1 не гарантирован. У Hermes есть `home_chat_id`,
+  у OpenClaw — отдельная концепция «main session vs agent session».
+  У Hermes есть `pairing` whitelist по списку user-id; OpenClaw —
+  `allowFrom` плюс `dmPolicy="open"|"pairing"|"disabled"`.
+
+  ЛУЧШАЯ ПРАКТИКА:
+  — не запускайте обоих агентов на одном Telegram-токене
+    одновременно → будет гонка polling`а / webhooks.
+  — при миграции сначала СТОПИТЕ Hermes-агент, и только
+    потом запускайте OpenClaw на тех же credentials.
+
+  ============================================================
+  8. РАЗЛИЧИЯ В МОДЕЛИ «ПРОФИЛЬ/АГЕНТ»
+  ============================================================
+
+  Hermes имеет ИЗОЛИРОВАННЫЕ профили:
+      ~/.hermes/profiles/<name>/
+          ├── config.yaml
+          ├── .env
+          ├── skills/
+          ├── memories/
+          ├── sessions/
+          └── ...
+
+  OpenClaw имеет одну конфигурацию (openclaw.json), где
+  маршрутизация по агентам делается через:
+      agents.<name>.workspace: "..."
+      agents.<name>.model: "..."
+      bindings: [{ agent: "<name>", channel: "telegram", peer: "..." }]
+
+  То есть в OpenClaw многоагентность = одна config, разные
+  workspace-каталоги и bindings. Это другая модель.
+
+  ⚠ Прямой миграции профилей нет. Если у вас в Hermes было
+  5 профилей, в OpenClaw придётся создать 5 agent-секций
+  вручную.
+
+  ============================================================
+  9. РАЗЛИЧИЯ В SECURITY / SANDBOX
+  ============================================================
+
+  Hermes: «tools run on the host for the main session» —
+  все скиллы имеют доступ к host-FS/процессам по умолчанию.
+
+  OpenClaw: имеет полноценный sandbox:
+      agents.defaults.sandbox.mode: "non-main"
+      agents.defaults.sandbox.backend: docker | ssh | openshell
+  Типичный набор правил: allow bash/process/read/write/edit/
+  sessions_list; deny browser/canvas/nodes/cron/discord/gateway.
+
+  ⚠ Если вы привыкли к Hermes-семантике «всё доступно»,
+  в OpenClaw всё не-main (групповые чаты, каналы) идёт в
+  sandbox. Это плюс к безопасности, но требует адаптации
+  скиллов, которые вызывают внешние команды.
+
+  Рекомендация: для каждого перенесённого скилла проверьте,
+  нужен ли ему доступ к host. Если да — добавьте в allowlist
+  sandbox-конфига OpenClaw (через `openclaw agent --no-sandbox`
+  per-call или постоянный rule).
+
+  ============================================================
+  10. ЧЕКЛИСТ МИГРАЦИИ (для печати)
+  ============================================================
+
+  □ Прочитал https://docs.openclaw.ai/concepts/workspace
+    (актуальные пути могут отличаться от этой версии)
+  □ Создал бэкап Hermes:
+      hermes profile export default -o ~/hermes-bk.tar.gz
+  □ Сохранил ~/.hermes/.env отдельно (chmod 600)
+  □ Записал список каналов и их конфиг
+  □ Записал список скиллов и их описание
+  □ Записал список профилей
+  □ Установил OpenClaw и прошёл onboarding (без каналов)
+  □ Скопировал SOUL.md в workspace
+  □ Скопировал все skills/<name>/, почистил hermes-metadata
+  □ Сконвертировал config.yaml → openclaw.json (вручную)
+  □ Скопировал .env секреты
+  □ ⚠ ОСТАНОВИЛ Hermes-агент на мигрируемых каналах
+  □ Запустил OpenClaw-агент, проверил doctor / status
+  □ Прогнал smoke-test: 1 запрос на каждый канал + каждый скилл
+  □ Принял решение: оставить Hermes, перейти на OpenClaw,
+    или держать оба (с разделением каналов).
+  □ Если всё OK — удалил бэкап через 7–14 дней
+
+  ============================================================
+  11. АЛЬТЕРНАТИВНЫЙ ВАРИАНТ: ПОСТАВИТЬ OPENCLAW РЯДОМ
+  ============================================================
+
+  Вместо полной миграции можно РАЗДЕЛИТЬ каналы:
+
+  • Hermes оставить на профильных/персональных задачах.
+  • OpenClaw поставить на отдельные каналы (Signal, Matrix,
+    WhatsApp), где Hermes не работает.
+
+  Преимущества:
+  — тестируете OpenClaw без риска для рабочего Hermes.
+  — можете сравнивать производительность на разных задачах.
+  — если что-то сломается — у вас есть fallback.
+
+  Недостатки:
+  — два агента сосуществуют, ресурсы удваиваются.
+  — НЕ пересекающиеся каналы — обязательное условие.
+
+  ============================================================
+  12. ЛУЧШИЕ ПРАКТИКИ (TL;DR)
+  ============================================================
+
+  1. Сделайте бэкап Hermes ДО любых действий.
+  2. Мигрируйте поэтапно: SOUL → skills → конфиг → секреты →
+     каналы → активные cron. Не всё сразу.
+  3. Используйте ОДИН И ТОТ ЖЕ Telegram-токен нельзя. Перед
+     подключением канала к OpenClaw — сначала отзовите его из
+     Hermes-агента.
+  4. ClawHub для публикации скиллов, ~/.openclaw/skills/ для
+     приватных.
+  5. После миграции проверьте каналы вручную.
+  6. Если OpenClaw не нужен — `openclaw uninstall` +
+     `rm -rf ~/.openclaw`. Hermes продолжает работать.
+  7. Не переносите Hermes sessions БД → переносите только
+     user-facing текстовые артефакты (SOUL, memory, skills).
+
+  ============================================================
+  13. ИСТОЧНИКИ
+  ============================================================
+
+  — README openclaw/openclaw на GitHub
+    (https://raw.githubusercontent.com/openclaw/openclaw/main/README.md)
+    - содержит §"Agent workspace + skills", "Configuration",
+      "Security model".
+  — Документация OpenClaw (docs.openclaw.ai)
+    - /concepts/workspace — структура workspace.
+    - /concepts/architecture — взаимодействие компонентов.
+    - /gateway/configuration — полный список ключей openclaw.json.
+    - /tools/skills — формат SKILL.md в OpenClaw.
+    - /gateway/security — security defaults и sandbox.
+  — Hermes Agent skill: `~/.hermes/skills/autonomous-ai-agents/
+    hermes-agent/SKILL.md` — упоминание `hermes claw migrate`.
+  — Hermes docs: https://hermes-agent.nousresearch.com/docs/
+
+  ============================================================
+  14. ОГРАНИЧЕНИЯ ЭТОГО ФАЙЛА
+  ============================================================
+
+  Этот гайд основан на:
+  — публичном README OpenClaw (снимок на дату написания),
+  — публичной документации OpenClaw (только заголовки разделов,
+    по которым я могу судить о содержании),
+  — официальном скилле Hermes Agent (его собственная
+    интерпретация Hermes ↔ OpenClaw).
+
+  Конкретные имена JSON-ключей в `openclaw.json` я мог
+  воспроизвести неточно — OpenClaw активно развивается, и
+  schema может меняться. ПЕРЕД миграцией откройте
+  https://docs.openclaw.ai/gateway/configuration и сверьте
+  каждый ключ, который вы собрались переносить.
+
+  Если найдёте расхождение между этим файлом и реальностью —
+  правильнее доверять docs.openclaw.ai, а не этому файлу.
+
+  ============================================================
+  КОНЕЦ ФАЙЛА Hermes-to-Open-Claw-01.txt.
+  ============================================================

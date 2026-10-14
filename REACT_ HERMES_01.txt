@@ -1,0 +1,282 @@
+================================================================================
+HERMES: ВОЗМОЖНОСТИ ВЗАИМОДЕЙСТВИЯ С REACT
+Документ: REACT_HERMES_01.txt
+Дата: 16 июня 2026
+================================================================================
+
+1. ВВЕДЕНИЕ
+-----------
+React — JavaScript-библиотека с открытым исходным кодом для построения
+пользовательских интерфейсов. Разработана и поддерживается Meta. Основана на
+компонентном подходе, JSX/TSX, виртуальном DOM и однонаправленном потоке данных.
+
+HERMES (Hermes Agent) — автономный AI-агент, работающий в CLI/Matrix-среде с
+полным набором инструментов для разработки, отладки и деплоя React-приложений.
+Документ описывает эти возможности: от создания проекта с нуля до отладки
+production-сборки в живом браузере.
+
+Под "REACT" в контексте HERMES понимается экосистема React целиком: ядро
+(react, react-dom), фреймворки (Next.js, Remix, Gatsby, Astro), библиотеки
+состояния (Redux, Zustand, Jotai, Recoil, MobX, TanStack Query), UI-киты
+(MUI, Chakra, Ant Design, shadcn/ui, Mantine), роутинг (React Router, TanStack
+Router), анимации (Framer Motion, React Spring), тестирование (Jest, Vitest,
+React Testing Library, Playwright, Cypress), сборка (Vite, Webpack, Turbopack,
+esbuild, Bun), типизация (TypeScript, Flow).
+
+
+2. БРАУЗЕРНЫЕ ИНСТРУМЕНТЫ (browser_*)
+-------------------------------------
+HERMES может напрямую взаимодействовать с React-приложением в живом браузере —
+это эквивалент работы опытного QA-инженера с Chrome DevTools, но в
+headless/remote-режиме.
+
+2.1. Навигация и инспекция
+  • browser_navigate(url)        — открыть React-приложение по URL
+  • browser_snapshot()           — получить accessibility tree с ref-id (@e1, @e2, ...)
+  • browser_back()               — вернуться на предыдущую страницу
+  • browser_scroll(up|down)      — прокрутить страницу
+  • browser_get_images()         — список всех <img> на странице
+
+2.2. Взаимодействие
+  • browser_click(@ref)          — кликнуть по элементу
+  • browser_type(@ref, text)     — ввести текст в input/textarea
+  • browser_press(key)           — нажать клавишу (Enter, Tab, Escape, стрелки)
+
+2.3. Диагностика
+  • browser_console()            — прочитать console.log/warn/error и
+                                   необработанные исключения React
+  • browser_console(expression)  — выполнить JS в контексте страницы;
+                                   доступ к window.__REACT_DEVTOOLS_GLOBAL_HOOK__,
+                                   инспекция state/props, fetch к API
+  • browser_vision(question)     — сделать скриншот, проанализировать UI визуально
+
+
+3. ИНСТРУМЕНТЫ ФАЙЛОВОЙ СИСТЕМЫ
+--------------------------------
+3.1. Чтение
+  • read_file(path)              — прочитать .jsx/.tsx/.js/.ts с нумерацией строк
+  • search_files(pattern)        — найти компоненты/хуки по regex
+  • search_files(pattern, target='files') — найти файлы по glob
+
+3.2. Редактирование
+  • write_file(path, content)    — создать/перезаписать файл целиком
+  • patch(path, old, new)        — точечная правка с fuzzy matching
+  • patch(mode='patch', patch)   — V4A-патч сразу к нескольким файлам
+
+3.3. Терминал
+  • terminal(command)            — выполнить shell (npm, yarn, pnpm, node, ...)
+  • terminal(background=true,
+             notify_on_complete=true) — запустить dev-сервер в фоне
+  • terminal(pty=true)           — интерактивные CLI (vite --inspect, react-devtools)
+
+
+4. ВОЗМОЖНОСТИ ПО СЦЕНАРИЯМ
+---------------------------
+4.1. Создание нового проекта
+  • npx create-vite@latest my-app -- --template react-ts
+  • npx create-next-app@latest my-app
+  • pnpm create vite ... / pnpm dlx create-next-app ...
+  • bun create vite my-app --template react-ts
+
+4.2. Установка зависимостей
+  • npm install / yarn / pnpm install
+  • npm install <pkg> / yarn add <pkg> / pnpm add <pkg>
+  • npm install --save-dev <pkg>
+
+4.3. Разработка
+  • npm run dev / yarn dev / pnpm dev
+  • Запуск в фоне (background=true, notify_on_complete=true)
+  • HMR: правишь файл → страница автообновляется
+  • Отладка Node.js через skill "node-inspect-debugger"
+
+4.4. Сборка
+  • npm run build → production-бандл (dist/, .next/, build/)
+  • Анализ размера: vite-plugin-visualizer, webpack-bundle-analyzer
+  • Source maps для отладки прода
+  • Bundle splitting, tree-shaking, code-splitting (React.lazy, Suspense)
+
+4.5. Тестирование
+  • Unit: Jest, Vitest, React Testing Library
+  • E2E: Playwright, Cypress, WebdriverIO
+  • Type-checking: tsc --noEmit
+  • Linting: eslint, prettier, biome
+  • Визуальное тестирование через browser_vision
+  • Skill "test-driven-development" — TDD red-green-refactor для React
+
+4.6. Code review
+  • Прочитать компонент, проверить хуки, props, key, a11y
+  • Сравнить с дизайн-системой (skill popular-web-designs)
+  • Проверить перф: memo, useMemo, useCallback, React.lazy
+  • Skill "requesting-code-review" — пре-коммит ревью с quality gates
+  • Skill "simplify-code" — параллельная 3-агентная чистка
+
+4.7. Отладка production
+  • browser_navigate(prod_url)
+  • browser_console() — ошибки React, warnings
+  • browser_evaluate() — инспекция state через DevTools hook
+  • browser_vision() — сравнить UI с дизайном
+  • Skill "systematic-debugging" — 4-фазный root-cause debugging
+
+
+5. РАБОТА С ЭКОСИСТЕМОЙ
+-----------------------
+HERMES понимает и умеет работать с любыми React-библиотеками.
+
+5.1. State management
+  • useState, useReducer, useContext
+  • Redux Toolkit, RTK Query
+  • Zustand, Jotai, Recoil, MobX, Valtio
+  • TanStack Query (React Query), SWR
+  • React Hook Form, Formik, Final Form
+
+5.2. Роутинг
+  • React Router v6+
+  • Next.js App Router / Pages Router
+  • TanStack Router
+  • Wouter (минималистичный)
+
+5.3. UI-фреймворки
+  • Material UI (MUI), Chakra UI, Ant Design
+  • Mantine, Radix UI, Headless UI, Ark UI
+  • shadcn/ui, NextUI, HeroUI, Park UI
+  • PrimeReact, Blueprint, Semantic UI React
+
+5.4. Стилизация
+  • Tailwind CSS, CSS Modules, vanilla-extract
+  • styled-components, Emotion, Stitches, vanilla CSS-in-JS
+  • Sass, Less, PostCSS
+  • CSS-in-TS (Panda CSS, StyleX)
+
+5.5. Анимации
+  • Framer Motion / Motion (новое имя с 2024)
+  • React Spring, @react-spring/web
+  • Auto-Animate
+  • Lottie (lottie-react)
+  • GSAP (через обёртки)
+
+5.6. Таблицы, графики, формы
+  • TanStack Table, AG Grid, Material React Table
+  • Recharts, Chart.js (react-chartjs-2), Victory, Visx, Nivo
+  • React Hook Form + Zod / Yup / Valibot
+  • TipTap, Lexical, Slate, ProseMirror (rich text)
+
+5.7. SSR/SSG/ISR/RSC
+  • Next.js — полная поддержка SSR, SSG, ISR, React Server Components
+  • Remix / React Router 7 (framework mode)
+  • Gatsby (статическая генерация)
+  • Astro (с React-островками)
+  • TanStack Start
+
+5.8. Сборка и runtime
+  • Vite (рекомендуется для SPA в 2024+)
+  • Webpack (legacy, CRA)
+  • esbuild, Rollup, Parcel
+  • Turbopack (Next.js), Rspack
+  • Bun как runtime + bundler
+  • Deno (React через esm.sh / npm:)
+
+5.9. TypeScript
+  • Генерация типов из API (openapi-typescript, tRPC, GraphQL Code Generator)
+  • Utility types (Pick, Omit, Partial, Record, Awaited)
+  • Типизация props, refs, events
+  • Discriminated unions для state-машин
+  • Zod / Valibot для runtime-валидации
+
+5.10. Деплой
+  • Vercel, Netlify (нативная поддержка Next.js)
+  • Cloudflare Pages / Workers
+  • AWS (S3 + CloudFront, Amplify)
+  • GitHub Pages (для статики)
+  • Docker + Kubernetes
+  • Fly.io, Railway, Render
+
+
+6. ТИПИЧНЫЙ WORKFLOW: СОЗДАТЬ И ЗАПУСТИТЬ ПРОЕКТ
+-------------------------------------------------
+  $ npx create-vite@latest todo-app -- --template react-ts
+  $ cd todo-app
+  $ npm install
+  $ npm run dev          # background=true, notify_on_complete=true
+
+После старта dev-сервера (обычно http://localhost:5173):
+  → browser_navigate("http://localhost:5173")
+  → browser_snapshot()  — увидеть структуру DOM
+  → browser_console()   — проверить ошибки
+  → read_file("src/App.tsx")
+  → patch("src/App.tsx", old, new) — отредактировать
+  → Браузер автообновится (HMR)
+  → browser_evaluate("document.querySelector('h1').textContent")
+  → browser_vision("Соответствует ли заголовок дизайну?")
+
+
+7. ДОСТУПНЫЕ НАВЫКИ (SKILLS), ПРИМЕНИМЫЕ К REACT
+------------------------------------------------
+software-development/
+  • node-inspect-debugger  — отладка Node.js (vite dev, next dev)
+  • plan                   — план разработки больших React-проектов
+  • requesting-code-review — пре-коммит ревью с quality gates
+  • simplify-code          — параллельная чистка кода
+  • spike                  — throwaway-эксперименты (POC компонента)
+  • systematic-debugging   — 4-фазный root-cause debugging
+  • test-driven-development — TDD для компонентов/хуков
+  • hermes-agent-skill-authoring — создание навыков для React-проекта
+
+creative/
+  • design-md              — дизайн-токены для UI
+  • popular-web-designs    — реальные дизайн-системы (Stripe, Linear, Vercel, ...)
+  • architecture-diagram   — диаграммы архитектуры (SVG/HTML)
+  • excalidraw             — диаграммы компонентов и data-flow
+  • claude-design          — одноразовые HTML-прототипы
+  • sketch                 — 2-3 варианта UI для сравнения
+  • pretext                — интерактивные браузерные демо
+  • humanizer              — humanize текста в UI
+
+dogfood/
+  • dogfood                — exploratory QA React-приложения, поиск багов
+
+github/
+  • github-pr-workflow     — PR-цикл для React-фичи
+  • github-code-review     — ревью чужого React-кода
+  • codebase-inspection    — анализ существующей кодовой базы (LOC, ratio)
+
+hermes-internals-inspection/
+  • hermes-internals-inspection — если сам HERMES — это React-приложение
+
+
+8. ОГРАНИЧЕНИЯ
+--------------
+  • Нет встроенного GUI-редактора (как VSCode) — работает через файлы + терминал
+  • Нет realtime React DevTools inspector (эмулируется через browser_console)
+  • Не рендерит React в headless-режиме без браузера (для тестов нужен JSDOM/Vitest)
+  • Глубокая интеграция с Figma / Storybook / Histoire — только через их CLI/API
+  • Не может запустить React-приложение без node.js / bun / deno на хосте
+  • Browser-инструменты требуют доступности URL (localhost или remote)
+  • Production-debugging требует развёрнутого билда (Vercel/Netlify/own server)
+
+
+9. РЕКОМЕНДАЦИИ ПО ВЫБОРУ СТЕКА
+--------------------------------
+  • Быстрый SPA / прототип     → Vite + React + TypeScript
+  • Production-проект с SEO    → Next.js (App Router)
+  • Библиотека компонентов     → Vite + Storybook + Ladle
+  • Marketing-сайт             → Astro + React-островки
+  • BFF / dashboard            → Remix / React Router 7
+  • Очень большое SPA          → Vite + Module Federation / Nx
+  • Лёгкий прототип            → Claude Artifact / skill "claude-design"
+  • Сравнить 2-3 варианта UI   → skill "sketch"
+
+
+10. СОВЕТЫ ПО ИСПОЛЬЗОВАНИЮ
+---------------------------
+  • Запускайте dev-сервер через background=true + notify_on_complete=true
+  • Тестируйте визуальные изменения через browser_vision
+  • Перед большим рефакторингом — skill "plan"
+  • После нетривиального бага — skill "systematic-debugging"
+  • Перед коммитом — skill "requesting-code-review"
+  • Используйте execute_code для 3+ однотипных tool-вызовов (меньше шума)
+  • Делите большие React-проекты на skills (один skill = один аспект)
+  • Для CI/CD — skill "github-pr-workflow" (PR-цикл, линтеры, тесты)
+
+================================================================================
+Конец документа REACT_HERMES_01.txt
+================================================================================
